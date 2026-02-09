@@ -163,4 +163,3 @@ function bindEvents(){
   fi.onchange=()=>{if(fi.files.length)uploadFile(fi.files[0])}}
 }
 R();
-</script>
