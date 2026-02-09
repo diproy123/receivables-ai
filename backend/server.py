@@ -641,27 +641,19 @@ async def export_data():
 # ============================================================
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
+from fastapi.responses import HTMLResponse
+
+@app.get("/app.js")
+async def serve_js():
+    return FileResponse(FRONTEND_DIR / "app.js", media_type="application/javascript")
+
 @app.get("/")
 async def serve_index():
-    return FileResponse(FRONTEND_DIR / "index.html")
+    return FileResponse(FRONTEND_DIR / "index.html", media_type="text/html")
 
 @app.get("/{path:path}")
 async def serve_static(path: str):
     file_path = FRONTEND_DIR / path
     if file_path.exists() and file_path.is_file():
         return FileResponse(file_path)
-    return FileResponse(FRONTEND_DIR / "index.html")
-
-
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 8000))
-    print("\n" + "=" * 60)
-    print("  RECEIVABLES AI — Starting Server")
-    print("=" * 60)
-    print(f"  Claude API: {'✓ Connected' if USE_REAL_API else '✗ Mock Mode (set ANTHROPIC_API_KEY for real extraction)'}")
-    print(f"  Upload Dir: {UPLOAD_DIR}")
-    print(f"  Frontend:   {FRONTEND_DIR}")
-    print(f"  Server:     http://localhost:{port}")
-    print("=" * 60 + "\n")
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    return FileResponse(FRONTEND_DIR / "index.html", media_type="text/html")
