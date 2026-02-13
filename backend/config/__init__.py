@@ -92,7 +92,7 @@ DEFAULT_ROLE = "analyst"
 # ENSEMBLE
 # ============================================================
 ENSEMBLE_PRIMARY_MODEL = "claude-sonnet-4-20250514"
-ENSEMBLE_SECONDARY_MODEL = "claude-haiku-4-5-20250929"
+ENSEMBLE_SECONDARY_MODEL = "claude-haiku-4-5-20251001"
 
 # ============================================================
 # VENDOR CONSTANTS
