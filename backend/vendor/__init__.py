@@ -261,10 +261,11 @@ def update_vendor_profile(vendor_name: str, db: dict) -> dict:
         "vendor": vendor_name,
         "vendorNormalized": normalize_vendor(vendor_name),
         "riskScore": risk["score"], "riskLevel": risk["level"],
-        "riskTrend": risk["trend"], "factors": risk["factors"],
-        "invoiceCount": risk["invoiceCount"],
-        "totalRiskExposure": risk["totalRiskExposure"],
-        "openAnomalies": risk["openAnomalies"],
+        "riskTrend": risk.get("trend", "stable"), "factors": risk.get("factors", {}),
+        "invoiceCount": risk.get("invoiceCount", 0),
+        "totalSpend": risk.get("totalSpend", 0),
+        "openAnomalies": risk.get("openAnomalyCount", 0),
+        "totalAnomalies": risk.get("totalAnomalyCount", 0),
         "lastUpdated": datetime.now().isoformat()
     }
 
