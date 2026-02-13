@@ -79,22 +79,72 @@ def _pg_connect():
             print(f"[DB] PostgreSQL connection failed: {e}, falling back to file")
 
 def _pg_init():
-    """Create tables if they don't exist."""
+    """Create tables if they don't exist. Migrate old schema if needed."""
     if not _pg_pool:
         return
     conn = _pg_pool.getconn()
     try:
         cur = conn.cursor()
+        # Check if table exists with old INTEGER id column
         cur.execute("""
-            CREATE TABLE IF NOT EXISTS app_state (
-                id TEXT PRIMARY KEY DEFAULT 'main',
-                data JSONB NOT NULL DEFAULT '{}',
-                updated_at TIMESTAMP DEFAULT NOW()
-            )
+            SELECT data_type FROM information_schema.columns 
+            WHERE table_name = 'app_state' AND column_name = 'id'
         """)
-        cur.execute("INSERT INTO app_state (id, data) VALUES ('main', %s) ON CONFLICT DO NOTHING",
-                    (json.dumps(EMPTY_DB),))
-        conn.commit()
+        row = cur.fetchone()
+        if row and row[0] == 'integer':
+            # Old schema — migrate: save data, drop, recreate with TEXT id
+            print("[DB] Migrating app_state table from INTEGER id to TEXT id...")
+            cur.execute("SELECT data FROM app_state LIMIT 1")
+            old_data = cur.fetchone()
+            cur.execute("DROP TABLE app_state")
+            conn.commit()
+            cur.execute("""
+                CREATE TABLE app_state (
+                    id TEXT PRIMARY KEY DEFAULT 'main',
+                    data JSONB NOT NULL DEFAULT '{}',
+                    updated_at TIMESTAMP DEFAULT NOW()
+                )
+            """)
+            if old_data:
+                cur.execute("INSERT INTO app_state (id, data) VALUES ('main', %s)",
+                            (json.dumps(old_data[0] if isinstance(old_data[0], dict) else json.loads(old_data[0]), default=str),))
+            else:
+                cur.execute("INSERT INTO app_state (id, data) VALUES ('main', %s)",
+                            (json.dumps(EMPTY_DB),))
+            conn.commit()
+            print("[DB] Migration complete")
+        else:
+            # Normal path — create if not exists
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS app_state (
+                    id TEXT PRIMARY KEY DEFAULT 'main',
+                    data JSONB NOT NULL DEFAULT '{}',
+                    updated_at TIMESTAMP DEFAULT NOW()
+                )
+            """)
+            cur.execute("INSERT INTO app_state (id, data) VALUES ('main', %s) ON CONFLICT DO NOTHING",
+                        (json.dumps(EMPTY_DB),))
+            conn.commit()
+    except Exception as e:
+        print(f"[DB] pg_init error: {e}")
+        conn.rollback()
+        # Last resort — try drop and recreate
+        try:
+            cur.execute("DROP TABLE IF EXISTS app_state")
+            cur.execute("""
+                CREATE TABLE app_state (
+                    id TEXT PRIMARY KEY DEFAULT 'main',
+                    data JSONB NOT NULL DEFAULT '{}',
+                    updated_at TIMESTAMP DEFAULT NOW()
+                )
+            """)
+            cur.execute("INSERT INTO app_state (id, data) VALUES ('main', %s)",
+                        (json.dumps(EMPTY_DB),))
+            conn.commit()
+            print("[DB] Recreated app_state table from scratch")
+        except Exception as e2:
+            print(f"[DB] Failed to recreate table: {e2}")
+            conn.rollback()
     finally:
         _pg_pool.putconn(conn)
 
