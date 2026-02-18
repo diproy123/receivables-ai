@@ -18,5 +18,5 @@ EXPOSE 8000
 # Auto-seed demo data on every deploy (Railway has ephemeral filesystem)
 ENV SEED_DEMO=true
 
-# Run migrations then start server
-CMD ["sh", "-c", "alembic upgrade head 2>/dev/null; python3 backend/server.py"]
+# Run migrations (non-fatal — init_db() handles table creation as fallback)
+CMD ["sh", "-c", "alembic upgrade head || echo '[WARN] Alembic migration skipped'; python3 backend/server.py"]

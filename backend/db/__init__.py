@@ -22,7 +22,7 @@ from backend.models import (
     Base, User, Document, Anomaly, Match, Case,
     ActivityLog, CorrectionPattern, VendorProfile, KVMeta,
 )
-from backend.models.database import engine, SessionLocal, init_db
+from backend.models.database import engine, SessionLocal, init_db, _get_session_factory
 
 logger = logging.getLogger("auditlens.db")
 
@@ -43,8 +43,20 @@ def _fresh_db():
     return json.loads(json.dumps(EMPTY_DB))
 
 
-# Initialize tables
-init_db()
+# Initialize tables lazily on first access, not at import time
+_tables_initialized = False
+
+
+def _ensure_tables():
+    """Create tables if not yet done. Safe to call multiple times."""
+    global _tables_initialized
+    if _tables_initialized:
+        return
+    try:
+        init_db()
+        _tables_initialized = True
+    except Exception as e:
+        logger.warning("DB table init deferred (will retry): %s", e)
 
 
 def _doc_type_to_collection(doc_type):
@@ -282,7 +294,8 @@ _db_cache = None
 
 def load_db():
     global _db_cache
-    session = SessionLocal()
+    _ensure_tables()
+    session = _get_session_factory()()
     try:
         _db_cache = _db_to_dict(session)
         return _db_cache
@@ -300,7 +313,8 @@ def get_db():
 def save_db(db):
     global _db_cache
     _db_cache = db
-    session = SessionLocal()
+    _ensure_tables()
+    session = _get_session_factory()()
     try:
         # Detect full reset: if all list collections are empty, truncate tables
         is_reset = (

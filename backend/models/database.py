@@ -44,12 +44,29 @@ def get_engine():
         )
 
 
-engine = get_engine()
-SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+try:
+    engine = get_engine()
+except Exception as e:
+    logger.warning("Engine creation deferred: %s", e)
+    engine = None
+
+SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False) if engine else None
+
+
+def _get_session_factory():
+    """Get or create session factory (handles deferred engine creation)."""
+    global engine, SessionLocal
+    if engine is None:
+        engine = get_engine()
+        SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+    return SessionLocal
 
 
 def init_db():
     """Create all tables. Safe to call multiple times."""
+    global engine
+    if engine is None:
+        engine = get_engine()
     Base.metadata.create_all(bind=engine)
     logger.info("Database tables initialized")
 
