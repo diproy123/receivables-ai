@@ -737,6 +737,7 @@ function UploadPage() {
   const [docType, setDocType] = useState('auto');
   const [showManual, setShowManual] = useState(false);
   const [procStep, setProcStep] = useState(-1);
+  const [meType, setMeType] = useState('invoice');
   const fileRef = useRef();
   const importRef = useRef();
 
@@ -828,18 +829,52 @@ function UploadPage() {
       </PageHeader>
 
       {/* Manual Entry Form */}
-      {showManual && (
+      {showManual && (() => {
+        const T = meType;
+        const isInv = T === 'invoice';
+        const isPO = T === 'purchase_order';
+        const isGRN = T === 'goods_receipt';
+        const isCtr = T === 'contract';
+        const isCN = T === 'credit_note';
+        const isDN = T === 'debit_note';
+        const isCrDb = isCN || isDN;
+        const showAmt = !isGRN;
+        const showCurrency = !isGRN;
+        const showIssueDate = !isGRN;
+        return (
         <div className="card p-6 animate-slide-up">
           <form onSubmit={manualSave}>
             <div className="text-sm font-bold mb-4">✏️ Manual Document Entry</div>
             <div className="grid grid-cols-2 gap-4">
-              <div><label className="text-xs font-semibold text-slate-500 mb-1 block">Document Type *</label><select name="type" className="inp"><option value="invoice">Invoice</option><option value="purchase_order">Purchase Order</option><option value="goods_receipt">Goods Receipt</option><option value="contract">Contract</option><option value="credit_note">Credit Note</option><option value="debit_note">Debit Note</option></select></div>
-              <div><label className="text-xs font-semibold text-slate-500 mb-1 block">Document Number *</label><input name="documentNumber" placeholder="e.g. INV-2024-001" className="inp" required /></div>
-              <div><label className="text-xs font-semibold text-slate-500 mb-1 block">Vendor *</label><input name="vendor" placeholder="Vendor name" className="inp" required /></div>
-              <div><label className="text-xs font-semibold text-slate-500 mb-1 block">Amount *</label><input name="amount" type="number" step="0.01" placeholder="0.00" className="inp" required /></div>
-              <div><label className="text-xs font-semibold text-slate-500 mb-1 block">Currency</label><select name="currency" className="inp"><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="INR">INR</option><option value="AED">AED</option><option value="JPY">JPY</option></select></div>
-              <div><label className="text-xs font-semibold text-slate-500 mb-1 block">Issue Date</label><input name="issueDate" type="date" className="inp" /></div>
-              <div><label className="text-xs font-semibold text-slate-500 mb-1 block">PO Reference</label><input name="poReference" placeholder="PO number (if any)" className="inp" /></div>
+              {/* Always: Type + Number */}
+              <div><label className="text-xs font-semibold text-slate-500 mb-1 block">Document Type *</label><select name="type" value={meType} onChange={e => setMeType(e.target.value)} className="inp"><option value="invoice">Invoice</option><option value="purchase_order">Purchase Order</option><option value="goods_receipt">Goods Receipt</option><option value="contract">Contract</option><option value="credit_note">Credit Note</option><option value="debit_note">Debit Note</option></select></div>
+              <div><label className="text-xs font-semibold text-slate-500 mb-1 block">Document Number *</label><input name="documentNumber" placeholder={isInv ? 'e.g. INV-2024-001' : isPO ? 'e.g. PO-2024-050' : isCtr ? 'e.g. CTR-2024-010' : isGRN ? 'e.g. GRN-2024-030' : 'e.g. CN-2024-005'} className="inp" required /></div>
+              {/* Always: Vendor */}
+              <div><label className="text-xs font-semibold text-slate-500 mb-1 block">{isCtr ? 'Counterparty *' : 'Vendor *'}</label><input name="vendor" placeholder={isCtr ? 'Contracting party' : 'Vendor name'} className="inp" required /></div>
+              {/* Amount — not for GRN */}
+              {showAmt && <div><label className="text-xs font-semibold text-slate-500 mb-1 block">{isCtr ? 'Contract Value *' : isCrDb ? 'Adjustment Amount *' : 'Amount *'}</label><input name="amount" type="number" step="0.01" placeholder="0.00" className="inp" required /></div>}
+              {/* Currency — not for GRN */}
+              {showCurrency && <div><label className="text-xs font-semibold text-slate-500 mb-1 block">Currency</label><select name="currency" className="inp"><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="INR">INR</option><option value="AED">AED</option><option value="JPY">JPY</option></select></div>}
+              {/* Issue Date — not for GRN */}
+              {showIssueDate && <div><label className="text-xs font-semibold text-slate-500 mb-1 block">{isCtr ? 'Effective Date' : 'Issue Date'}</label><input name="issueDate" type="date" className="inp" /></div>}
+              {/* Invoice-specific */}
+              {isInv && <div><label className="text-xs font-semibold text-slate-500 mb-1 block">Due Date</label><input name="dueDate" type="date" className="inp" /></div>}
+              {isInv && <div><label className="text-xs font-semibold text-slate-500 mb-1 block">PO Reference</label><input name="poReference" placeholder="PO number (if any)" className="inp" /></div>}
+              {isInv && <div><label className="text-xs font-semibold text-slate-500 mb-1 block">Payment Terms</label><input name="paymentTerms" placeholder="e.g. Net 30" className="inp" /></div>}
+              {/* PO-specific */}
+              {isPO && <div><label className="text-xs font-semibold text-slate-500 mb-1 block">Delivery Date</label><input name="deliveryDate" type="date" className="inp" /></div>}
+              {/* Credit/Debit Note-specific */}
+              {isCrDb && <div><label className="text-xs font-semibold text-slate-500 mb-1 block">Original Invoice Ref *</label><input name="originalInvoiceRef" placeholder="e.g. INV-2024-001" className="inp" required /></div>}
+              {isCrDb && <div><label className="text-xs font-semibold text-slate-500 mb-1 block">Reason</label><input name="reason" placeholder={isCN ? 'Reason for credit' : 'Reason for debit'} className="inp" /></div>}
+              {/* GRN-specific */}
+              {isGRN && <div><label className="text-xs font-semibold text-slate-500 mb-1 block">PO Reference *</label><input name="poReference" placeholder="PO number being receipted" className="inp" required /></div>}
+              {isGRN && <div><label className="text-xs font-semibold text-slate-500 mb-1 block">Received Date *</label><input name="receivedDate" type="date" className="inp" required /></div>}
+              {isGRN && <div><label className="text-xs font-semibold text-slate-500 mb-1 block">Received By</label><input name="receivedBy" placeholder="Name of receiver" className="inp" /></div>}
+              {isGRN && <div><label className="text-xs font-semibold text-slate-500 mb-1 block">Quantity Received</label><input name="quantityReceived" type="number" placeholder="0" className="inp" /></div>}
+              {/* Contract-specific */}
+              {isCtr && <div><label className="text-xs font-semibold text-slate-500 mb-1 block">End Date</label><input name="endDate" type="date" className="inp" /></div>}
+              {isCtr && <div><label className="text-xs font-semibold text-slate-500 mb-1 block">Parties</label><input name="parties" placeholder="e.g. Buyer Co. & Supplier Ltd." className="inp" /></div>}
+              {/* Always: Notes */}
               <div className="col-span-2"><label className="text-xs font-semibold text-slate-500 mb-1 block">Notes</label><textarea name="notes" rows="2" placeholder="Additional context" className="inp" /></div>
             </div>
             <div className="flex gap-2 mt-4 justify-end">
@@ -847,8 +882,8 @@ function UploadPage() {
               <button type="submit" className="btn-p text-xs"><Check className="w-3 h-3" /> Save Document</button>
             </div>
           </form>
-        </div>
-      )}
+        </div>);
+      })()}
 
       {/* Doc Type Selection */}
       <div className="flex gap-2 flex-wrap">{types.map(([v, l]) => (
@@ -1129,16 +1164,43 @@ function DocModal() {
           <div className={cn('overflow-y-auto p-6 space-y-5', hasFile && view === 'split' ? 'w-1/2' : 'w-full')}>
             {view === 'split' && <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Extracted Data — {pct(doc.confidence)} confidence</div>}
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Vendor" val={doc.vendor} k="vendor" />
-              <Field label="Amount" val={$f(doc.amount, cur)} />
-              <Field label="Subtotal" val={$f(doc.subtotal, cur)} k="subtotal" type="number" />
-              <Field label="Tax" val={doc.totalTax ? `${$f(doc.totalTax, cur)} (${(doc.taxDetails || []).map(t => t.type + ' ' + t.rate + '%').join(', ')})` : '—'} />
-              <Field label="Issued" val={date(doc.issueDate)} k="issueDate" type="date" />
-              <Field label={doc.type === 'invoice' ? 'Due' : 'Delivery'} val={date(doc.dueDate || doc.deliveryDate)} k={doc.type === 'invoice' ? 'dueDate' : 'deliveryDate'} type="date" />
+              {/* Always: Vendor/Counterparty + Confidence */}
+              <Field label={doc.type === 'contract' ? 'Counterparty' : 'Vendor'} val={doc.vendor} k="vendor" />
               <Field label="Confidence" val={pct(doc.confidence)} />
+
+              {/* Amount fields — not for GRN */}
+              {doc.type !== 'goods_receipt' && <Field label={doc.type === 'contract' ? 'Contract Value' : (doc.type === 'credit_note' || doc.type === 'debit_note') ? 'Adjustment Amount' : 'Amount'} val={$f(doc.amount, cur)} />}
+              {doc.type !== 'goods_receipt' && <Field label="Subtotal" val={$f(doc.subtotal, cur)} k="subtotal" type="number" />}
+
+              {/* Tax — only for invoice/PO/credit/debit */}
+              {(doc.type === 'invoice' || doc.type === 'purchase_order' || doc.type === 'credit_note' || doc.type === 'debit_note') && (
+                <Field label="Tax" val={doc.totalTax ? `${$f(doc.totalTax, cur)} (${(doc.taxDetails || []).map(t => t.type + ' ' + t.rate + '%').join(', ')})` : '—'} />
+              )}
+              {doc.type !== 'goods_receipt' && <Field label="Currency" val={doc.currency || 'USD'} k="currency" />}
+
+              {/* Date fields — type-specific */}
+              {doc.type !== 'goods_receipt' && <Field label={doc.type === 'contract' ? 'Effective Date' : 'Issued'} val={date(doc.issueDate)} k="issueDate" type="date" />}
+              {doc.type === 'invoice' && <Field label="Due Date" val={date(doc.dueDate)} k="dueDate" type="date" />}
+              {doc.type === 'purchase_order' && <Field label="Delivery Date" val={date(doc.deliveryDate)} k="deliveryDate" type="date" />}
+
+              {/* Invoice-specific */}
+              {doc.type === 'invoice' && <Field label="PO Reference" val={doc.poReference} k="poReference" />}
+              {doc.type === 'invoice' && <Field label="Payment Terms" val={doc.paymentTerms} k="paymentTerms" />}
+
+              {/* Credit/Debit Note-specific */}
+              {(doc.type === 'credit_note' || doc.type === 'debit_note') && <Field label="Original Invoice Ref" val={doc.originalInvoiceRef} />}
+
+              {/* GRN-specific */}
+              {doc.type === 'goods_receipt' && <Field label="PO Reference" val={doc.poReference} k="poReference" />}
+              {doc.type === 'goods_receipt' && <Field label="Received Date" val={date(doc.receivedDate)} />}
+              {doc.type === 'goods_receipt' && <Field label="Received By" val={doc.receivedBy} />}
+
+              {/* Contract-specific */}
+              {doc.type === 'contract' && <Field label="Payment Terms" val={doc.paymentTerms} k="paymentTerms" />}
+              {doc.type === 'contract' && doc.parties && <Field label="Parties" val={Array.isArray(doc.parties) ? doc.parties.join(' & ') : doc.parties} />}
+
+              {/* Always: Status + Uploaded */}
               <Field label="Status" val={(doc.status || '').replace(/_/g, ' ').toUpperCase()} />
-              <Field label="PO Reference" val={doc.poReference} k="poReference" />
-              <Field label="Terms" val={doc.paymentTerms} k="paymentTerms" />
               <Field label="Uploaded By" val={doc.uploadedBy} />
               <Field label="Uploaded At" val={dateTime(doc.extractedAt)} />
             </div>
