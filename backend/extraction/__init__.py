@@ -99,12 +99,25 @@ CRITICAL RULES:
 # FIELD COMPARISON SETS
 # ============================================================
 _NUMERIC_FIELDS = {"subtotal", "total_amount"}
-_STRING_FIELDS = {"vendor_name", "document_number", "document_type", "currency",
-    "po_reference", "payment_terms", "issue_date", "due_date", "locale", "document_language"}
+
+# ── Document-type-specific field sets for ensemble comparison ──
+# Only financially relevant fields are compared; technical metadata excluded.
+_STRING_FIELDS_BASE = {"vendor_name", "document_number", "currency", "payment_terms", "issue_date"}
+_STRING_FIELDS_BY_TYPE = {
+    "invoice": {"due_date", "po_reference"},
+    "purchase_order": {"delivery_date"},
+    "contract": {},
+    "credit_note": {"original_invoice_ref"},
+    "debit_note": {"original_invoice_ref"},
+    "goods_receipt": {"po_reference", "received_date", "received_by"},
+}
+# Kept for backward compat: full set used when doc_type is unknown
+_STRING_FIELDS = _STRING_FIELDS_BASE | {"due_date", "po_reference", "locale", "document_language", "document_type"}
+
 _PRIMARY_ONLY = {"notes", "bill_to", "ship_to", "extraction_confidence",
     "pricing_terms", "contract_terms", "parties", "early_payment_discount",
     "received_by", "condition_notes", "original_invoice_ref", "delivery_date", "received_date",
-    "vendor_name_english"}
+    "vendor_name_english", "locale", "document_language", "document_type"}
 
 
 # ============================================================
@@ -572,6 +585,10 @@ def _ensemble_merge_multi(results: list, labels: list, weights: dict) -> tuple:
     merged, field_conf = {}, {}
     agreements, disputes = 0, 0
 
+    # Determine document type for type-specific field comparison
+    _dt = next((r.get("document_type") for r in results if r.get("document_type")), "invoice")
+    _string_fields = _STRING_FIELDS_BASE | _STRING_FIELDS_BY_TYPE.get(_dt, set())
+
     # Numeric fields: weighted median
     for f in _NUMERIC_FIELDS:
         values = []
@@ -616,7 +633,7 @@ def _ensemble_merge_multi(results: list, labels: list, weights: dict) -> tuple:
                 disputes += 1
 
     # String fields: majority vote
-    for f in _STRING_FIELDS:
+    for f in _string_fields:
         values = []
         for i, r in enumerate(results):
             v = r.get(f)
@@ -712,6 +729,10 @@ def _ensemble_merge(primary: dict, secondary: dict) -> tuple:
     merged, field_conf = {}, {}
     agreements, disputes = 0, 0
 
+    # Determine document type for type-specific field comparison
+    _dt = primary.get("document_type") or secondary.get("document_type") or "invoice"
+    _string_fields = _STRING_FIELDS_BASE | _STRING_FIELDS_BY_TYPE.get(_dt, set())
+
     for f in _NUMERIC_FIELDS:
         va, vb = primary.get(f), secondary.get(f)
         if va is not None and vb is not None:
@@ -726,7 +747,7 @@ def _ensemble_merge(primary: dict, secondary: dict) -> tuple:
         elif vb is not None:
             merged[f] = vb; field_conf[f] = {"status": "single_source", "confidence": "medium", "source": "secondary"}
 
-    for f in _STRING_FIELDS:
+    for f in _string_fields:
         va, vb = primary.get(f), secondary.get(f)
         if va and not vb:
             merged[f] = va; field_conf[f] = {"status": "single_source", "confidence": "medium", "source": "primary"}; continue

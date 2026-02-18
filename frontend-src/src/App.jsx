@@ -1152,31 +1152,65 @@ function DocModal() {
                   <div><div className="text-lg font-bold" style={{ color: (ens.agreement_rate || 0) >= 90 ? '#10b981' : '#f59e0b' }}>{pct(ens.agreement_rate)}</div><div className="text-[10px] text-slate-400">Agreement</div></div>
                 </div>
                 {/* Per-field breakdown */}
-                {doc.fieldConfidence && Object.keys(doc.fieldConfidence).length > 0 && (
-                  <div className="mt-2 pt-2 border-t border-current/10">
-                    <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">Field-Level Details</div>
-                    <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
-                      {Object.entries(doc.fieldConfidence).filter(([k]) => k !== 'line_items' && k !== 'tax_details').map(([field, info]) => (
-                        <div key={field} className="flex items-center gap-1.5 text-[10px]">
-                          <span style={{ color: info.status === 'agreed' || info.status === 'near_match' ? '#10b981' : info.status === 'disputed' ? '#ef4444' : '#f59e0b' }}>
-                            {info.status === 'agreed' || info.status === 'near_match' ? '✓' : info.status === 'disputed' ? '✗' : '~'}
-                          </span>
-                          <span className="text-slate-600 truncate">{field.replace(/_/g, ' ')}</span>
-                          <span className="text-[8px] text-slate-400 ml-auto">{info.status?.replace('_', ' ')}</span>
-                        </div>
-                      ))}
-                      {doc.fieldConfidence.line_items && (
-                        <div className="flex items-center gap-1.5 text-[10px]">
-                          <span style={{ color: doc.fieldConfidence.line_items.status === 'all_agreed' ? '#10b981' : '#f59e0b' }}>
-                            {doc.fieldConfidence.line_items.status === 'all_agreed' ? '✓' : '~'}
-                          </span>
-                          <span className="text-slate-600">line items</span>
-                          <span className="text-[8px] text-slate-400 ml-auto">{doc.fieldConfidence.line_items.matched_count != null ? `${doc.fieldConfidence.line_items.matched_count} matched` : doc.fieldConfidence.line_items.status?.replace('_', ' ')}</span>
-                        </div>
-                      )}
+                {doc.fieldConfidence && Object.keys(doc.fieldConfidence).length > 0 && (() => {
+                  const LABELS = {
+                    vendor_name: 'Vendor Name', document_number: 'Document #', total_amount: 'Total Amount',
+                    subtotal: 'Subtotal', currency: 'Currency', po_reference: 'PO Reference',
+                    payment_terms: 'Payment Terms', issue_date: 'Issue Date', due_date: 'Due Date',
+                    delivery_date: 'Delivery Date', original_invoice_ref: 'Original Invoice',
+                    received_date: 'Received Date', received_by: 'Received By',
+                  };
+                  const HIDDEN = new Set(['locale', 'document_language', 'document_type']);
+                  const fc = doc.fieldConfidence;
+                  const fields = Object.entries(fc)
+                    .filter(([k]) => !HIDDEN.has(k) && k !== 'line_items' && k !== 'tax_details')
+                    .sort((a, b) => {
+                      const order = ['vendor_name','document_number','total_amount','subtotal','currency','po_reference','payment_terms','issue_date','due_date'];
+                      return (order.indexOf(a[0]) === -1 ? 99 : order.indexOf(a[0])) - (order.indexOf(b[0]) === -1 ? 99 : order.indexOf(b[0]));
+                    });
+                  const hasLI = fc.line_items;
+                  const hasTax = fc.tax_details;
+                  if (fields.length === 0 && !hasLI && !hasTax) return null;
+                  return (
+                    <div className="mt-2 pt-2 border-t border-current/10">
+                      <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Field-by-Field Verification</div>
+                      <div className="space-y-0.5">
+                        {fields.map(([field, info]) => (
+                          <div key={field} className="flex items-center gap-2 text-[11px] py-0.5">
+                            <span className="w-3 text-center" style={{ color: info.status === 'agreed' || info.status === 'near_match' ? '#10b981' : info.status === 'disputed' ? '#ef4444' : '#94a3b8' }}>
+                              {info.status === 'agreed' || info.status === 'near_match' ? '✓' : info.status === 'disputed' ? '✗' : '–'}
+                            </span>
+                            <span className="text-slate-700 font-medium w-28 flex-shrink-0">{LABELS[field] || field.replace(/_/g, ' ')}</span>
+                            {info.status === 'disputed' && info.a != null && (
+                              <span className="text-[10px] text-red-500 truncate">{String(info.a)} ≠ {String(info.b)}</span>
+                            )}
+                            {info.status === 'single_source' && (
+                              <span className="text-[10px] text-slate-400">one model only</span>
+                            )}
+                          </div>
+                        ))}
+                        {hasLI && (
+                          <div className="flex items-center gap-2 text-[11px] py-0.5">
+                            <span className="w-3 text-center" style={{ color: hasLI.status === 'all_agreed' ? '#10b981' : hasLI.status === 'count_mismatch' || hasLI.status === 'one_empty' ? '#ef4444' : '#f59e0b' }}>
+                              {hasLI.status === 'all_agreed' ? '✓' : hasLI.status === 'count_mismatch' ? '✗' : '–'}
+                            </span>
+                            <span className="text-slate-700 font-medium w-28 flex-shrink-0">Line Items</span>
+                            <span className="text-[10px] text-slate-400">{hasLI.matched_count != null ? `${hasLI.matched_count} items verified` : hasLI.status?.replace(/_/g, ' ')}</span>
+                          </div>
+                        )}
+                        {hasTax && (
+                          <div className="flex items-center gap-2 text-[11px] py-0.5">
+                            <span className="w-3 text-center" style={{ color: hasTax.status === 'agreed' || hasTax.status === 'both_empty' ? '#10b981' : '#f59e0b' }}>
+                              {hasTax.status === 'agreed' || hasTax.status === 'both_empty' ? '✓' : '~'}
+                            </span>
+                            <span className="text-slate-700 font-medium w-28 flex-shrink-0">Tax Details</span>
+                            <span className="text-[10px] text-slate-400">{hasTax.status?.replace(/_/g, ' ')}</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
                 {ens.resolution_applied && <div className="text-xs text-accent-700 mt-1">✔ Disputes auto-resolved ({ens.fields_resolved?.join(', ')})</div>}
                 <div className="text-[10px] text-slate-400 mt-1">Models: {ens.models_used?.map(m => m.split('-').slice(0, 2).join(' ')).join(' + ') || 'N/A'} · {(ens.primary_latency_ms || 0) + (ens.secondary_latency_ms || 0) || ens.total_latency_ms || 0}ms</div>
               </div>
