@@ -1,210 +1,346 @@
 """
-AuditLens — Database Layer
-File-based JSON store with PostgreSQL upgrade path.
+AuditLens — Database Layer (v2 — SQLAlchemy)
+
+Backward-compatible wrapper: existing code calls get_db()/save_db() with
+dict-of-lists, while under the hood we use SQLAlchemy ORM.
+
+Migration strategy:
+  1. (NOW) This shim lets server.py work unchanged by converting between
+     dict-of-lists ↔ SQLAlchemy objects on each call.
+  2. (NEXT) Gradually migrate endpoints to use sessions directly.
 """
-import os, json, uuid, base64, shutil
+
+import os
+import json
+import uuid
+import logging
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
+
 from backend.config import DB_PATH, DATA_DIR, UPLOAD_DIR, PERSIST_DATA
+from backend.models import (
+    Base, User, Document, Anomaly, Match, Case,
+    ActivityLog, CorrectionPattern, VendorProfile, KVMeta,
+)
+from backend.models.database import engine, SessionLocal, init_db
 
-# ============================================================
-# DATABASE URL (PostgreSQL optional, file-based default)
-# ============================================================
-DATABASE_URL = os.environ.get("DATABASE_URL")
+logger = logging.getLogger("auditlens.db")
 
-# ============================================================
-# EMPTY DB SCHEMA
-# ============================================================
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+
 EMPTY_DB = {
     "invoices": [], "purchase_orders": [], "contracts": [],
     "goods_receipts": [], "matches": [], "anomalies": [],
     "activity_log": [], "correction_patterns": [], "vendor_profiles": [],
-    "users": []
+    "users": [], "cases": [], "triage_decisions": [],
+    "policy_history": [], "custom_model_config": {},
+    "_policy_state": {}, "finetune_history": [],
+    "active_finetune_job": None, "together_files": [],
 }
 
+
 def _fresh_db():
-    """Return a fresh empty database."""
     return json.loads(json.dumps(EMPTY_DB))
 
+
+# Initialize tables
+init_db()
+
+
+def _doc_type_to_collection(doc_type):
+    return {"invoice": "invoices", "purchase_order": "purchase_orders",
+            "contract": "contracts", "credit_note": "invoices",
+            "debit_note": "invoices", "goods_receipt": "goods_receipts"
+            }.get(doc_type, "invoices")
+
+
+def _db_to_dict(session) -> dict:
+    db = _fresh_db()
+    for doc in session.query(Document).all():
+        db[_doc_type_to_collection(doc.type)].append(doc.to_dict())
+    db["matches"] = [m.to_dict() for m in session.query(Match).all()]
+    db["anomalies"] = [a.to_dict() for a in session.query(Anomaly).all()]
+    db["activity_log"] = [a.to_dict() for a in session.query(ActivityLog).order_by(ActivityLog.timestamp.desc()).all()]
+    db["correction_patterns"] = [c.to_dict() for c in session.query(CorrectionPattern).all()]
+    db["vendor_profiles"] = [v.to_dict() for v in session.query(VendorProfile).all()]
+    db["users"] = [u.to_dict() for u in session.query(User).all()]
+    db["cases"] = [c.to_dict() for c in session.query(Case).all()]
+
+    # Non-ORM collections stored as KV metadata
+    for row in session.query(KVMeta).all():
+        db[row.key] = row.value
+
+    # Synthesize flat "documents" list (used by custom_model + together_finetune)
+    db["documents"] = db["invoices"] + db["purchase_orders"] + db["contracts"] + db["goods_receipts"]
+
+    return db
+
+
+def _sync_to_orm(db: dict, session):
+    """Sync dict-of-lists → SQLAlchemy. Upsert semantics."""
+    # Documents
+    all_docs = []
+    for doc_type, key in [("invoice", "invoices"), ("purchase_order", "purchase_orders"),
+                           ("contract", "contracts"), ("goods_receipt", "goods_receipts")]:
+        for d in db.get(key, []):
+            if d.get("type") in ("credit_note", "debit_note"):
+                pass  # handled below
+            else:
+                d.setdefault("type", doc_type)
+            all_docs.append(d)
+    # credit/debit notes in invoices
+    for d in db.get("invoices", []):
+        if d.get("type") in ("credit_note", "debit_note") and d not in all_docs:
+            all_docs.append(d)
+
+    existing_ids = {r[0] for r in session.query(Document.id).all()}
+    for d in all_docs:
+        if d["id"] in existing_ids:
+            doc = session.get(Document, d["id"])
+            if doc:
+                for attr in ("status", "amount", "subtotal", "line_items", "tax_details",
+                              "uploaded_by", "uploaded_by_email"):
+                    legacy_key = {"line_items": "lineItems", "tax_details": "taxDetails",
+                                  "uploaded_by": "uploadedBy", "uploaded_by_email": "uploadedByEmail"
+                                  }.get(attr, attr)
+                    if legacy_key in d:
+                        setattr(doc, attr, d[legacy_key])
+                if "triageLane" in d:
+                    doc.triage_lane = d["triageLane"]
+                    doc.triage_confidence = d.get("triageConfidence")
+                    doc.triage_reasons = d.get("triageReasons")
+        else:
+            session.add(Document.from_dict(d))
+
+    # Anomalies
+    existing = {r[0] for r in session.query(Anomaly.id).all()}
+    for a in db.get("anomalies", []):
+        if a["id"] in existing:
+            obj = session.get(Anomaly, a["id"])
+            if obj:
+                obj.status = a.get("status", obj.status)
+                if a.get("resolvedAt"):
+                    try: obj.resolved_at = datetime.fromisoformat(a["resolvedAt"])
+                    except: pass
+                obj.resolved_by = a.get("resolvedBy", obj.resolved_by)
+                obj.ai_explanation = a.get("aiExplanation", obj.ai_explanation)
+        else:
+            session.add(Anomaly(
+                id=a["id"], invoice_id=a.get("invoiceId"), invoice_number=a.get("invoiceNumber"),
+                vendor=a.get("vendor"), currency=a.get("currency", "USD"), type=a["type"],
+                severity=a["severity"], description=a.get("description"),
+                amount_at_risk=a.get("amount_at_risk", 0), contract_clause=a.get("contract_clause"),
+                recommendation=a.get("recommendation"), status=a.get("status", "open"),
+                ai_explanation=a.get("aiExplanation"), ai_confidence=a.get("aiConfidence"),
+            ))
+
+    # Matches
+    existing = {r[0] for r in session.query(Match.id).all()}
+    for m in db.get("matches", []):
+        if m["id"] not in existing:
+            session.add(Match(
+                id=m["id"], invoice_id=m.get("invoiceId"), invoice_number=m.get("invoiceNumber"),
+                invoice_amount=m.get("invoiceAmount", 0), invoice_subtotal=m.get("invoiceSubtotal", 0),
+                vendor=m.get("vendor"), po_id=m.get("poId"), po_number=m.get("poNumber"),
+                po_amount=m.get("poAmount", 0), match_score=m.get("matchScore", 0),
+                signals=m.get("signals", []), amount_difference=m.get("amountDifference", 0),
+                status=m.get("status"), po_already_invoiced=m.get("poAlreadyInvoiced", 0),
+                po_remaining=m.get("poRemaining", 0), po_invoice_count=m.get("poInvoiceCount", 0),
+                over_invoiced=m.get("overInvoiced", False), match_type=m.get("matchType", "two_way"),
+                grn_status=m.get("grnStatus"), grn_ids=m.get("grnIds", []),
+                grn_numbers=m.get("grnNumbers", []), total_received=m.get("totalReceived", 0),
+                grn_line_items=m.get("grnLineItems", []), received_date=m.get("receivedDate"),
+            ))
+        else:
+            obj = session.get(Match, m["id"])
+            if obj:
+                for attr in ("match_type", "grn_status", "grn_ids", "grn_numbers", "total_received", "grn_line_items"):
+                    key = {"match_type": "matchType", "grn_status": "grnStatus", "grn_ids": "grnIds",
+                           "grn_numbers": "grnNumbers", "total_received": "totalReceived",
+                           "grn_line_items": "grnLineItems"}.get(attr, attr)
+                    if key in m:
+                        setattr(obj, attr, m[key])
+
+    # Activity log (append only)
+    existing = {r[0] for r in session.query(ActivityLog.id).all()}
+    for a in db.get("activity_log", []):
+        if a["id"] not in existing:
+            session.add(ActivityLog(
+                id=a["id"], action=a["action"], document_id=a.get("documentId"),
+                document_type=a.get("documentType"), document_number=a.get("documentNumber"),
+                vendor=a.get("vendor"), amount=a.get("amount"), currency=a.get("currency"),
+                confidence=a.get("confidence"), count=a.get("count"), total_risk=a.get("totalRisk"),
+                performed_by=a.get("performedBy"), performed_by_email=a.get("performedByEmail"),
+            ))
+
+    # Users
+    existing = {r[0] for r in session.query(User.id).all()}
+    for u in db.get("users", []):
+        if u["id"] not in existing:
+            session.add(User(id=u["id"], email=u["email"], name=u["name"],
+                            role=u["role"], password_hash=u["password_hash"],
+                            active=u.get("active", True)))
+        else:
+            obj = session.get(User, u["id"])
+            if obj:
+                obj.role = u.get("role", obj.role)
+                obj.active = u.get("active", obj.active)
+                obj.name = u.get("name", obj.name)
+
+    # Correction patterns
+    existing = {r[0] for r in session.query(CorrectionPattern.id).all()}
+    for cp in db.get("correction_patterns", []):
+        if cp["id"] not in existing:
+            session.add(CorrectionPattern(
+                id=cp["id"], vendor=cp.get("vendor"),
+                field=cp.get("field"),
+                original_value=cp.get("extracted_value"),
+                corrected_value=cp.get("corrected_value"),
+                document_type=cp.get("documentType"),
+                details={"vendorNormalized": cp.get("vendorNormalized", "")},
+            ))
+
+    # Vendor profiles
+    existing_vp = {(v.vendor_normalized or v.vendor): v for v in session.query(VendorProfile).all()}
+    for vp in db.get("vendor_profiles", []):
+        key = vp.get("vendorNormalized") or vp.get("vendor")
+        if key in existing_vp:
+            obj = existing_vp[key]
+            for attr in ("risk_score", "risk_level", "risk_trend", "factors",
+                         "invoice_count", "total_spend", "open_anomalies", "total_anomalies"):
+                legacy = {"risk_score": "riskScore", "risk_level": "riskLevel", "risk_trend": "riskTrend",
+                          "invoice_count": "invoiceCount", "total_spend": "totalSpend",
+                          "open_anomalies": "openAnomalies", "total_anomalies": "totalAnomalies"
+                          }.get(attr, attr)
+                if legacy in vp:
+                    setattr(obj, attr, vp[legacy])
+        else:
+            session.add(VendorProfile(
+                id=str(uuid.uuid4())[:12], vendor=vp["vendor"],
+                vendor_normalized=vp.get("vendorNormalized"),
+                risk_score=vp.get("riskScore", 50), risk_level=vp.get("riskLevel", "medium"),
+                risk_trend=vp.get("riskTrend", "stable"), factors=vp.get("factors", {}),
+                invoice_count=vp.get("invoiceCount", 0), total_spend=vp.get("totalSpend", 0),
+                open_anomalies=vp.get("openAnomalies", 0), total_anomalies=vp.get("totalAnomalies", 0),
+            ))
+
+    # Cases
+    existing = {r[0] for r in session.query(Case.id).all()}
+    for c in db.get("cases", []):
+        if c["id"] not in existing:
+            session.add(Case(
+                id=c["id"], type=c.get("type", "anomaly_review"),
+                title=c.get("title"), description=c.get("description"),
+                status=c.get("status", "open"), priority=c.get("priority", "medium"),
+                invoice_id=c.get("invoiceId"), anomaly_ids=c.get("anomalyIds", []),
+                vendor=c.get("vendor"), amount_at_risk=c.get("amountAtRisk", 0),
+                currency=c.get("currency", "USD"), created_by=c.get("createdBy"),
+                assigned_to=c.get("assignedTo"),
+                sla=c.get("sla", {}), case_notes=c.get("notes", []),
+                status_history=c.get("statusHistory", []),
+                resolution=c.get("resolution"),
+                resolution_notes=c.get("resolutionNotes"),
+                escalated_to=c.get("escalatedTo"),
+                escalation_reason=c.get("escalationReason"),
+                investigation_brief=c.get("investigationBrief"),
+            ))
+        else:
+            obj = session.get(Case, c["id"])
+            if obj:
+                obj.status = c.get("status", obj.status)
+                obj.priority = c.get("priority", obj.priority)
+                obj.assigned_to = c.get("assignedTo", obj.assigned_to)
+                obj.sla = c.get("sla", obj.sla)
+                obj.case_notes = c.get("notes", obj.case_notes)
+                obj.status_history = c.get("statusHistory", obj.status_history)
+                obj.investigation_brief = c.get("investigationBrief", obj.investigation_brief)
+                obj.resolution = c.get("resolution", obj.resolution)
+                obj.resolution_notes = c.get("resolutionNotes", obj.resolution_notes)
+                obj.escalated_to = c.get("escalatedTo", obj.escalated_to)
+                obj.escalation_reason = c.get("escalationReason", obj.escalation_reason)
+
+    # KV Metadata — all non-relational collections
+    kv_keys = ("_policy_state", "custom_model_config", "policy_history",
+               "triage_decisions", "finetune_history", "active_finetune_job",
+               "together_files")
+    for kv_key in kv_keys:
+        if kv_key in db:
+            existing_kv = session.get(KVMeta, kv_key)
+            if existing_kv:
+                existing_kv.value = db[kv_key]
+            else:
+                session.add(KVMeta(key=kv_key, value=db[kv_key]))
+
+    session.commit()
+
+
 # ============================================================
-# FILE BACKEND
+# PUBLIC API (backward compatible)
 # ============================================================
 _db_cache = None
 
-def _file_load():
-    global _db_cache
-    if DB_PATH.exists():
-        try:
-            with open(DB_PATH) as f:
-                _db_cache = json.load(f)
-                # Ensure all collections exist
-                for k, v in EMPTY_DB.items():
-                    if k not in _db_cache:
-                        _db_cache[k] = type(v)()
-        except (json.JSONDecodeError, IOError):
-            _db_cache = _fresh_db()
-    else:
-        _db_cache = _fresh_db()
-    return _db_cache
 
-def _file_save(db):
+def load_db():
     global _db_cache
-    _db_cache = db
-    if PERSIST_DATA:
-        with open(DB_PATH, "w") as f:
-            json.dump(db, f, indent=2, default=str)
+    session = SessionLocal()
+    try:
+        _db_cache = _db_to_dict(session)
+        return _db_cache
+    finally:
+        session.close()
 
-def _file_get():
+
+def get_db():
     global _db_cache
     if _db_cache is None:
-        return _file_load()
+        return load_db()
     return _db_cache
 
-# ============================================================
-# POSTGRES BACKEND (optional)
-# ============================================================
-_pg_pool = None
 
-def _pg_connect():
-    """Initialize PostgreSQL connection pool."""
-    global _pg_pool
-    if DATABASE_URL and not _pg_pool:
-        try:
-            import psycopg2
-            from psycopg2.pool import SimpleConnectionPool
-            _pg_pool = SimpleConnectionPool(1, 5, DATABASE_URL)
-            _pg_init()
-            print(f"[DB] Connected to PostgreSQL")
-        except Exception as e:
-            print(f"[DB] PostgreSQL connection failed: {e}, falling back to file")
-
-def _pg_init():
-    """Create tables if they don't exist. Migrate old schema if needed."""
-    if not _pg_pool:
-        return
-    conn = _pg_pool.getconn()
+def save_db(db):
+    global _db_cache
+    _db_cache = db
+    session = SessionLocal()
     try:
-        cur = conn.cursor()
-        # Check if table exists with old INTEGER id column
-        cur.execute("""
-            SELECT data_type FROM information_schema.columns 
-            WHERE table_name = 'app_state' AND column_name = 'id'
-        """)
-        row = cur.fetchone()
-        if row and row[0] == 'integer':
-            # Old schema — migrate: save data, drop, recreate with TEXT id
-            print("[DB] Migrating app_state table from INTEGER id to TEXT id...")
-            cur.execute("SELECT data FROM app_state LIMIT 1")
-            old_data = cur.fetchone()
-            cur.execute("DROP TABLE app_state")
-            conn.commit()
-            cur.execute("""
-                CREATE TABLE app_state (
-                    id TEXT PRIMARY KEY DEFAULT 'main',
-                    data JSONB NOT NULL DEFAULT '{}',
-                    updated_at TIMESTAMP DEFAULT NOW()
-                )
-            """)
-            if old_data:
-                cur.execute("INSERT INTO app_state (id, data) VALUES ('main', %s)",
-                            (json.dumps(old_data[0] if isinstance(old_data[0], dict) else json.loads(old_data[0]), default=str),))
-            else:
-                cur.execute("INSERT INTO app_state (id, data) VALUES ('main', %s)",
-                            (json.dumps(EMPTY_DB),))
-            conn.commit()
-            print("[DB] Migration complete")
+        # Detect full reset: if all list collections are empty, truncate tables
+        is_reset = (
+            len(db.get("invoices", [])) == 0 and
+            len(db.get("anomalies", [])) == 0 and
+            len(db.get("users", [])) == 0 and
+            len(db.get("cases", [])) == 0 and
+            len(db.get("matches", [])) == 0 and
+            len(db.get("activity_log", [])) == 0
+        )
+        if is_reset:
+            # Full database reset — clear all tables
+            for model in (ActivityLog, CorrectionPattern, VendorProfile,
+                          Anomaly, Match, Case, Document, User, KVMeta):
+                session.query(model).delete()
+            session.commit()
+            logger.info("Database reset — all tables truncated")
         else:
-            # Normal path — create if not exists
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS app_state (
-                    id TEXT PRIMARY KEY DEFAULT 'main',
-                    data JSONB NOT NULL DEFAULT '{}',
-                    updated_at TIMESTAMP DEFAULT NOW()
-                )
-            """)
-            cur.execute("INSERT INTO app_state (id, data) VALUES ('main', %s) ON CONFLICT DO NOTHING",
-                        (json.dumps(EMPTY_DB),))
-            conn.commit()
+            _sync_to_orm(db, session)
     except Exception as e:
-        print(f"[DB] pg_init error: {e}")
-        conn.rollback()
-        # Last resort — try drop and recreate
-        try:
-            cur.execute("DROP TABLE IF EXISTS app_state")
-            cur.execute("""
-                CREATE TABLE app_state (
-                    id TEXT PRIMARY KEY DEFAULT 'main',
-                    data JSONB NOT NULL DEFAULT '{}',
-                    updated_at TIMESTAMP DEFAULT NOW()
-                )
-            """)
-            cur.execute("INSERT INTO app_state (id, data) VALUES ('main', %s)",
-                        (json.dumps(EMPTY_DB),))
-            conn.commit()
-            print("[DB] Recreated app_state table from scratch")
-        except Exception as e2:
-            print(f"[DB] Failed to recreate table: {e2}")
-            conn.rollback()
+        session.rollback()
+        logger.error("DB save failed: %s", e, exc_info=True)
+        raise
     finally:
-        _pg_pool.putconn(conn)
+        session.close()
 
-def _pg_load():
-    if not _pg_pool:
-        return _fresh_db()
-    conn = _pg_pool.getconn()
-    try:
-        cur = conn.cursor()
-        cur.execute("SELECT data FROM app_state WHERE id='main'")
-        row = cur.fetchone()
-        return row[0] if row else _fresh_db()
-    finally:
-        _pg_pool.putconn(conn)
-
-def _pg_save(db):
-    if not _pg_pool:
-        return
-    conn = _pg_pool.getconn()
-    try:
-        cur = conn.cursor()
-        cur.execute("UPDATE app_state SET data=%s, updated_at=NOW() WHERE id='main'",
-                    (json.dumps(db, default=str),))
-        conn.commit()
-    finally:
-        _pg_pool.putconn(conn)
 
 # ============================================================
-# PUBLIC API
+# FILE STORAGE (unchanged)
 # ============================================================
-if DATABASE_URL:
-    print("[DB] Using PostgreSQL backend")
-    _pg_connect()
-    load_db = _pg_load
-    save_db = _pg_save
-    get_db = _pg_load
-else:
-    print("[DB] Using file backend (db.json)")
-    load_db = _file_load
-    save_db = _file_save
-    get_db = _file_get
+def save_uploaded_file(filename, content, content_type="application/octet-stream"):
+    (UPLOAD_DIR / filename).write_bytes(content)
 
-# ============================================================
-# FILE STORAGE
-# ============================================================
-def save_uploaded_file(filename: str, content: bytes, content_type: str = "application/octet-stream") -> None:
-    """Save an uploaded file to local filesystem."""
-    path = UPLOAD_DIR / filename
-    path.write_bytes(content)
 
-def load_uploaded_file(filename: str) -> tuple:
-    """Load an uploaded file, return (path, exists)."""
+def load_uploaded_file(filename):
     path = UPLOAD_DIR / filename
     return path, path.exists()
 
-# ============================================================
-# UTILITIES
-# ============================================================
+
 def _n(val, default=0):
-    """Safe numeric conversion: None/empty → default, strings → float."""
     if val is None or val == "":
         return float(default)
     try:

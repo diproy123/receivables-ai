@@ -18,5 +18,5 @@ EXPOSE 8000
 # Auto-seed demo data on every deploy (Railway has ephemeral filesystem)
 ENV SEED_DEMO=true
 
-# Start server — Python handles PORT env var internally
-CMD ["python3", "backend/server.py"]
+# Run migrations then start server
+CMD ["sh", "-c", "alembic upgrade head 2>/dev/null; python3 backend/server.py"]

@@ -30,6 +30,11 @@ from pathlib import Path
 from difflib import SequenceMatcher
 from collections import defaultdict
 
+# Initialize structured logging before anything else
+from backend.logging_config import setup_logging, get_logger
+_root_logger = setup_logging()
+logger = get_logger("server")
+
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Body, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -136,11 +141,39 @@ async def extract_with_claude(file_path, file_name, media_type, vendor_hint="", 
 # FASTAPI APP
 # ============================================================
 app = FastAPI(title="AuditLens", version=VERSION)
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+_allowed_origins = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
+app.add_middleware(CORSMiddleware, allow_origins=_allowed_origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
+# Request ID middleware for log correlation
+from starlette.middleware.base import BaseHTTPMiddleware
+from backend.logging_config import request_id_ctx
+
+class RequestIdMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        rid = str(uuid.uuid4())[:8]
+        request_id_ctx.set(rid)
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = rid
+        return response
+
+app.add_middleware(RequestIdMiddleware)
 
 # ============================================================
 # AUTH ROUTES
 # ============================================================
+@app.get("/api/health")
+async def health_check():
+    """Health check endpoint for monitoring and load balancers."""
+    from backend.db import DATABASE_URL
+    return {
+        "status": "ok",
+        "version": VERSION,
+        "database": "postgresql" if DATABASE_URL else "sqlite",
+        "llm": "connected" if USE_REAL_API else "no_api_key",
+        "rag": "enabled" if RAG_ENABLED else "disabled",
+    }
+
+
 @app.post("/api/auth/register")
 async def register(request: Request):
     try:

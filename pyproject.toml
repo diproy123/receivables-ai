@@ -1,0 +1,49 @@
+[project]
+name = "auditlens"
+version = "2.8.0"
+description = "AI-Powered Accounts Payable Audit & Compliance Platform"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "Dip Roy" }]
+
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+    "python-multipart>=0.0.9",
+    "anthropic>=0.39.0",
+    "Pillow>=10.4.0",
+    "PyPDF2>=3.0.1",
+    "numpy>=1.24.0",
+    "psycopg2-binary>=2.9.9",
+    "bcrypt>=4.1.0",
+    "PyJWT>=2.8.0",
+    "together>=2.0.0",
+    "aiohttp>=3.9.0",
+    "sqlalchemy>=2.0.0",
+    "alembic>=1.13.0",
+    "pydantic>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.27",
+    "ruff>=0.5",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]  # Line length handled by formatter
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
