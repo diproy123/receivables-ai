@@ -1159,6 +1159,30 @@ function DocModal() {
               </div>
             )}
 
+            {/* Math Validation — 5 deterministic checks */}
+            {ens?.math_validation && (
+              <div className={cn('p-3 rounded-xl border', ens.math_validation.passed ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200')}>
+                <div className="text-[10px] font-bold text-slate-900 uppercase tracking-wider mb-2">🔢 Math Validation</div>
+                <div className="flex items-center gap-2 text-xs mb-1.5">
+                  <span className={cn('font-bold', ens.math_validation.passed ? 'text-emerald-600' : 'text-amber-600')}>{ens.math_validation.passed ? '✓ All checks passed' : '⚠ Issues detected'}</span>
+                  <span className="text-slate-400">({ens.math_validation.checks_run || 5} checks)</span>
+                </div>
+                {(ens.math_validation.issues || []).length > 0 && (
+                  <div className="space-y-1">
+                    {ens.math_validation.issues.map((iss, i) => (
+                      <div key={i} className="flex items-start gap-2 text-[11px]">
+                        <span className={cn('flex-shrink-0 mt-0.5', iss.severity === 'high' ? 'text-red-500' : iss.severity === 'medium' ? 'text-amber-500' : 'text-slate-400')}>{iss.severity === 'high' ? '✗' : '~'}</span>
+                        <span className="text-slate-600">{iss.detail}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {(ens.math_validation.issues || []).length === 0 && (
+                  <div className="text-[11px] text-emerald-600">Line items ✓ · Subtotal + Tax = Total ✓ · Tax rates ✓ · Line math ✓ · Dates ✓</div>
+                )}
+              </div>
+            )}
+
             {/* Ensemble Data */}
             {ens && ens.fields_agreed != null && (
               <div className={cn('p-3 rounded-xl border', ens.ensemble_confidence === 'high' ? 'bg-emerald-50 border-emerald-200' : ens.ensemble_confidence === 'medium' ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200')}>
@@ -1212,7 +1236,9 @@ function DocModal() {
                               {hasLI.status === 'all_agreed' ? '✓' : hasLI.status === 'count_mismatch' ? '✗' : '–'}
                             </span>
                             <span className="text-slate-700 font-medium w-28 flex-shrink-0">Line Items</span>
-                            <span className="text-[10px] text-slate-400">{hasLI.matched_count != null ? `${hasLI.matched_count} items verified` : hasLI.status?.replace(/_/g, ' ')}</span>
+                            <span className="text-[10px] text-slate-400">
+                              {hasLI.matched_count != null ? `${hasLI.matched_count} items verified` : hasLI.status === 'all_agreed' ? 'Models agree on all items' : hasLI.status === 'count_mismatch' ? 'Item count differs between models' : hasLI.status === 'both_empty' ? 'No line items extracted' : 'Single model extraction'}
+                            </span>
                           </div>
                         )}
                         {hasTax && (
@@ -1221,7 +1247,9 @@ function DocModal() {
                               {hasTax.status === 'agreed' || hasTax.status === 'both_empty' ? '✓' : '~'}
                             </span>
                             <span className="text-slate-700 font-medium w-28 flex-shrink-0">Tax Details</span>
-                            <span className="text-[10px] text-slate-400">{hasTax.status?.replace(/_/g, ' ')}</span>
+                            <span className="text-[10px] text-slate-400">
+                              {hasTax.status === 'agreed' ? 'Tax calculations verified' : hasTax.status === 'both_empty' ? 'No tax on document' : hasTax.status === 'count_mismatch' ? 'Tax entries differ' : 'Single model extraction'}
+                            </span>
                           </div>
                         )}
                       </div>
