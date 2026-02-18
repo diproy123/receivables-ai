@@ -932,7 +932,7 @@ async def upload_document(request: Request, file: UploadFile = File(...), docume
         "vendor": record.get("vendor"),
         "amount": record.get("amount"),
         "currency": record.get("currency", "USD"),
-        "invoiceNumber": record.get("invoiceNumber") or record.get("poNumber") or record.get("documentNumber"),
+        "invoiceNumber": record.get("invoiceNumber") or record.get("poNumber") or record.get("contractNumber") or record.get("documentNumber"),
     }
   except Exception as e:
     import traceback

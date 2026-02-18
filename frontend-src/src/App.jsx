@@ -756,8 +756,25 @@ function UploadPage() {
       if (docType !== 'auto') fd.append('document_type', docType);
       try {
         const r = await postForm('/api/upload', fd);
-        res.push({ name: file.name, ok: !r?._err, ...(r?._err ? { error: r.detail } : r) });
-      } catch { res.push({ name: file.name, ok: false, error: 'Upload failed' }); }
+        if (!r || (!r.success && !r._err)) {
+          res.push({ name: file.name, ok: false, error: r?.error || 'Upload failed — please try again or re-login' });
+        } else if (r._err) {
+          res.push({ name: file.name, ok: false, error: r.detail || 'Server error' });
+        } else if (r.success === false) {
+          res.push({ name: file.name, ok: false, error: r.error || 'Extraction failed — use Manual Entry to index this document' });
+        } else {
+          const doc = r.document || {};
+          res.push({
+            name: file.name, ok: true,
+            type: r.type || doc.type,
+            confidence: r.confidence ?? doc.confidence,
+            vendor: r.vendor || doc.vendor,
+            amount: r.amount || doc.amount,
+            currency: r.currency || doc.currency || 'USD',
+            invoiceNumber: r.invoiceNumber || doc.invoiceNumber || doc.poNumber || doc.contractNumber || doc.documentNumber,
+          });
+        }
+      } catch (err) { res.push({ name: file.name, ok: false, error: 'Upload failed: ' + (err.message || 'network error') }); }
     }
     setResults(res); setUploading(false); setProcStep(-1); await load();
     const ok = res.filter(r => r.ok).length;
