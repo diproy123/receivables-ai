@@ -1008,16 +1008,20 @@ async def extract_with_claude(file_path: str, file_name: str, media_type: str,
         primary_result["_source"] = "ensemble_primary_only"
         primary_result["_confidence"] = primary_result.pop("extraction_confidence", 85)
         primary_result["_ensemble"] = {"mode": "single_model", "reason": "secondary_failed", "error": secondary_result.get("_error")}
-        math_issues = _math_validate(primary_result)
-        if math_issues: primary_result["_ensemble"]["math_issues"] = math_issues
+        _sdt = primary_result.get("document_type") or "invoice"
+        if _sdt in {"invoice", "purchase_order", "credit_note", "debit_note"}:
+            math_issues = _math_validate(primary_result)
+            if math_issues: primary_result["_ensemble"]["math_issues"] = math_issues
         return primary_result
 
     if not primary_ok:
         secondary_result["_source"] = "ensemble_secondary_only"
         secondary_result["_confidence"] = secondary_result.pop("extraction_confidence", 80)
         secondary_result["_ensemble"] = {"mode": "single_model", "reason": "primary_failed", "error": primary_result.get("_error")}
-        math_issues = _math_validate(secondary_result)
-        if math_issues: secondary_result["_ensemble"]["math_issues"] = math_issues
+        _sdt = secondary_result.get("document_type") or "invoice"
+        if _sdt in {"invoice", "purchase_order", "credit_note", "debit_note"}:
+            math_issues = _math_validate(secondary_result)
+            if math_issues: secondary_result["_ensemble"]["math_issues"] = math_issues
         return secondary_result
 
     # Both succeeded — merge
@@ -1040,9 +1044,16 @@ async def extract_with_claude(file_path: str, file_name: str, media_type: str,
     if meta["fields_disputed"] > 0:
         merged = await _resolve_disputes(client, content_block, merged, field_conf, meta)
 
-    math_issues = _math_validate(merged)
-    meta["math_validation"] = {"passed": not any(i["severity"] == "high" for i in math_issues),
-        "issues": math_issues, "checks_run": 5}
+    # Math validation only for doc types with financial arithmetic
+    _doc_type = merged.get("document_type") or "invoice"
+    _math_doc_types = {"invoice", "purchase_order", "credit_note", "debit_note"}
+    if _doc_type in _math_doc_types:
+        math_issues = _math_validate(merged)
+        meta["math_validation"] = {"passed": not any(i["severity"] == "high" for i in math_issues),
+            "issues": math_issues, "checks_run": 5}
+    else:
+        math_issues = []
+        meta["math_validation"] = None  # Not applicable for this doc type
 
     vendor_deviations = _vendor_cross_reference(merged, db)
     if vendor_deviations: meta["vendor_deviations"] = vendor_deviations
