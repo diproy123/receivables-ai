@@ -1231,6 +1231,209 @@ function DocModal() {
 /* ═══════════════════════════════════════════════════
    LOGIN SCREEN
    ═══════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════
+   LANDING PAGE
+   ═══════════════════════════════════════════════════ */
+function LandingPage({ onGo }) {
+  const { s } = useStore();
+  const ps = s.ps || {};
+  const rc = ps.rc || 17, lc = ps.lc || 10, ml = ps.ml || '';
+  const authTiers = ps.auth || [];
+
+  const features = [
+    { icon: Zap, title: 'Ensemble Extraction', desc: 'Two frontier models extract in parallel. Consensus engine merges with field-level confidence scoring. A third custom model joins after fine-tuning.', tag: 'AI', color: '#4f46e5' },
+    { icon: AlertTriangle, title: 'Agentic Dispute Resolution', desc: 'When models disagree on critical fields, a third AI call re-examines the document with vendor context and contract terms.', tag: 'AI', color: '#dc2626' },
+    { icon: Link2, title: '3-Way + Smart Matching', desc: 'Deterministic PO-GRN-Invoice matching. For unmatched invoices, AI reasons across all POs by vendor, amounts, and line items.', tag: 'CORE', color: '#2563eb' },
+    { icon: FileText, title: 'Investigation Briefs', desc: 'Auto-generated case narratives citing exact dollar amounts, contract clauses, and vendor history. Every claim is post-verified.', tag: 'AI', color: '#7c3aed' },
+    { icon: AlertCircle, title: 'Plain English Anomalies', desc: 'Translates technical flags into one-sentence explanations a finance manager can act on, with post-validation of every dollar cited.', tag: 'AI', color: '#f59e0b' },
+    { icon: Building2, title: 'Vendor Communication Drafts', desc: 'AI drafts dispute letters referencing your specific contract terms, PO prices, and dollar amounts.', tag: 'AI', color: '#059669' },
+    { icon: TrendingUp, title: 'Payment Prioritization', desc: 'Optimizes weekly payment runs: capture early payment discounts, hold disputed invoices, respect cash flow constraints.', tag: 'AI', color: '#0891b2' },
+    { icon: Eye, title: 'Anomaly Pattern Insights', desc: 'Identifies recurring vendor issues from statistical analysis. Only surfaces patterns meeting significance thresholds.', tag: 'AI', color: '#be123c' },
+    { icon: ClipboardList, title: 'Smart Case Routing', desc: 'Algorithm scores team members by expertise, workload, and authority. AI explains the recommendation.', tag: 'AI', color: '#4338ca' },
+    { icon: Settings, title: 'Natural Language Policy', desc: 'Configure AP rules in plain English. AI translates to parameters. You preview every change before applying.', tag: 'AI', color: '#ca8a04' },
+    { icon: Brain, title: 'Custom Model Fine-Tuning', desc: 'Your corrections train LoRA adapters on vendor-specific layouts. Gets faster, cheaper, and more accurate with every edit.', tag: 'ML', color: '#7c3aed' },
+  ];
+
+  const pipeline = [
+    { n: '1', t: 'Fact Injection', d: 'All data from your invoices, POs, and contracts as structured JSON' },
+    { n: '2', t: 'Constrained Generation', d: 'Scoped prompts with explicit anti-fabrication instructions' },
+    { n: '3', t: 'Post-Validation', d: 'Every dollar amount and reference checked against source records' },
+    { n: '4', t: 'Deterministic Fallback', d: 'Template-based output if AI fails — users never see errors' },
+  ];
+
+  const catchTypes = [
+    { title: 'Price Overcharges', examples: ['Unit price exceeds PO by 12%', 'Contract rate violated'] },
+    { title: 'Duplicate Invoices', examples: ['Same vendor + amount within 30 days', 'Resubmitted with new number'] },
+    { title: 'Quantity Discrepancies', examples: ['Invoiced 500, GRN received 420', 'Partial delivery billed in full'] },
+    { title: 'Contract Violations', examples: ['Payment terms changed', 'Unauthorized line items added'] },
+    { title: 'Unauthorized Items', examples: ['Items not on PO', 'Service charges without approval'] },
+  ];
+
+  return (
+    <div className="min-h-screen bg-white">
+      {/* Nav */}
+      <nav className="fixed top-0 inset-x-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-100">
+        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center">
+              <Shield className="w-4 h-4 text-white" />
+            </div>
+            <span className="text-lg font-extrabold tracking-tight">AuditLens</span>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={onGo} className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors">Sign In</button>
+            <button onClick={onGo} className="px-5 py-2 text-sm font-semibold text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg hover:shadow-lg hover:shadow-blue-500/25 transition-all">Get Started →</button>
+          </div>
+        </div>
+      </nav>
+
+      {/* Hero */}
+      <section className="pt-32 pb-20 px-6">
+        <div className="max-w-4xl mx-auto text-center">
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-50 text-blue-700 text-xs font-semibold mb-6">
+            <Zap className="w-3.5 h-3.5" /> AI-Powered AP Automation
+          </div>
+          <h1 className="text-5xl sm:text-6xl font-extrabold tracking-tight text-slate-900 leading-[1.1] mb-6">
+            Audit every invoice<br /><span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">before you pay.</span>
+          </h1>
+          <p className="text-lg text-slate-500 max-w-2xl mx-auto mb-10 leading-relaxed">
+            AuditLens audits every invoice against your POs, contracts, and vendor history — automatically. AI extracts, matches, and flags anomalies in under 8 seconds. Your team investigates only what matters.
+          </p>
+          <div className="flex gap-4 justify-center">
+            <button onClick={onGo} className="px-8 py-3.5 text-sm font-semibold text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl hover:shadow-xl hover:shadow-blue-500/25 transition-all">Start Auditing →</button>
+            <button className="px-8 py-3.5 text-sm font-semibold text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">Talk to Sales</button>
+          </div>
+          {ml && <p className="text-xs text-slate-400 mt-6">Powered by {ml}</p>}
+        </div>
+      </section>
+
+      {/* Pipeline */}
+      <section className="py-16 bg-slate-50 px-6">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-12">
+            <div className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-2">LIVE DEMO</div>
+            <h2 className="text-3xl font-extrabold tracking-tight">⚡ How AuditLens Processes Every Invoice</h2>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {pipeline.map(s => (
+              <div key={s.n} className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm">
+                <div className="w-9 h-9 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold mb-4">{s.n}</div>
+                <h3 className="text-sm font-bold text-slate-900 mb-2">{s.t}</h3>
+                <p className="text-xs text-slate-500 leading-relaxed">{s.d}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Grounded AI */}
+      <section className="py-16 px-6">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-extrabold tracking-tight">Enterprise-Grade Trust</h2>
+            <p className="text-slate-500 mt-2">Every number verified. Every decision auditable.</p>
+          </div>
+          <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-8 text-white mb-8">
+            <h3 className="text-lg font-bold mb-2">Grounded AI Architecture</h3>
+            <p className="text-sm text-slate-300 mb-6">Every AI output passes through a 4-stage verification pipeline. Claude reasons over your data — the system verifies every claim before it reaches your team.</p>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {pipeline.map(s => (
+                <div key={s.n} className="bg-white/10 rounded-xl p-4 backdrop-blur">
+                  <div className="text-xs font-bold text-blue-400 mb-1">Stage {s.n}</div>
+                  <div className="text-sm font-semibold">{s.t}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+          {authTiers.length > 0 && (
+            <div className="bg-white border border-slate-200 rounded-2xl p-8">
+              <h3 className="text-lg font-bold mb-4">Delegation of Authority</h3>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                {authTiers.map((t, i) => (
+                  <div key={i} className="rounded-xl p-4 border" style={{ borderColor: t.color + '40', background: t.color + '08' }}>
+                    <div className="text-sm font-bold" style={{ color: t.color }}>{t.tier}</div>
+                    <div className="text-xs text-slate-500 mt-1">Up to {t.limit}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* What We Catch */}
+      <section className="py-16 bg-slate-50 px-6">
+        <div className="max-w-5xl mx-auto">
+          <h2 className="text-3xl font-extrabold tracking-tight text-center mb-10">What We Catch</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {catchTypes.map(ct => (
+              <div key={ct.title} className="bg-white rounded-2xl p-6 border border-slate-100">
+                <h3 className="text-sm font-bold text-slate-900 mb-3">{ct.title}</h3>
+                {ct.examples.map((ex, i) => (
+                  <div key={i} className="flex items-start gap-2 text-xs text-slate-500 mb-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 mt-0.5 flex-shrink-0" />{ex}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* AI Features Grid */}
+      <section className="py-16 px-6">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-extrabold tracking-tight">AI Intelligence Layer</h2>
+            <p className="text-slate-500 mt-2">AI where it matters. Rules where you need control.</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {features.map(f => (
+              <div key={f.title} className="bg-white rounded-2xl p-6 border border-slate-100 hover:shadow-lg hover:shadow-slate-200/50 transition-shadow">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: f.color + '15' }}>
+                    <f.icon className="w-4.5 h-4.5" style={{ color: f.color }} />
+                  </div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ color: f.color, background: f.color + '12' }}>{f.tag}</span>
+                </div>
+                <h3 className="text-sm font-bold text-slate-900 mb-1.5">{f.title}</h3>
+                <p className="text-xs text-slate-500 leading-relaxed">{f.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Global + Stats */}
+      <section className="py-16 bg-slate-50 px-6">
+        <div className="max-w-5xl mx-auto text-center">
+          <h2 className="text-3xl font-extrabold tracking-tight mb-4">Global Ready</h2>
+          <p className="text-slate-500 mb-10">Auto-detect document language, normalize regional formats, validate against local tax systems.</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
+            <div className="bg-white rounded-2xl p-6 border border-slate-100"><div className="text-3xl font-extrabold text-blue-600">{rc}</div><div className="text-xs text-slate-500 mt-1">Anomaly Rules</div></div>
+            <div className="bg-white rounded-2xl p-6 border border-slate-100"><div className="text-3xl font-extrabold text-indigo-600">{lc}</div><div className="text-xs text-slate-500 mt-1">Languages</div></div>
+            <div className="bg-white rounded-2xl p-6 border border-slate-100"><div className="text-3xl font-extrabold text-emerald-600">&lt;8s</div><div className="text-xs text-slate-500 mt-1">Per Invoice</div></div>
+            <div className="bg-white rounded-2xl p-6 border border-slate-100"><div className="text-3xl font-extrabold text-amber-600">100%</div><div className="text-xs text-slate-500 mt-1">Audit Coverage</div></div>
+          </div>
+        </div>
+      </section>
+
+      {/* CTA */}
+      <section className="py-20 px-6">
+        <div className="max-w-3xl mx-auto text-center">
+          <h2 className="text-3xl font-extrabold tracking-tight mb-4">See what your AP team is missing.</h2>
+          <p className="text-slate-500 mb-8">Upload your first invoice and AuditLens will extract, match, and audit it in under 8 seconds.</p>
+          <button onClick={onGo} className="px-10 py-4 text-sm font-semibold text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl hover:shadow-xl hover:shadow-blue-500/25 transition-all">Start Free →</button>
+          <p className="text-xs text-slate-400 mt-8">Enterprise AP Automation · SOX-Ready</p>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   LOGIN / REGISTER
+   ═══════════════════════════════════════════════════ */
 function LoginScreen() {
   const { login, register } = useStore();
   const [mode, setMode] = useState('login');
@@ -1327,7 +1530,23 @@ function AppShell() {
    ROOT
    ═══════════════════════════════════════════════════ */
 export default function App() {
-  const { s } = useStore();
-  if (!s.user && !s.token) return <LoginScreen />;
+  const { s, load } = useStore();
+  const [view, setView] = useState(s.user || s.token ? 'app' : 'landing');
+
+  useEffect(() => {
+    if (view === 'landing') load();
+  }, [view, load]);
+
+  useEffect(() => {
+    if (s.user && s.token) setView('app');
+  }, [s.user, s.token]);
+
+  // FIX: transition back to landing on logout
+  useEffect(() => {
+    if (!s.user && !s.token && view === 'app') setView('landing');
+  }, [s.user, s.token, view]);
+
+  if (view === 'landing') return <LandingPage onGo={() => setView('login')} />;
+  if (view === 'login' && !s.user) return <LoginScreen />;
   return <AppShell />;
 }
