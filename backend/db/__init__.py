@@ -19,11 +19,10 @@ from datetime import datetime, timezone
 
 # Register psycopg2 Json adapter so Python dicts/lists serialize to JSONB
 try:
-    import psycopg2.extras
-    psycopg2.extras.register_default_jsonhex(loads=json.loads)
-    from psycopg2.extensions import register_adapter, AsIs
-    register_adapter(dict, psycopg2.extras.Json)
-    register_adapter(list, psycopg2.extras.Json)
+    from psycopg2.extras import Json
+    from psycopg2.extensions import register_adapter
+    register_adapter(dict, Json)
+    register_adapter(list, Json)
 except ImportError:
     pass  # SQLite mode — psycopg2 not installed
 
