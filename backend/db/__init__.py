@@ -124,6 +124,9 @@ def _sync_to_orm(db: dict, session):
         else:
             session.add(Document.from_dict(d))
 
+    # Flush documents first — anomalies have FK to documents.id
+    session.flush()
+
     # Anomalies
     existing = {r[0] for r in session.query(Anomaly.id).all()}
     for a in db.get("anomalies", []):

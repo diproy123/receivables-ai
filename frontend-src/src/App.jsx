@@ -1757,7 +1757,7 @@ function AppShell() {
   return (
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar />
-      <main className="flex-1 ml-[258px] p-8 max-w-[1280px]">
+      <main className="flex-1 ml-[258px] p-8 min-w-0 overflow-x-hidden">
         <Page />
       </main>
       <DocModal />

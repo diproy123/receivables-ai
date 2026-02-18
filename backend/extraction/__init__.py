@@ -106,7 +106,7 @@ _STRING_FIELDS_BASE = {"vendor_name", "document_number", "currency", "payment_te
 _STRING_FIELDS_BY_TYPE = {
     "invoice": {"due_date", "po_reference"},
     "purchase_order": {"delivery_date"},
-    "contract": {},
+    "contract": set(),
     "credit_note": {"original_invoice_ref"},
     "debit_note": {"original_invoice_ref"},
     "goods_receipt": {"po_reference", "received_date", "received_by"},
