@@ -876,11 +876,25 @@ function UploadPage() {
             <button onClick={() => setResults([])} className="btn-g text-xs"><X className="w-3 h-3" /> Clear</button>
           </div>
           <div className="space-y-2">{results.map((r, i) => (
-            <div key={i} className={cn('flex items-center gap-4 p-3 rounded-xl', r.ok ? 'bg-emerald-50' : 'bg-red-50')}>
-              {r.ok ? <CheckCircle2 className="w-5 h-5 text-emerald-600" /> : <XCircle className="w-5 h-5 text-red-600" />}
-              <div className="flex-1"><div className="text-sm font-semibold">{r.name}</div>{!r.ok && <div className="text-xs text-red-500">{r.error}</div>}</div>
-              {r.ok && <Badge c={docColor(r.type)}>{docLabel(r.type)}</Badge>}
-              {r.ok && <span className="font-mono text-sm">{pct(r.confidence)}</span>}
+            <div key={i} className={cn('p-3 rounded-xl', r.ok ? 'bg-emerald-50' : 'bg-red-50')}>
+              <div className="flex items-center gap-3">
+                {r.ok ? <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" /> : <XCircle className="w-5 h-5 text-red-600 flex-shrink-0" />}
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold truncate">{r.name}</div>
+                  {!r.ok && <div className="text-xs text-red-500 mt-0.5">{r.error}</div>}
+                  {r.ok && (r.vendor || r.invoiceNumber) && (
+                    <div className="text-xs text-slate-500 mt-0.5">
+                      {r.vendor && <span>{r.vendor}</span>}
+                      {r.vendor && r.invoiceNumber && <span className="mx-1">·</span>}
+                      {r.invoiceNumber && <span className="font-mono">{r.invoiceNumber}</span>}
+                      {r.amount > 0 && <span className="mx-1">·</span>}
+                      {r.amount > 0 && <span className="font-semibold">{$(r.amount, r.currency)}</span>}
+                    </div>
+                  )}
+                </div>
+                {r.ok && r.type && <Badge c={docColor(r.type)}>{docLabel(r.type)}</Badge>}
+                {r.ok && r.confidence != null && <span className="font-mono text-sm font-semibold text-emerald-700">{pct(r.confidence)}</span>}
+              </div>
             </div>
           ))}</div>
         </div>
@@ -1137,8 +1151,34 @@ function DocModal() {
                   <div><div className="text-lg font-bold" style={{ color: (ens.fields_disputed || 0) > 0 ? '#ef4444' : '#10b981' }}>{ens.fields_disputed || 0}</div><div className="text-[10px] text-slate-400">Disputed</div></div>
                   <div><div className="text-lg font-bold" style={{ color: (ens.agreement_rate || 0) >= 90 ? '#10b981' : '#f59e0b' }}>{pct(ens.agreement_rate)}</div><div className="text-[10px] text-slate-400">Agreement</div></div>
                 </div>
-                {ens.resolution_applied && <div className="text-xs text-accent-700">✔ Disputes auto-resolved ({ens.fields_resolved?.join(', ')})</div>}
-                <div className="text-[10px] text-slate-400 mt-1">Models: {ens.models_used?.map(m => m.split('-').slice(0, 2).join(' ')).join(' + ') || 'N/A'} · {ens.total_latency_ms || 0}ms</div>
+                {/* Per-field breakdown */}
+                {doc.fieldConfidence && Object.keys(doc.fieldConfidence).length > 0 && (
+                  <div className="mt-2 pt-2 border-t border-current/10">
+                    <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">Field-Level Details</div>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                      {Object.entries(doc.fieldConfidence).filter(([k]) => k !== 'line_items' && k !== 'tax_details').map(([field, info]) => (
+                        <div key={field} className="flex items-center gap-1.5 text-[10px]">
+                          <span style={{ color: info.status === 'agreed' || info.status === 'near_match' ? '#10b981' : info.status === 'disputed' ? '#ef4444' : '#f59e0b' }}>
+                            {info.status === 'agreed' || info.status === 'near_match' ? '✓' : info.status === 'disputed' ? '✗' : '~'}
+                          </span>
+                          <span className="text-slate-600 truncate">{field.replace(/_/g, ' ')}</span>
+                          <span className="text-[8px] text-slate-400 ml-auto">{info.status?.replace('_', ' ')}</span>
+                        </div>
+                      ))}
+                      {doc.fieldConfidence.line_items && (
+                        <div className="flex items-center gap-1.5 text-[10px]">
+                          <span style={{ color: doc.fieldConfidence.line_items.status === 'all_agreed' ? '#10b981' : '#f59e0b' }}>
+                            {doc.fieldConfidence.line_items.status === 'all_agreed' ? '✓' : '~'}
+                          </span>
+                          <span className="text-slate-600">line items</span>
+                          <span className="text-[8px] text-slate-400 ml-auto">{doc.fieldConfidence.line_items.matched_count != null ? `${doc.fieldConfidence.line_items.matched_count} matched` : doc.fieldConfidence.line_items.status?.replace('_', ' ')}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {ens.resolution_applied && <div className="text-xs text-accent-700 mt-1">✔ Disputes auto-resolved ({ens.fields_resolved?.join(', ')})</div>}
+                <div className="text-[10px] text-slate-400 mt-1">Models: {ens.models_used?.map(m => m.split('-').slice(0, 2).join(' ')).join(' + ') || 'N/A'} · {(ens.primary_latency_ms || 0) + (ens.secondary_latency_ms || 0) || ens.total_latency_ms || 0}ms</div>
               </div>
             )}
 
