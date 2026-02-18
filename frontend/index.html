@@ -9,6 +9,27 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..800;1,9..40,300..800&family=Playfair+Display:wght@700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
   <script type="module" crossorigin src="/assets/index-aJnEGFCt.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/index-BSxvho-V.css">
+  <script>
+  // FIX: Logout navigation — compiled React CU component doesn't transition
+  // back to "landing" when user/token become null. We detect sessionStorage
+  // clearing (which the logout handler does) and force a clean page reload.
+  (function(){
+    var _origRemove = Storage.prototype.removeItem;
+    var _logoutPending = false;
+    Storage.prototype.removeItem = function(key) {
+      _origRemove.call(this, key);
+      if (key === 'al_token' && !_logoutPending) {
+        _logoutPending = true;
+        // Small delay to let React finish its state update
+        setTimeout(function() {
+          if (!sessionStorage.getItem('al_token')) {
+            window.location.replace(window.location.pathname);
+          }
+        }, 50);
+      }
+    };
+  })();
+  </script>
 </head>
 <body class="bg-slate-50 text-slate-900 antialiased">
   <div id="root"></div>

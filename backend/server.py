@@ -162,8 +162,8 @@ app.add_middleware(RequestIdMiddleware)
 # AUTH ROUTES
 # ============================================================
 @app.get("/api/health/ping")
-async def health_check():
-    """Lightweight health check endpoint for monitoring and load balancers."""
+async def health_check_simple():
+    """Simple health check for monitoring and load balancers."""
     from backend.db import DATABASE_URL
     return {
         "status": "ok",
@@ -925,14 +925,15 @@ async def upload_document(request: Request, file: UploadFile = File(...), docume
     return {"success": True, "document": record, "new_matches": new_matches,
         "new_anomalies": new_anomalies, "extraction_source": extracted.get("_source", "unknown"),
         "triage": triage_result, "processing_time": _timings,
-        # ── Top-level fields for React frontend result display ──
+        # ── Top-level fields for React frontend (BUG 6 fix) ──
+        # Upload result card reads k.type, k.confidence directly (not k.document.type)
         "type": record.get("type"),
         "confidence": record.get("confidence", 0),
         "vendor": record.get("vendor"),
         "amount": record.get("amount"),
         "currency": record.get("currency", "USD"),
         "invoiceNumber": record.get("invoiceNumber") or record.get("poNumber") or record.get("documentNumber"),
-        }
+    }
   except Exception as e:
     import traceback
     tb = traceback.format_exc()
@@ -1258,12 +1259,24 @@ async def get_triage_overview():
 
     # Build lane counts from invoice records (source of truth after edits)
     auto_approved = [i for i in invoices if i.get("triageLane") == "AUTO_APPROVE"]
-    review = [i for i in invoices if i.get("triageLane") == "REVIEW"]
+    review = [i for i in invoices if i.get("triageLane") in ("REVIEW", "MANAGER_REVIEW", "VP_REVIEW", "CFO_REVIEW")]
+    manager_review = [i for i in invoices if i.get("triageLane") == "MANAGER_REVIEW"]
+    vp_review = [i for i in invoices if i.get("triageLane") == "VP_REVIEW"]
+    cfo_review = [i for i in invoices if i.get("triageLane") == "CFO_REVIEW"]
     blocked = [i for i in invoices if i.get("triageLane") == "BLOCK"]
     untriaged = [i for i in invoices if not i.get("triageLane")]
     total_triaged = len(auto_approved) + len(review) + len(blocked)
 
+    # React frontend (bU component) reads triageData["AUTO_APPROVE"] etc. as invoice arrays
     return {
+        # ── Lane-keyed invoice arrays for React Triage page ──
+        "AUTO_APPROVE": auto_approved,
+        "MANAGER_REVIEW": manager_review if manager_review else review,
+        "VP_REVIEW": vp_review,
+        "CFO_REVIEW": cfo_review,
+        "BLOCK": blocked,
+        "REVIEW": review,
+        # ── Legacy structured response ──
         "summary": {
             "totalInvoices": len(invoices),
             "totalTriaged": total_triaged,
@@ -1765,7 +1778,7 @@ async def get_dashboard():
     # ── F1: Triage metrics ──
     triaged_invoices = [i for i in db["invoices"] if i.get("triageLane")]
     triage_auto = [i for i in triaged_invoices if i.get("triageLane") == "AUTO_APPROVE"]
-    triage_review = [i for i in triaged_invoices if i.get("triageLane") == "REVIEW"]
+    triage_review = [i for i in triaged_invoices if i.get("triageLane") in ("REVIEW", "MANAGER_REVIEW", "VP_REVIEW", "CFO_REVIEW")]
     triage_blocked = [i for i in triaged_invoices if i.get("triageLane") == "BLOCK"]
     total_triaged = len(triaged_invoices)
     auto_approve_rate = round(len(triage_auto) / max(total_triaged, 1) * 100, 1)
@@ -1775,41 +1788,68 @@ async def get_dashboard():
     high_risk_vendors = [p for p in profiles if p.get("riskLevel") == "high"]
     worsening_vendors = [p for p in profiles if p.get("trend") == "worsening"]
 
-    # ── Computed metrics ──
+    # ── Pre-compute values needed by both legacy and React frontend ──
     _total_risk = round(sum(_n(a.get("amount_at_risk")) for a in oa if _n(a.get("amount_at_risk")) > 0), 2)
-    _high_sev = sum(1 for a in oa if a.get("severity") == "high")
-    _savings = round(
+    _high_severity = sum(1 for a in oa if a.get("severity") == "high")
+    _savings_discovered = round(
         sum(_n(a.get("amount_at_risk")) for a in db.get("anomalies", [])
             if _n(a.get("amount_at_risk")) > 0 and a.get("status") != "dismissed"), 2)
+    _processing_speed = _compute_processing_speed(db)
+    _total_invoices = len(db["invoices"])
 
-    # ── Aging — provide BOTH formats for backward + React frontend compat ──
-    # Old format: aging.buckets = {current, 1_30, 31_60, 61_90, 90_plus}
-    # React format: aging = {"0-30": val, "31-60": val, "61-90": val, "90+": val}
+    # ── React frontend reads dash.summary_bar for stat cards ──
+    _summary_bar = {
+        "total_invoices": _total_invoices,
+        "total_ap": round(tar, 2),
+        "auto_approve_rate": auto_approve_rate,
+        "total_risk": _total_risk,
+        "avg_confidence": round(ac, 1),
+        "high_severity": _high_severity,
+        "savings_discovered": _savings_discovered,
+        "processing_speed": _processing_speed,
+    }
+
+    # ── React frontend reads aging["0-30"], ["31-60"], ["61-90"], ["90+"] ──
     _aging_react = {
         "0-30": round(bk.get("current", 0) + bk.get("1_30", 0), 2),
         "31-60": round(bk.get("31_60", 0), 2),
         "61-90": round(bk.get("61_90", 0), 2),
         "90+": round(bk.get("90_plus", 0), 2),
-        # Keep original buckets as sub-key for backward compat
+        # Legacy keys preserved
         "buckets": {k: round(v, 2) for k, v in bk.items()},
         "counts": bc,
     }
 
     return {
-        # ── summary_bar: what the React dashboard component reads ──
-        "summary_bar": {
-            "total_invoices": len(db["invoices"]),
-            "total_ap": round(tar, 2),
+        # ── React frontend stat cards (BUG 2 fix) ──
+        "summary_bar": _summary_bar,
+        # ── React frontend aging chart (BUG 3 fix) ──
+        "aging": _aging_react,
+        # ── React frontend triage donut + sidebar badge (BUG 4 fix) ──
+        "triage": {
+            "total_triaged": total_triaged,
+            "auto_approved": len(triage_auto),
+            "review": len(triage_review),
+            "in_review": len(triage_review),   # React reads i.in_review
+            "blocked": len(triage_blocked),
             "auto_approve_rate": auto_approve_rate,
-            "total_risk": _total_risk,
-            "avg_confidence": round(ac, 1),
-            "high_severity": _high_sev,
-            "savings_discovered": _savings,
-            "processing_speed": _compute_processing_speed(db),
+            "blocked_amount": round(sum(i.get("amount", 0) for i in triage_blocked), 2),
+            "auto_approved_amount": round(sum(i.get("amount", 0) for i in triage_auto), 2),
         },
-        # ── Top-level fields (backward compat with old frontend / API consumers) ──
-        "total_ap": round(tar, 2), "total_ar": round(tar, 2), "unpaid_count": len(unpaid), "total_documents": len(ad),
-        "invoice_count": len(db["invoices"]), "po_count": len(db["purchase_orders"]),
+        # ── Vendor risk metrics (sidebar badge reads dash.vendor_risk.high_risk) ──
+        "vendor_risk": {
+            "total_vendors": len(profiles),
+            "high_risk": len(high_risk_vendors),
+            "worsening": len(worsening_vendors),
+            "high_risk_vendors": [{"vendor": p.get("vendorDisplay", ""), "score": p.get("riskScore", 0),
+                                   "trend": p.get("trend", "")} for p in high_risk_vendors[:5]],
+        },
+        # ── Case metrics (sidebar badge reads dash.cases.active) ──
+        "cases": compute_case_metrics(db.get("cases", []), db.get("users", [])),
+        # ── Legacy/backward-compat top-level fields ──
+        "total_ap": round(tar, 2), "total_ar": round(tar, 2),
+        "unpaid_count": len(unpaid), "total_documents": len(ad),
+        "invoice_count": _total_invoices, "po_count": len(db["purchase_orders"]),
         "grn_count": len(db.get("goods_receipts", [])),
         "contract_count": len(db.get("contracts", [])),
         "auto_matched": sum(1 for m in db["matches"] if m["status"] == "auto_matched"),
@@ -1817,10 +1857,8 @@ async def get_dashboard():
         "three_way_matched": sum(1 for m in db["matches"] if m.get("matchType") == "three_way"),
         "two_way_only": sum(1 for m in db["matches"] if m.get("matchType") != "three_way"),
         "avg_confidence": round(ac, 1), "anomaly_count": len(oa),
-        "total_risk": _total_risk,
-        "high_severity": _high_sev,
-        # ── SAVINGS DISCOVERED (VC metric) ──
-        "savings_discovered": _savings,
+        "total_risk": _total_risk, "high_severity": _high_severity,
+        "savings_discovered": _savings_discovered,
         "savings_breakdown": {
             "overcharges": round(sum(_n(a.get("amount_at_risk")) for a in db.get("anomalies", [])
                 if a.get("type") in ("PRICE_OVERCHARGE", "AMOUNT_DISCREPANCY", "CONTRACT_PRICE_VIOLATION")
@@ -1836,42 +1874,20 @@ async def get_dashboard():
                 and _n(a.get("amount_at_risk")) > 0 and a.get("status") != "dismissed"), 2),
             "early_payment_opportunities": round(epd_savings, 2),
         },
-        # ── PROCESSING SPEED (VC metric) ──
-        "processing_speed": _compute_processing_speed(db),
+        "processing_speed": _processing_speed,
         "over_invoiced_pos": sum(1 for m in db["matches"] if m.get("overInvoiced")),
         "disputed_count": sum(1 for i in db["invoices"] if i.get("status") == "disputed"),
         "due_in_7_days": len(due_7d), "due_in_7_days_amount": round(sum(i["amount"] for i in due_7d), 2),
         "early_payment_savings": round(epd_savings, 2),
         "top_vendors": [{"vendor": vendor_display.get(v, v), "spend": round(s, 2)} for v, s in top_vendors],
-        # ── Aging — React-compatible flat keys + nested for backward compat ──
-        "aging": _aging_react,
         "recent_activity": sorted(db.get("activity_log", []), key=lambda x: x.get("timestamp", ""), reverse=True)[:10],
         "verified_count": sum(1 for d in ad if d.get("manuallyVerified")),
         "correction_patterns": len(db.get("correction_patterns", [])),
         "rag_stats": get_rag_stats() if RAG_ENABLED else None,
         "api_mode": "claude_api" if USE_REAL_API else "no_api_key",
         "db_backend": "postgres" if DATABASE_URL else "file",
-        # F1: Triage metrics — include BOTH "review" and "in_review" for compat
-        "triage": {
-            "total_triaged": total_triaged,
-            "auto_approved": len(triage_auto),
-            "review": len(triage_review),
-            "in_review": len(triage_review),   # React frontend reads this key
-            "blocked": len(triage_blocked),
-            "auto_approve_rate": auto_approve_rate,
-            "blocked_amount": round(sum(i.get("amount", 0) for i in triage_blocked), 2),
-            "auto_approved_amount": round(sum(i.get("amount", 0) for i in triage_auto), 2),
-        },
-        # F3: Vendor risk metrics
-        "vendor_risk": {
-            "total_vendors": len(profiles),
-            "high_risk": len(high_risk_vendors),
-            "worsening": len(worsening_vendors),
-            "high_risk_vendors": [{"vendor": p.get("vendorDisplay", ""), "score": p.get("riskScore", 0),
-                                   "trend": p.get("trend", "")} for p in high_risk_vendors[:5]],
-        },
-        # Case management metrics
-        "cases": compute_case_metrics(db.get("cases", []), db.get("users", [])),
+        # Legacy total_invoices at top level
+        "total_invoices": _total_invoices,
     }
 
 @app.get("/api/correction-patterns")
