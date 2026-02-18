@@ -1340,22 +1340,30 @@ function LandingPage({ onGo }) {
         </div>
       </section>
 
-      {/* ── Pipeline (compact card) ── */}
+      {/* ── Processing Pipeline (LIVE DEMO) ── */}
       <section className="px-6 pb-12">
         <div className="max-w-5xl mx-auto">
-          <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-2">
-              <Zap className="w-4 h-4 text-blue-600" />
-              <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">4-Stage Verification Pipeline</span>
+          <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden relative">
+            <div className="absolute top-3 right-3 px-2.5 py-1 rounded-md bg-emerald-600 text-white text-[9px] font-bold tracking-wider shadow-sm">LIVE DEMO</div>
+            <div className="px-6 py-4 border-b border-slate-100">
+              <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">⚡ How AuditLens Processes Every Invoice</span>
             </div>
-            <div className="grid grid-cols-2 lg:grid-cols-4 divide-x divide-slate-100">
-              {pipeline.map(st => (
-                <div key={st.n} className="px-5 py-4">
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px] font-bold">{st.n}</div>
-                    <span className="text-[12px] font-bold text-slate-900">{st.t}</span>
+            <div className="p-5 space-y-2">
+              {[
+                { icon: Zap, label: 'AI Extraction', sub: 'Ensemble models extract every field in parallel with self-correcting dispute resolution', color: '#4f46e5' },
+                { icon: Link2, label: '3-Way Matching', sub: 'Automatically match to POs and goods receipts — AI resolves fuzzy references', color: '#059669' },
+                { icon: Shield, label: 'Anomaly Detection', sub: `${rc} rules + AI auditor cross-references contracts, vendor history, and past corrections`, color: '#d97706' },
+                { icon: ClipboardList, label: 'Smart Triage', sub: 'Auto-approve clean invoices, route exceptions to the right person with SLA tracking', color: '#dc2626' },
+                { icon: FileText, label: 'Investigation Brief', sub: 'AI-generated case narrative citing exact amounts, clauses, and recommended actions', color: '#0369a1' },
+              ].map(st => (
+                <div key={st.label} className="flex gap-3 items-start p-3 rounded-xl" style={{ background: st.color + '08' }}>
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: st.color + '15' }}>
+                    <st.icon className="w-4 h-4" style={{ color: st.color }} />
                   </div>
-                  <p className="text-[11px] text-slate-500 leading-relaxed">{st.d}</p>
+                  <div>
+                    <div className="text-[13px] font-bold text-slate-900">{st.label}</div>
+                    <div className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">{st.sub}</div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -1469,18 +1477,26 @@ function LandingPage({ onGo }) {
                 <span className="text-xs font-bold text-slate-900">Delegation of Authority</span>
               </div>
               <div className="space-y-1.5">
-                {(authTiers.length ? authTiers : defaultAuth).map((a, i) => (
-                  <div key={i} className="flex justify-between items-center px-3 py-2 rounded-lg bg-slate-50">
-                    <span className="text-[11px] font-semibold" style={{ color: a.c || defaultAuth[i]?.c || '#64748b' }}>{a.tier || a.r}</span>
-                    <span className="text-[11px] text-slate-500 font-mono">{a.limit || a.l}</span>
-                  </div>
-                ))}
+                {(authTiers.length ? authTiers : defaultAuth).map((a, i) => {
+                  const authLevelColors = ['#166534', '#15803d', '#ca8a04', '#dc2626'];
+                  const name = a.title || a.r || `Level ${i+1}`;
+                  const limit = a.unlimited ? 'Unlimited' : a.limit_usd ? `$${Number(a.limit_usd).toLocaleString()}` : (a.l || 'Configurable');
+                  return (
+                    <div key={i} className="flex justify-between items-center px-3 py-2 rounded-lg bg-slate-50">
+                      <span className="text-[11px] font-semibold" style={{ color: authLevelColors[i] || '#64748b' }}>{name}</span>
+                      <span className="text-[11px] text-slate-500 font-mono">{limit}</span>
+                    </div>
+                  );
+                })}
               </div>
               {Object.keys(sla).length > 0 && (
-                <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap gap-1">
-                  {Object.entries(sla).map(([k, v]) => (
-                    <span key={k} className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100">{k.replace(/_/g, ' ')}: <strong>{v}</strong></span>
-                  ))}
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">SLA Targets</div>
+                  <div className="flex flex-wrap gap-1">
+                    {Object.entries(sla).map(([k, v]) => (
+                      <span key={k} className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100">{k}: <strong>{v}h</strong></span>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -1507,6 +1523,10 @@ function LandingPage({ onGo }) {
           </div>
 
           {/* Deploy Options */}
+          <div className="text-center mb-4 mt-2">
+            <h3 className="text-lg font-extrabold tracking-tight">Deploy Anywhere</h3>
+            <p className="text-xs text-slate-400 mt-0.5">Model-agnostic by design. Your data, your infrastructure, your rules.</p>
+          </div>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
             {deployOptions.map(f => (
               <div key={f.title} className="bg-white rounded-2xl border border-slate-200/60 p-5 relative">
