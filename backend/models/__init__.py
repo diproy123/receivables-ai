@@ -110,7 +110,7 @@ class Document(Base):
     # Metadata
     payment_terms = Column(String(255))
     notes = Column(Text)
-    early_payment_discount = Column(String(255))
+    early_payment_discount = Column(JsonType)
     locale = Column(String(20), default="en_US")
     document_language = Column(String(10), default="en")
     uploaded_file = Column(String(500))

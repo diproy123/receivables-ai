@@ -17,6 +17,16 @@ import logging
 from pathlib import Path
 from datetime import datetime, timezone
 
+# Register psycopg2 Json adapter so Python dicts/lists serialize to JSONB
+try:
+    import psycopg2.extras
+    psycopg2.extras.register_default_jsonhex(loads=json.loads)
+    from psycopg2.extensions import register_adapter, AsIs
+    register_adapter(dict, psycopg2.extras.Json)
+    register_adapter(list, psycopg2.extras.Json)
+except ImportError:
+    pass  # SQLite mode — psycopg2 not installed
+
 from backend.config import DB_PATH, DATA_DIR, UPLOAD_DIR, PERSIST_DATA
 from backend.models import (
     Base, User, Document, Anomaly, Match, Case,
@@ -54,9 +64,34 @@ def _ensure_tables():
         return
     try:
         init_db()
+        # Migrate existing columns if needed (safe to run multiple times)
+        _run_migrations()
         _tables_initialized = True
     except Exception as e:
         logger.warning("DB table init deferred (will retry): %s", e)
+
+
+def _run_migrations():
+    """Apply schema migrations for existing Postgres databases."""
+    session = _get_session_factory()()
+    try:
+        bind = session.get_bind()
+        if "postgresql" in str(bind.url):
+            from sqlalchemy import text
+            # Migration: early_payment_discount varchar → jsonb
+            try:
+                session.execute(text(
+                    "ALTER TABLE documents ALTER COLUMN early_payment_discount "
+                    "TYPE JSONB USING early_payment_discount::jsonb"
+                ))
+                session.commit()
+                logger.info("Migration: early_payment_discount → JSONB")
+            except Exception:
+                session.rollback()  # Already JSONB or table doesn't exist yet
+    except Exception as e:
+        logger.debug("Migration check skipped: %s", e)
+    finally:
+        session.close()
 
 
 def _doc_type_to_collection(doc_type):
