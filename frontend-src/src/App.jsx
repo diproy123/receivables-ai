@@ -1292,12 +1292,12 @@ function LandingPage({ onGo }) {
       <nav className="fixed top-0 inset-x-0 z-50 bg-white/80 backdrop-blur-xl border-b border-slate-200/50">
         <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-slate-900 flex items-center justify-center"><Shield className="w-3.5 h-3.5 text-white" /></div>
-            <span className="text-[15px] font-extrabold tracking-tight text-slate-900">AuditLens</span>
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-red-600 to-red-500 shadow-md shadow-red-200/50 flex items-center justify-center"><Shield className="w-3.5 h-3.5 text-white" /></div>
+            <span className="text-[17px] font-extrabold tracking-tight text-slate-900">AuditLens</span>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={onGo} className="px-4 py-1.5 text-[13px] font-medium text-slate-500 hover:text-slate-900 transition-colors">Sign In</button>
-            <button onClick={onGo} className="px-5 py-1.5 text-[13px] font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-all">Get Started →</button>
+            <button onClick={onGo} className="px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-900 transition-colors">Sign In</button>
+            <button onClick={onGo} className="px-5 py-2 text-sm font-semibold text-white bg-gradient-to-r from-red-600 to-red-500 rounded-lg hover:bg-slate-800 transition-all">Get Started →</button>
           </div>
         </div>
       </nav>
@@ -1311,14 +1311,14 @@ function LandingPage({ onGo }) {
           <h1 className="text-[44px] sm:text-[52px] font-extrabold tracking-[-0.03em] text-slate-900 leading-[1.08] mb-5">
             Audit every invoice<br /><span style={{ color: '#2563eb' }}>before you pay.</span>
           </h1>
-          <p className="text-[15px] text-slate-500 max-w-xl mx-auto mb-8 leading-relaxed">
+          <p className="text-base text-slate-500 max-w-xl mx-auto mb-8 leading-relaxed">
             AI extracts, matches, and flags anomalies in under 8 seconds. Your team investigates only what matters.
           </p>
           <div className="flex gap-3 justify-center mb-4">
-            <button onClick={onGo} className="px-7 py-3 text-[13px] font-semibold text-white bg-slate-900 rounded-xl hover:bg-slate-800 transition-all shadow-sm">Start Auditing →</button>
-            <button className="px-7 py-3 text-[13px] font-semibold text-slate-600 border border-slate-200 rounded-xl hover:bg-white transition-colors">Talk to Sales</button>
+            <button onClick={onGo} className="px-7 py-3 text-sm font-semibold text-white bg-slate-900 rounded-xl hover:bg-slate-800 transition-all shadow-sm">Start Auditing →</button>
+            <button className="px-7 py-3 text-sm font-semibold text-slate-600 border border-slate-200 rounded-xl hover:bg-white transition-colors">Talk to Sales</button>
           </div>
-          {ml && <p className="text-[11px] text-slate-400">Powered by {ml}</p>}
+          {ml && <p className="text-xs text-slate-400">Powered by {ml}</p>}
         </div>
       </section>
 
@@ -1334,7 +1334,7 @@ function LandingPage({ onGo }) {
           ].map(st => (
             <div key={st.l} className="text-center">
               <div className="text-2xl font-extrabold tracking-tight" style={{ color: st.c }}>{st.v}</div>
-              <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mt-0.5">{st.l}</div>
+              <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mt-0.5">{st.l}</div>
             </div>
           ))}
         </div>
@@ -1346,7 +1346,7 @@ function LandingPage({ onGo }) {
           <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden relative">
             <div className="absolute top-3 right-3 px-2.5 py-1 rounded-md bg-emerald-600 text-white text-[9px] font-bold tracking-wider shadow-sm">LIVE DEMO</div>
             <div className="px-6 py-4 border-b border-slate-100">
-              <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">⚡ How AuditLens Processes Every Invoice</span>
+              <span className="text-sm font-bold text-slate-900 uppercase tracking-wider">⚡ How AuditLens Processes Every Invoice</span>
             </div>
             <div className="p-5 space-y-2">
               {[
@@ -1361,8 +1361,8 @@ function LandingPage({ onGo }) {
                     <st.icon className="w-4 h-4" style={{ color: st.color }} />
                   </div>
                   <div>
-                    <div className="text-[13px] font-bold text-slate-900">{st.label}</div>
-                    <div className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">{st.sub}</div>
+                    <div className="text-sm font-bold text-slate-900">{st.label}</div>
+                    <div className="text-xs text-slate-500 mt-0.5 leading-relaxed">{st.sub}</div>
                   </div>
                 </div>
               ))}
@@ -1376,9 +1376,9 @@ function LandingPage({ onGo }) {
         <div className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-5">
           {/* AP Problem */}
           <div className="rounded-2xl p-6 text-white" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)' }}>
-            <div className="text-[10px] font-bold text-red-400 uppercase tracking-widest mb-2">The AP Problem</div>
-            <h3 className="text-lg font-extrabold mb-3 leading-snug">AP teams lose 1–3% of spend to undetected errors.</h3>
-            <p className="text-[12px] text-slate-400 leading-relaxed mb-5">Manual review catches a fraction. AuditLens checks every invoice, every line item — before payment.</p>
+            <div className="text-[11px] font-bold text-red-400 uppercase tracking-widest mb-2">The AP Problem</div>
+            <h3 className="text-xl font-extrabold mb-3 leading-snug">AP teams lose 1–3% of spend to undetected errors.</h3>
+            <p className="text-[13px] text-slate-400 leading-relaxed mb-5">Manual review catches a fraction. AuditLens checks every invoice, every line item — before payment.</p>
             <div className="grid grid-cols-2 gap-2">
               {[
                 { v: '2–3', u: 'inv/hr', sub: 'Manual', c: '#ef4444' },
@@ -1399,22 +1399,22 @@ function LandingPage({ onGo }) {
           <div className="rounded-2xl border border-slate-200/60 bg-white p-6">
             <div className="flex items-center gap-2 mb-3">
               <AlertTriangle className="w-4 h-4 text-red-500" />
-              <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">What We Catch</span>
+              <span className="text-sm font-bold text-slate-900 uppercase tracking-wider">What We Catch</span>
             </div>
-            <p className="text-[12px] text-slate-500 leading-relaxed mb-3">{rc} rules covering overcharges, duplicates, quantity mismatches, unauthorized items, contract violations, tax anomalies, and more.</p>
+            <p className="text-[13px] text-slate-500 leading-relaxed mb-3">{rc} rules covering overcharges, duplicates, quantity mismatches, unauthorized items, contract violations, tax anomalies, and more.</p>
             {ruleNames.length > 0 && (
               <div className="flex flex-wrap gap-1 mb-3">
-                {ruleNames.map(r => <span key={r} className="text-[9px] px-1.5 py-0.5 rounded bg-red-50 text-red-600 font-medium border border-red-100">{r}</span>)}
+                {ruleNames.map(r => <span key={r} className="text-[10px] px-2 py-0.5 rounded bg-red-50 text-red-600 font-medium border border-red-100">{r}</span>)}
               </div>
             )}
             {oppNames.length > 0 && (
               <div className="flex flex-wrap gap-1 mb-3">
-                {oppNames.map(r => <span key={r} className="text-[9px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 font-medium border border-amber-100">💡 {r}</span>)}
+                {oppNames.map(r => <span key={r} className="text-[10px] px-2 py-0.5 rounded bg-amber-50 text-amber-700 font-medium border border-amber-100">💡 {r}</span>)}
               </div>
             )}
             <div className="pt-3 mt-3 border-t border-slate-100">
               <div className="flex flex-wrap gap-1.5">
-                {trustBadges.map(t => <span key={t} className="text-[9px] px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 font-semibold border border-slate-200">{t}</span>)}
+                {trustBadges.map(t => <span key={t} className="text-[10px] px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 font-semibold border border-slate-200">{t}</span>)}
               </div>
             </div>
           </div>
@@ -1425,8 +1425,8 @@ function LandingPage({ onGo }) {
       <section className="px-6 pb-12">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-8">
-            <h2 className="text-2xl font-extrabold tracking-tight">AI Intelligence Layer</h2>
-            <p className="text-sm text-slate-500 mt-1">AI where it matters. Rules where you need control.</p>
+            <h2 className="text-3xl font-extrabold tracking-tight">AI Intelligence Layer</h2>
+            <p className="text-base text-slate-500 mt-1">AI where it matters. Rules where you need control.</p>
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {features.map(f => (
@@ -1435,10 +1435,10 @@ function LandingPage({ onGo }) {
                   <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: f.color + '10' }}>
                     <f.icon className="w-3.5 h-3.5" style={{ color: f.color }} />
                   </div>
-                  <span className="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ color: f.color, background: f.color + '10' }}>{f.tag}</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ color: f.color, background: f.color + '10' }}>{f.tag}</span>
                 </div>
-                <h3 className="text-[12px] font-bold text-slate-900 mb-1 leading-snug">{f.title}</h3>
-                <p className="text-[10.5px] text-slate-500 leading-relaxed">{f.desc}</p>
+                <h3 className="text-sm font-bold text-slate-900 mb-1 leading-snug">{f.title}</h3>
+                <p className="text-xs text-slate-500 leading-relaxed">{f.desc}</p>
               </div>
             ))}
           </div>
@@ -1449,8 +1449,8 @@ function LandingPage({ onGo }) {
       <section className="px-6 pb-12">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-8">
-            <h2 className="text-2xl font-extrabold tracking-tight">Enterprise-Grade Trust</h2>
-            <p className="text-sm text-slate-500 mt-1">Every number verified. Every decision auditable.</p>
+            <h2 className="text-3xl font-extrabold tracking-tight">Enterprise-Grade Trust</h2>
+            <p className="text-base text-slate-500 mt-1">Every number verified. Every decision auditable.</p>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
@@ -1458,13 +1458,13 @@ function LandingPage({ onGo }) {
             <div className="bg-white rounded-2xl border border-slate-200/60 p-5">
               <div className="flex items-center gap-2 mb-4">
                 <Shield className="w-4 h-4 text-indigo-600" />
-                <span className="text-xs font-bold text-slate-900">Grounded AI</span>
+                <span className="text-sm font-bold text-slate-900">Grounded AI</span>
               </div>
               <div className="space-y-1.5">
                 {pipeline.map(x => (
                   <div key={x.n} className="flex gap-2 items-start">
                     <div className="w-5 h-5 rounded-md bg-indigo-600 text-white flex items-center justify-center text-[9px] font-bold flex-shrink-0 mt-0.5">{x.n}</div>
-                    <div><div className="text-[11px] font-semibold text-slate-800">{x.t}</div><div className="text-[10px] text-slate-400">{x.d}</div></div>
+                    <div><div className="text-xs font-semibold text-slate-800">{x.t}</div><div className="text-[11px] text-slate-400">{x.d}</div></div>
                   </div>
                 ))}
               </div>
@@ -1474,7 +1474,7 @@ function LandingPage({ onGo }) {
             <div className="bg-white rounded-2xl border border-slate-200/60 p-5">
               <div className="flex items-center gap-2 mb-4">
                 <Shield className="w-4 h-4 text-emerald-600" />
-                <span className="text-xs font-bold text-slate-900">Delegation of Authority</span>
+                <span className="text-sm font-bold text-slate-900">Delegation of Authority</span>
               </div>
               <div className="space-y-1.5">
                 {(authTiers.length ? authTiers : defaultAuth).map((a, i) => {
@@ -1483,18 +1483,18 @@ function LandingPage({ onGo }) {
                   const limit = a.unlimited ? 'Unlimited' : a.limit_usd ? `$${Number(a.limit_usd).toLocaleString()}` : (a.l || 'Configurable');
                   return (
                     <div key={i} className="flex justify-between items-center px-3 py-2 rounded-lg bg-slate-50">
-                      <span className="text-[11px] font-semibold" style={{ color: authLevelColors[i] || '#64748b' }}>{name}</span>
-                      <span className="text-[11px] text-slate-500 font-mono">{limit}</span>
+                      <span className="text-xs font-semibold" style={{ color: authLevelColors[i] || '#64748b' }}>{name}</span>
+                      <span className="text-xs text-slate-500 font-mono">{limit}</span>
                     </div>
                   );
                 })}
               </div>
               {Object.keys(sla).length > 0 && (
                 <div className="mt-3 pt-3 border-t border-slate-100">
-                  <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">SLA Targets</div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">SLA Targets</div>
                   <div className="flex flex-wrap gap-1">
                     {Object.entries(sla).map(([k, v]) => (
-                      <span key={k} className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100">{k}: <strong>{v}h</strong></span>
+                      <span key={k} className="text-[10px] px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100">{k}: <strong>{v}h</strong></span>
                     ))}
                   </div>
                 </div>
@@ -1505,18 +1505,18 @@ function LandingPage({ onGo }) {
             <div className="bg-white rounded-2xl border border-slate-200/60 p-5">
               <div className="flex items-center gap-2 mb-4">
                 <CircleDot className="w-4 h-4 text-blue-500" />
-                <span className="text-xs font-bold text-slate-900">{lc} Languages · Global Tax</span>
+                <span className="text-sm font-bold text-slate-900">{lc} Languages · Global Tax</span>
               </div>
               <div className="grid grid-cols-5 gap-1.5 mb-3">
                 {langs.map(([code, clr]) => (
                   <div key={code} className="rounded-md py-1.5 text-center" style={{ background: clr + '10', border: `1px solid ${clr}20` }}>
-                    <div className="text-[11px] font-bold" style={{ color: clr }}>{code}</div>
+                    <div className="text-xs font-bold" style={{ color: clr }}>{code}</div>
                   </div>
                 ))}
               </div>
               <div className="flex flex-wrap gap-1">
                 {taxSystems.map(t => (
-                  <span key={t} className="text-[9px] px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 font-medium border border-slate-200">{t}</span>
+                  <span key={t} className="text-[10px] px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 font-medium border border-slate-200">{t}</span>
                 ))}
               </div>
             </div>
@@ -1524,35 +1524,35 @@ function LandingPage({ onGo }) {
 
           {/* Deploy Options */}
           <div className="text-center mb-4 mt-2">
-            <h3 className="text-lg font-extrabold tracking-tight">Deploy Anywhere</h3>
-            <p className="text-xs text-slate-400 mt-0.5">Model-agnostic by design. Your data, your infrastructure, your rules.</p>
+            <h3 className="text-2xl font-extrabold tracking-tight">Deploy Anywhere</h3>
+            <p className="text-sm text-slate-400 mt-0.5">Model-agnostic by design. Your data, your infrastructure, your rules.</p>
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
             {deployOptions.map(f => (
               <div key={f.title} className="bg-white rounded-2xl border border-slate-200/60 p-5 relative">
-                <div className="absolute top-4 right-4 px-2 py-0.5 rounded text-white text-[8px] font-bold tracking-wider" style={{ background: f.color }}>{f.tag}</div>
+                <div className="absolute top-4 right-4 px-2 py-0.5 rounded text-white text-[9px] font-bold tracking-wider" style={{ background: f.color }}>{f.tag}</div>
                 <div className="flex items-center gap-2 mb-3">
                   <Database className="w-4 h-4" style={{ color: f.color }} />
-                  <span className="text-[13px] font-extrabold text-slate-900">{f.title}</span>
+                  <span className="text-sm font-extrabold text-slate-900">{f.title}</span>
                 </div>
                 <div className="space-y-1.5 mb-3">
                   {f.checks.map(c => (
-                    <div key={c} className="flex items-center gap-2 text-[11px] text-slate-600">
+                    <div key={c} className="flex items-center gap-2 text-xs text-slate-600">
                       <span className="font-bold" style={{ color: f.color }}>✓</span> {c}
                     </div>
                   ))}
                 </div>
-                <div className="text-[10px] text-slate-400 pt-3 border-t border-slate-100"><span className="font-semibold text-slate-500">Provider:</span> {f.prov}</div>
+                <div className="text-[11px] text-slate-400 pt-3 border-t border-slate-100"><span className="font-semibold text-slate-500">Provider:</span> {f.prov}</div>
               </div>
             ))}
           </div>
 
           {/* Config snippet */}
           <div className="mt-5 flex items-center justify-center gap-4 flex-wrap">
-            <div className="bg-slate-900 rounded-lg px-4 py-2 font-mono text-[12px] inline-flex items-center gap-1">
+            <div className="bg-slate-900 rounded-lg px-4 py-2 font-mono text-sm inline-flex items-center gap-1">
               <span className="text-emerald-400">LLM_PROVIDER</span><span className="text-slate-500">=</span><span className="text-amber-300">bedrock</span>
             </div>
-            <span className="text-[11px] text-slate-400">One config change. Same extraction, same anomaly detection, same audit trail.</span>
+            <span className="text-xs text-slate-400">One config change. Same extraction, same anomaly detection, same audit trail.</span>
           </div>
         </div>
       </section>
@@ -1561,9 +1561,9 @@ function LandingPage({ onGo }) {
       <section className="px-6 pb-12">
         <div className="max-w-5xl mx-auto">
           <div className="rounded-2xl p-10 text-center text-white" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)' }}>
-            <h2 className="text-2xl font-extrabold tracking-tight mb-2">See what your AP team is missing.</h2>
-            <p className="text-sm text-slate-400 mb-6">Upload your first invoice — extracted, matched, and audited in under 8 seconds.</p>
-            <button onClick={onGo} className="px-8 py-3 text-[13px] font-semibold text-slate-900 bg-white rounded-xl hover:bg-slate-50 transition-all shadow-lg">Start Free →</button>
+            <h2 className="text-3xl font-extrabold tracking-tight mb-2">See what your AP team is missing.</h2>
+            <p className="text-base text-slate-400 mb-6">Upload your first invoice — extracted, matched, and audited in under 8 seconds.</p>
+            <button onClick={onGo} className="px-8 py-3 text-sm font-semibold text-slate-900 bg-white rounded-xl hover:bg-slate-50 transition-all shadow-lg">Start Free →</button>
           </div>
         </div>
       </section>
