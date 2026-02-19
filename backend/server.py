@@ -2181,15 +2181,17 @@ mimetypes.add_type("application/javascript", ".js")
 mimetypes.add_type("text/css", ".css")
 
 @app.get("/")
-async def serve_index(): return FileResponse(FRONTEND_DIR / "index.html", media_type="text/html")
+async def serve_index(): return FileResponse(FRONTEND_DIR / "index.html", media_type="text/html", headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"})
 
 @app.get("/{path:path}")
 async def serve_static(path: str):
     fp = FRONTEND_DIR / path
     if fp.exists() and fp.is_file():
         mt = mimetypes.guess_type(str(fp))[0] or "application/octet-stream"
-        return FileResponse(fp, media_type=mt)
-    return FileResponse(FRONTEND_DIR / "index.html", media_type="text/html")
+        # Hashed assets (e.g. index-BDP-Ij1Q.js) can be cached forever
+        headers = {"Cache-Control": "public, max-age=31536000, immutable"} if "/assets/" in path else {"Cache-Control": "no-cache"}
+        return FileResponse(fp, media_type=mt, headers=headers)
+    return FileResponse(FRONTEND_DIR / "index.html", media_type="text/html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 if __name__ == "__main__":
     import uvicorn
