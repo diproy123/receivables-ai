@@ -738,6 +738,65 @@ function Contracts() {
 /* ═══════════════════════════════════════════════════
    SETTINGS (AP POLICY)
    ═══════════════════════════════════════════════════ */
+/* ── Confidence Weight Profiles Editor ── */
+const FACTOR_LABELS = ['Field Completeness', 'Line Item Integrity', 'Math Consistency', 'Date Validity', 'Amount Plausibility', 'Vendor Identification', 'AI Self-Assessment'];
+const DOC_TYPE_LABELS = { invoice: 'Invoice', purchase_order: 'Purchase Order', contract: 'Contract', credit_note: 'Credit Note', debit_note: 'Debit Note', goods_receipt: 'Goods Receipt' };
+const DEFAULT_WEIGHTS = { invoice:[0.15,0.20,0.25,0.10,0.15,0.10,0.05], purchase_order:[0.30,0.15,0.15,0.10,0.10,0.10,0.10], contract:[0.20,0.10,0.05,0.25,0.10,0.15,0.15], credit_note:[0.20,0.15,0.20,0.10,0.15,0.10,0.10], debit_note:[0.20,0.15,0.20,0.10,0.15,0.10,0.10], goods_receipt:[0.15,0.30,0.10,0.10,0.05,0.15,0.15] };
+
+function ConfidenceWeightsEditor({ policy, save }) {
+  const [weights, setWeights] = useState(() => policy?.confidence_weights || DEFAULT_WEIGHTS);
+  const [editType, setEditType] = useState('invoice');
+
+  const cw = weights[editType] || DEFAULT_WEIGHTS[editType];
+  const total = cw.reduce((a, b) => a + b, 0);
+  const isValid = Math.abs(total - 1.0) < 0.02;
+
+  function updateWeight(idx, val) {
+    const nw = { ...weights };
+    const arr = [...(nw[editType] || DEFAULT_WEIGHTS[editType])];
+    arr[idx] = Math.max(0, Math.min(1, parseFloat(val) || 0));
+    nw[editType] = arr;
+    setWeights(nw);
+  }
+
+  function resetToDefaults() { setWeights({ ...DEFAULT_WEIGHTS }); }
+
+  return (
+    <div className="card p-5">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Confidence Weight Profiles</h3>
+          <p className="text-xs text-slate-500 mt-1">Adjust how extraction confidence is scored per document type</p>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={resetToDefaults} className="btn-o text-xs"><RotateCcw className="w-3 h-3" /> Reset Defaults</button>
+          <button onClick={() => save(weights)} disabled={!isValid} className="btn-p text-xs"><Check className="w-3 h-3" /> Save Weights</button>
+        </div>
+      </div>
+      <div className="flex gap-2 mb-4 flex-wrap">
+        {Object.entries(DOC_TYPE_LABELS).map(([k, l]) => (
+          <button key={k} onClick={() => setEditType(k)}
+            className={cn('btn text-xs px-3 py-1.5 rounded-lg', editType === k ? 'bg-accent-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')}>
+            {l}
+          </button>
+        ))}
+      </div>
+      <div className="space-y-2">
+        {FACTOR_LABELS.map((label, i) => (
+          <div key={i} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
+            <span className="text-sm font-medium text-slate-700 w-44">{label}</span>
+            <input type="range" min="0" max="0.5" step="0.01" value={cw[i]} onChange={e => updateWeight(i, e.target.value)} className="flex-1 accent-accent-600" />
+            <span className="text-sm font-mono font-bold w-14 text-right">{(cw[i] * 100).toFixed(0)}%</span>
+          </div>
+        ))}
+      </div>
+      <div className={cn('mt-3 text-sm font-semibold text-center py-2 rounded-lg', isValid ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700')}>
+        Total: {(total * 100).toFixed(1)}% {isValid ? '✓' : '— must equal 100%'}
+      </div>
+    </div>
+  );
+}
+
 function SettingsPage() {
   const { s, toast, load } = useStore();
   const p = s.policy || {};
@@ -834,6 +893,9 @@ function SettingsPage() {
           </div>
         </div>
       </div>
+
+      {/* Confidence Weight Profiles */}
+      <ConfidenceWeightsEditor policy={p} save={async (cw) => { await post('/api/policy', { confidence_weights: cw }); await load(); toast('Confidence weights saved', 'success'); }} />
 
       {/* History */}
       {history.length > 0 && (
@@ -1533,7 +1595,7 @@ function DocModal() {
               <div className="text-[10px] font-bold text-slate-900 uppercase tracking-wider mb-2">Line Items {editing && <span className="text-accent-600 font-normal">(click values to edit)</span>}</div>
               <div className="rounded-xl overflow-hidden border border-slate-100">
                 <table className="w-full text-sm">
-                  <thead><tr className="bg-slate-50"><th className="px-3 py-2 text-left text-[10px] text-slate-400 uppercase">Item</th><th className="px-3 py-2 text-right text-[10px] text-slate-400 uppercase">Qty</th><th className="px-3 py-2 text-right text-[10px] text-slate-400 uppercase">Price</th><th className="px-3 py-2 text-right text-[10px] text-slate-400 uppercase">Total</th></tr></thead>
+                  <thead><tr className="bg-slate-50"><th className="px-3 py-2 text-left text-[10px] text-slate-500 uppercase">Item</th><th className="px-3 py-2 text-right text-[10px] text-slate-500 uppercase">Qty</th><th className="px-3 py-2 text-right text-[10px] text-slate-500 uppercase">Price</th><th className="px-3 py-2 text-right text-[10px] text-slate-500 uppercase">Total</th></tr></thead>
                   <tbody className="divide-y divide-slate-50">
                     {(doc.lineItems || []).map((li, i) => {
                       const q = fields[`li_${i}_qty`] ?? li.quantity;

@@ -42,6 +42,12 @@ def transform_extracted_to_record(extracted, file_name, file_id):
     confidence, confidence_factors = compute_extraction_confidence(
         extracted, li, subtotal, total, tax_details, dt)
 
+    # Load policy for ensemble agreement config
+    from backend.db import get_db as _get_db
+    from backend.config import DEFAULT_POLICY
+    _policy_db = _get_db()
+    policy = _policy_db.get("policy", {})
+
     base = {
         "id": file_id, "type": dt, "documentName": file_name,
         "vendor": extracted.get("vendor_name") or "Unknown",
@@ -68,6 +74,39 @@ def transform_extracted_to_record(extracted, file_name, file_id):
     # Store ensemble metadata if available
     if extracted.get("_ensemble"):
         base["ensembleData"] = extracted["_ensemble"]
+        # Factor 8: Ensemble Agreement — penalize confidence when models disagree
+        ens = extracted["_ensemble"]
+        agreement_rate = ens.get("agreement_rate", 100)
+        disputes = ens.get("fields_disputed", 0)
+        if ens.get("mode") != "single_model" and agreement_rate < 100:
+            # Read configurable weight and caps from policy
+            from backend.config import DEFAULT_POLICY
+            ens_weight = policy.get("ensemble_agreement_weight",
+                DEFAULT_POLICY.get("ensemble_agreement_weight", 0.15))
+            cap_80 = policy.get("ensemble_cap_80", DEFAULT_POLICY.get("ensemble_cap_80", 85))
+            cap_60 = policy.get("ensemble_cap_60", DEFAULT_POLICY.get("ensemble_cap_60", 70))
+
+            ens_score = round(agreement_rate)
+            ens_detail = f"{ens.get('fields_agreed', 0)} agreed, {disputes} disputed ({agreement_rate}%)"
+            confidence_factors["ensemble_agreement"] = {
+                "score": ens_score, "weight": ens_weight, "detail": ens_detail
+            }
+            # Rebalance weights: reduce others proportionally to add ensemble weight
+            non_ensemble = {k: v for k, v in confidence_factors.items() if k != "ensemble_agreement"}
+            original_total = sum(v["weight"] for v in non_ensemble.values())
+            for k in non_ensemble:
+                confidence_factors[k]["weight"] = round(
+                    confidence_factors[k]["weight"] * (1.0 - ens_weight) / original_total, 3)
+            # Recompute weighted score
+            weighted_sum = sum(f["score"] * f["weight"] for f in confidence_factors.values())
+            confidence = round(max(0, min(100, weighted_sum)), 1)
+            # Hard caps from policy
+            if agreement_rate < 80:
+                confidence = min(confidence, cap_80)
+            if agreement_rate < 60:
+                confidence = min(confidence, cap_60)
+            base["confidence"] = confidence
+            base["confidenceFactors"] = confidence_factors
     if extracted.get("_field_confidence"):
         base["fieldConfidence"] = extracted["_field_confidence"]
 
@@ -143,31 +182,50 @@ def transform_extracted_to_record(extracted, file_name, file_id):
 def compute_extraction_confidence(extracted: dict, line_items: list, subtotal: float,
                                    total: float, tax_details: list, doc_type: str) -> tuple:
     """Multi-factor extraction confidence scoring (0-100).
+    Weights are document-type-specific and admin-configurable via AP Policy.
+    Each doc type has different F&A risk profiles:
+      Invoice:     Math accuracy paramount — wrong amount = overpayment
+      PO:          Field completeness paramount — missing ship-to/terms = procurement failure
+      Contract:    Date accuracy paramount — wrong effective date = multi-year legal exposure
+      Credit/Debit: Reference integrity paramount — wrong original invoice = fraud risk
+      GRN:         Line item integrity paramount — wrong qty received = 3-way match failure
     Returns (score, factors_dict) for auditability."""
+
+    # ── Load weight profile from policy (admin-configurable) ──
+    from backend.db import get_db
+    from backend.config import DEFAULT_POLICY
+    db = get_db()
+    policy = db.get("policy", {})
+    configured_weights = policy.get("confidence_weights", DEFAULT_POLICY.get("confidence_weights", {}))
+
+    FALLBACK = [0.15, 0.20, 0.25, 0.10, 0.15, 0.10, 0.05]  # invoice default
+    weight_list = configured_weights.get(doc_type, configured_weights.get("invoice", FALLBACK))
+
+    # Validate: must be 7 values summing to ~1.0
+    if len(weight_list) != 7 or abs(sum(weight_list) - 1.0) > 0.05:
+        weight_list = FALLBACK  # fallback to safe defaults
+    w = tuple(weight_list)
     factors = {}
 
-    # Factor 1: Field Completeness (25%)
+    # ── Factor 1: Field Completeness ──
     required_common = ["vendor_name", "document_number", "document_type", "total_amount", "currency"]
-    required_invoice = ["issue_date", "due_date", "po_reference"]
-    required_contract = ["contract_terms", "pricing_terms"]
-    required_po = ["issue_date"]
-
-    fields_to_check = list(required_common)
-    if doc_type == "invoice":
-        fields_to_check += required_invoice
-    elif doc_type == "contract":
-        fields_to_check += required_contract
-    elif doc_type == "purchase_order":
-        fields_to_check += required_po
-
+    required_by_type = {
+        "invoice": ["issue_date", "due_date", "po_reference", "payment_terms"],
+        "purchase_order": ["issue_date", "delivery_date", "ship_to", "payment_terms"],
+        "contract": ["contract_terms", "parties"],
+        "credit_note": ["original_invoice_ref", "credit_debit_reason"],
+        "debit_note": ["original_invoice_ref", "credit_debit_reason"],
+        "goods_receipt": ["po_reference", "received_date", "received_by"],
+    }
+    fields_to_check = required_common + required_by_type.get(doc_type, [])
     present = sum(1 for f in fields_to_check if extracted.get(f) not in (None, "", [], {}, 0))
     completeness_score = round((present / len(fields_to_check)) * 100) if fields_to_check else 50
     factors["field_completeness"] = {
-        "score": completeness_score, "weight": 0.25,
+        "score": completeness_score, "weight": w[0],
         "detail": f"{present}/{len(fields_to_check)} required fields present"
     }
 
-    # Factor 2: Line Item Integrity (20%)
+    # ── Factor 2: Line Item Integrity ──
     if line_items:
         valid_items = 0
         for li in line_items:
@@ -182,46 +240,63 @@ def compute_extraction_confidence(extracted: dict, line_items: list, subtotal: f
         li_score = round((valid_items / len(line_items)) * 100)
         li_detail = f"{valid_items}/{len(line_items)} line items fully valid"
     else:
-        li_score = 30 if doc_type == "contract" else 40
+        # No line items: less penalty for contracts (often lack itemized tables)
+        li_score = 50 if doc_type == "contract" else 40
         li_detail = "No line items extracted"
-    factors["line_item_integrity"] = {"score": li_score, "weight": 0.20, "detail": li_detail}
+    factors["line_item_integrity"] = {"score": li_score, "weight": w[1], "detail": li_detail}
 
-    # Factor 3: Mathematical Consistency (20%)
+    # ── Factor 3: Mathematical Consistency ──
     math_score = 100
     math_issues = []
+    # Contracts and GRNs often lack strict math — be lenient
+    if doc_type in ("contract", "goods_receipt"):
+        math_score = 100
+        math_detail = "N/A for this document type"
+    else:
+        if line_items:
+            li_sum = sum(li.get("total", 0) for li in line_items)
+            if li_sum > 0 and subtotal > 0:
+                li_diff_pct = abs(li_sum - subtotal) / max(subtotal, 1) * 100
+                if li_diff_pct > 5:
+                    math_score -= 40
+                    math_issues.append(f"Line items sum ({li_sum:,.2f}) differs from subtotal ({subtotal:,.2f}) by {li_diff_pct:.1f}%")
+                elif li_diff_pct > 1:
+                    math_score -= 15
+                    math_issues.append(f"Minor rounding diff: {li_diff_pct:.1f}%")
 
-    if line_items:
-        li_sum = sum(li.get("total", 0) for li in line_items)
-        if li_sum > 0 and subtotal > 0:
-            li_diff_pct = abs(li_sum - subtotal) / max(subtotal, 1) * 100
-            if li_diff_pct > 5:
+        if tax_details and subtotal > 0 and total > 0:
+            expected_total = subtotal + sum(t["amount"] for t in tax_details)
+            total_diff_pct = abs(expected_total - total) / max(total, 1) * 100
+            if total_diff_pct > 5:
                 math_score -= 40
-                math_issues.append(f"Line items sum ({li_sum:,.2f}) differs from subtotal ({subtotal:,.2f}) by {li_diff_pct:.1f}%")
-            elif li_diff_pct > 1:
-                math_score -= 15
-                math_issues.append(f"Minor rounding diff: {li_diff_pct:.1f}%")
+                math_issues.append(f"subtotal + tax ({expected_total:,.2f}) differs from total ({total:,.2f})")
+            elif total_diff_pct > 1:
+                math_score -= 10
+        math_score = max(0, math_score)
+        math_detail = "; ".join(math_issues) if math_issues else "All totals consistent"
+    factors["math_consistency"] = {"score": math_score, "weight": w[2], "detail": math_detail}
 
-    if tax_details and subtotal > 0 and total > 0:
-        expected_total = subtotal + sum(t["amount"] for t in tax_details)
-        total_diff_pct = abs(expected_total - total) / max(total, 1) * 100
-        if total_diff_pct > 5:
-            math_score -= 40
-            math_issues.append(f"subtotal + tax ({expected_total:,.2f}) differs from total ({total:,.2f})")
-        elif total_diff_pct > 1:
-            math_score -= 10
-
-    math_score = max(0, math_score)
-    factors["math_consistency"] = {
-        "score": math_score, "weight": 0.20,
-        "detail": "; ".join(math_issues) if math_issues else "All totals consistent"
-    }
-
-    # Factor 4: Date Validity (10%)
+    # ── Factor 4: Date Validity ──
     date_score = 100
     date_issues = []
     if doc_type == "contract":
+        # Contracts: check effective, expiry, and signing dates
         ct = extracted.get("contract_terms") or {}
-        date_fields_vals = [ct.get("effective_date"), ct.get("expiry_date")]
+        date_fields_vals = [ct.get("effective_date"), ct.get("expiry_date"), ct.get("signing_date")]
+        # Extra check: effective_date should be before expiry_date
+        eff = ct.get("effective_date")
+        exp = ct.get("expiry_date")
+        if eff and exp:
+            try:
+                eff_d = datetime.fromisoformat(str(eff))
+                exp_d = datetime.fromisoformat(str(exp))
+                if eff_d >= exp_d:
+                    date_score -= 30
+                    date_issues.append(f"Effective date ({eff}) is after expiry ({exp})")
+            except (ValueError, TypeError):
+                pass
+    elif doc_type == "goods_receipt":
+        date_fields_vals = [extracted.get("received_date"), extracted.get("issue_date")]
     else:
         date_fields_vals = [extracted.get("issue_date"), extracted.get("due_date")]
 
@@ -238,32 +313,36 @@ def compute_extraction_confidence(extracted: dict, line_items: list, subtotal: f
 
     date_score = max(0, date_score)
     factors["date_validity"] = {
-        "score": date_score, "weight": 0.10,
+        "score": date_score, "weight": w[3],
         "detail": "; ".join(date_issues) if date_issues else "Dates valid"
     }
 
-    # Factor 5: Amount Plausibility (10%)
+    # ── Factor 5: Amount Plausibility ──
     amt_score = 100
     amt_issues = []
     if total <= 0 and doc_type in ("invoice", "purchase_order"):
         amt_score = 20
         amt_issues.append(f"Total amount is {total} — expected positive")
+    elif total <= 0 and doc_type in ("credit_note", "debit_note"):
+        # Credit/debit notes CAN be zero (full void) but flag it
+        amt_score = 60
+        amt_issues.append(f"Zero adjustment amount")
     elif total > 100_000_000:
         amt_score = 50
         amt_issues.append(f"Unusually large amount: {total:,.2f}")
 
     neg_prices = [li for li in line_items if (li.get("unitPrice") or 0) < 0]
-    if neg_prices:
+    if neg_prices and doc_type not in ("credit_note", "debit_note"):
         amt_score -= 25
         amt_issues.append(f"{len(neg_prices)} line items with negative unit prices")
 
     amt_score = max(0, amt_score)
     factors["amount_plausibility"] = {
-        "score": amt_score, "weight": 0.10,
+        "score": amt_score, "weight": w[4],
         "detail": "; ".join(amt_issues) if amt_issues else "Amounts plausible"
     }
 
-    # Factor 6: Vendor Identification (10%)
+    # ── Factor 6: Vendor Identification ──
     vendor = extracted.get("vendor_name", "")
     if not vendor or vendor.lower() in ("unknown", "n/a", "none", ""):
         vendor_score = 10
@@ -274,24 +353,28 @@ def compute_extraction_confidence(extracted: dict, line_items: list, subtotal: f
     else:
         vendor_score = 100
         vendor_detail = f"Vendor identified: {vendor}"
-    factors["vendor_identification"] = {"score": vendor_score, "weight": 0.10, "detail": vendor_detail}
+    factors["vendor_identification"] = {"score": vendor_score, "weight": w[5], "detail": vendor_detail}
 
-    # Factor 7: AI Self-Assessment (5%)
+    # ── Factor 7: AI Self-Assessment ──
     ai_conf = extracted.get("_confidence") or extracted.get("extraction_confidence") or 85
     ai_conf = float(ai_conf) if ai_conf is not None else 85
     factors["ai_self_assessment"] = {
-        "score": round(float(ai_conf)), "weight": 0.05,
+        "score": round(float(ai_conf)), "weight": w[6],
         "detail": f"AI model self-reported: {ai_conf}%"
     }
 
-    # Weighted composite
+    # ── Weighted composite ──
     weighted_sum = sum(f["score"] * f["weight"] for f in factors.values())
     final_score = round(max(0, min(100, weighted_sum)), 1)
 
-    # Critical field penalty
+    # ── Critical field penalties ──
     if not vendor or vendor.lower() in ("unknown", "n/a"):
         final_score = min(final_score, 55)
     if total <= 0 and doc_type in ("invoice", "purchase_order"):
         final_score = min(final_score, 50)
+    # Credit/debit without original invoice ref is high-risk
+    if doc_type in ("credit_note", "debit_note"):
+        if not extracted.get("original_invoice_ref"):
+            final_score = min(final_score, 65)
 
     return final_score, factors

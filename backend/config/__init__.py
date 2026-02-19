@@ -68,6 +68,19 @@ DEFAULT_POLICY = {
     "block_duplicate_invoices": True,
     "require_po_for_auto_approve": True,
     "short_shipment_threshold_pct": 90,
+    # Confidence weight profiles per document type (must sum to 1.0 each)
+    # Factors: [field_completeness, line_item_integrity, math_consistency, date_validity, amount_plausibility, vendor_identification, ai_self_assessment]
+    "confidence_weights": {
+        "invoice":        [0.15, 0.20, 0.25, 0.10, 0.15, 0.10, 0.05],
+        "purchase_order": [0.30, 0.15, 0.15, 0.10, 0.10, 0.10, 0.10],
+        "contract":       [0.20, 0.10, 0.05, 0.25, 0.10, 0.15, 0.15],
+        "credit_note":    [0.20, 0.15, 0.20, 0.10, 0.15, 0.10, 0.10],
+        "debit_note":     [0.20, 0.15, 0.20, 0.10, 0.15, 0.10, 0.10],
+        "goods_receipt":  [0.15, 0.30, 0.10, 0.10, 0.05, 0.15, 0.15],
+    },
+    "ensemble_agreement_weight": 0.15,
+    "ensemble_cap_80": 85,
+    "ensemble_cap_60": 70,
 }
 
 # ============================================================
