@@ -566,11 +566,11 @@ function Vendors() {
       <PageHeader title="Vendors" sub={`${vendors.length} vendors tracked`} />
       <Table
         cols={[
-          { label: 'Vendor', render: r => <div className="font-semibold">{r.name}</div> },
+          { label: 'Vendor', render: r => <div className="font-semibold">{r.vendor || r.name || '—'}</div> },
           { label: 'Risk', render: r => <Badge c={r.riskLevel === 'high' ? 'err' : r.riskLevel === 'medium' ? 'warn' : 'ok'}>{r.riskLevel} · {Math.round(r.riskScore || 0)}</Badge> },
           { label: 'Invoices', render: r => <span className="font-mono">{r.invoiceCount || 0}</span> },
-          { label: 'Total', right: true, render: r => <span className="font-semibold font-mono">{$(r.totalAmount || 0)}</span> },
-          { label: 'Anomaly Rate', render: r => <span className={cn('font-mono text-sm', (r.anomalyRate || 0) > 20 ? 'text-red-600' : 'text-slate-600')}>{pct(r.anomalyRate)}</span> },
+          { label: 'Total', right: true, render: r => <span className="font-semibold font-mono">{$(r.totalSpend || r.totalAmount || 0)}</span> },
+          { label: 'Anomaly Rate', render: r => { const total = r.invoiceCount || 0; const anom = r.totalAnomalies || 0; const rate = total > 0 ? (anom / total * 100) : 0; return <span className={cn('font-mono text-sm', rate > 20 ? 'text-red-600' : 'text-slate-600')}>{total > 0 ? pct(rate) : '—'}</span>; }},
         ]}
         rows={vendors}
       />
@@ -584,6 +584,102 @@ function Vendors() {
 function Contracts() {
   const { s, d } = useStore();
   const contracts = (s.docs || []).filter(x => x.type === 'contract');
+  const invoices = (s.docs || []).filter(x => x.type === 'invoice');
+  const [sel, setSel] = useState(null);
+  const c = sel; // selected contract
+
+  // Invoices linked to this contract's vendor
+  const linkedInvoices = c ? invoices.filter(inv =>
+    inv.vendor && c.vendor && inv.vendor.toLowerCase().includes(c.vendor.toLowerCase().split(' ')[0])
+  ) : [];
+  const totalInvoiced = linkedInvoices.reduce((s, i) => s + (i.amount || 0), 0);
+
+  // Contract status
+  const getStatus = (ctr) => {
+    if (!ctr.issueDate) return { label: 'Unknown', color: 'muted' };
+    const now = new Date();
+    const end = ctr.endDate ? new Date(ctr.endDate) : null;
+    const start = new Date(ctr.issueDate);
+    if (start > now) return { label: 'Upcoming', color: 'info' };
+    if (end && end < now) return { label: 'Expired', color: 'err' };
+    if (end) {
+      const daysLeft = Math.ceil((end - now) / 86400000);
+      if (daysLeft <= 90) return { label: `Expiring (${daysLeft}d)`, color: 'warn' };
+    }
+    return { label: 'Active', color: 'ok' };
+  };
+
+  if (c) {
+    const status = getStatus(c);
+    const parties = c.parties ? (Array.isArray(c.parties) ? c.parties : [c.parties]) : [];
+    const utilization = c.amount > 0 ? (totalInvoiced / c.amount * 100) : 0;
+    return (
+      <div className="page-enter">
+        <PageHeader title="Contracts" sub={c.contractNumber || c.id}>
+          <button onClick={() => setSel(null)} className="btn-g text-xs"><X className="w-3 h-3" /> Back to List</button>
+          <button onClick={() => { d({ type: 'SEL', doc: c }); }} className="btn-o text-xs"><Eye className="w-3 h-3" /> View Document</button>
+        </PageHeader>
+
+        {/* Contract Summary Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="card p-4"><div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Status</div><Badge c={status.color}>{status.label}</Badge></div>
+          <div className="card p-4"><div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Contract Value</div><div className="text-lg font-bold text-slate-900">{$(c.amount, c.currency)}</div></div>
+          <div className="card p-4"><div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Invoiced to Date</div><div className="text-lg font-bold text-emerald-600">{$(totalInvoiced, c.currency)}</div></div>
+          <div className="card p-4"><div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Utilization</div><div className="text-lg font-bold" style={{ color: utilization > 90 ? '#dc2626' : utilization > 70 ? '#d97706' : '#059669' }}>{pct(utilization)}</div></div>
+        </div>
+
+        {/* Two column layout */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Left: Contract Details */}
+          <div className="card p-5 space-y-4">
+            <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Contract Details</div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><div className="text-[10px] font-semibold text-slate-400 uppercase">Counterparty</div><div className="text-sm font-semibold">{c.vendor || '—'}</div></div>
+              <div><div className="text-[10px] font-semibold text-slate-400 uppercase">Contract #</div><div className="text-sm font-semibold">{c.contractNumber || c.invoiceNumber || c.id}</div></div>
+              <div><div className="text-[10px] font-semibold text-slate-400 uppercase">Effective Date</div><div className="text-sm">{date(c.issueDate)}</div></div>
+              <div><div className="text-[10px] font-semibold text-slate-400 uppercase">Expiry Date</div><div className="text-sm">{date(c.endDate) || '—'}</div></div>
+              <div><div className="text-[10px] font-semibold text-slate-400 uppercase">Currency</div><div className="text-sm">{c.currency || 'USD'}</div></div>
+              <div><div className="text-[10px] font-semibold text-slate-400 uppercase">Payment Terms</div><div className="text-sm">{c.paymentTerms || '—'}</div></div>
+              {parties.length > 0 && <div className="col-span-2"><div className="text-[10px] font-semibold text-slate-400 uppercase">Parties</div><div className="text-sm">{parties.join(' & ')}</div></div>}
+              <div><div className="text-[10px] font-semibold text-slate-400 uppercase">Confidence</div><div className="text-sm font-semibold">{pct(c.confidence)}</div></div>
+              <div><div className="text-[10px] font-semibold text-slate-400 uppercase">Uploaded By</div><div className="text-sm">{c.uploadedBy || '—'}</div></div>
+            </div>
+            {c.notes && <div><div className="text-[10px] font-semibold text-slate-400 uppercase">Notes</div><div className="text-sm text-slate-600">{c.notes}</div></div>}
+          </div>
+
+          {/* Right: Linked Invoices */}
+          <div className="card p-5">
+            <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Invoices Against This Contract <Badge c="muted">{linkedInvoices.length}</Badge></div>
+            {linkedInvoices.length === 0 ? (
+              <div className="text-sm text-slate-400 py-6 text-center">No invoices found for this vendor</div>
+            ) : (
+              <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                {linkedInvoices.map(inv => (
+                  <div key={inv.id} className="flex items-center justify-between p-2.5 bg-slate-50 rounded-lg hover:bg-slate-100 cursor-pointer transition-colors" onClick={() => d({ type: 'SEL', doc: inv })}>
+                    <div>
+                      <div className="text-xs font-semibold">{inv.invoiceNumber || inv.id}</div>
+                      <div className="text-[10px] text-slate-400">{date(inv.issueDate)}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs font-bold font-mono">{$(inv.amount, inv.currency)}</div>
+                      <Badge c={inv.status === 'paid' ? 'ok' : inv.status === 'approved' ? 'ok' : 'warn'}>{(inv.status || 'pending').replace(/_/g, ' ')}</Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {linkedInvoices.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-slate-100 flex justify-between text-xs">
+                <span className="text-slate-400">Total invoiced</span>
+                <span className="font-bold font-mono">{$(totalInvoiced, c.currency)}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="page-enter">
       <PageHeader title="Contracts" sub={`${contracts.length} vendor contracts`}>
@@ -591,14 +687,15 @@ function Contracts() {
       </PageHeader>
       <Table
         cols={[
-          { label: 'Contract', render: r => <div><div className="font-semibold">{r.contractNumber || r.id}</div><div className="text-xs text-slate-400">{r.vendor}</div></div> },
+          { label: 'Contract', render: r => <div><div className="font-semibold">{r.contractNumber || r.invoiceNumber || r.id}</div><div className="text-xs text-slate-400">{r.vendor}</div></div> },
+          { label: 'Status', render: r => { const st = getStatus(r); return <Badge c={st.color}>{st.label}</Badge>; }},
           { label: 'Value', right: true, render: r => <span className="font-semibold font-mono">{$(r.amount, r.currency)}</span> },
           { label: 'Start', render: r => <span className="text-slate-500">{date(r.issueDate)}</span> },
-          { label: 'End', render: r => <span className="text-slate-500">{date(r.endDate)}</span> },
+          { label: 'End', render: r => <span className="text-slate-500">{date(r.endDate) || '—'}</span> },
           { label: 'Confidence', render: r => <ConfidenceRing score={r.confidence || 0} /> },
         ]}
         rows={contracts}
-        onRow={r => d({ type: 'SEL', doc: r })}
+        onRow={r => setSel(r)}
       />
     </div>
   );
