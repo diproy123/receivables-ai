@@ -75,29 +75,68 @@ def transform_extracted_to_record(extracted, file_name, file_id):
         base.update({"status": "unpaid",
             "invoiceNumber": extracted.get("document_number", f"INV-{file_id}"),
             "poReference": extracted.get("po_reference"),
-            "dueDate": extracted.get("due_date")})
+            "dueDate": extracted.get("due_date"),
+            "billTo": extracted.get("bill_to"),
+            "shipTo": extracted.get("ship_to"),
+        })
     elif dt == "purchase_order":
         base.update({"status": "open",
             "poNumber": extracted.get("document_number", f"PO-{file_id}"),
-            "deliveryDate": extracted.get("delivery_date")})
+            "deliveryDate": extracted.get("delivery_date"),
+            "shipTo": extracted.get("ship_to"),
+            "billTo": extracted.get("bill_to"),
+            "buyerName": extracted.get("buyer_name"),
+            "buyerContact": extracted.get("buyer_contact"),
+            "incoterms": extracted.get("incoterms"),
+            "shippingMethod": extracted.get("shipping_method"),
+        })
     elif dt == "contract":
+        ct = extracted.get("contract_terms") or {}
         base.update({"status": "active",
             "contractNumber": extracted.get("document_number", f"AGR-{file_id}"),
             "pricingTerms": extracted.get("pricing_terms") or [],
-            "contractTerms": extracted.get("contract_terms") or {},
-            "parties": extracted.get("parties", [])})
+            "contractTerms": ct,
+            "parties": extracted.get("parties", []),
+            # Flatten contract dates to top-level for UI access
+            "effectiveDate": ct.get("effective_date") or extracted.get("issue_date"),
+            "endDate": ct.get("expiry_date"),
+            "signingDate": ct.get("signing_date") or extracted.get("issue_date"),
+            "termMonths": ct.get("term_months"),
+            # Key contract metadata
+            "governingLaw": ct.get("governing_law"),
+            "autoRenewal": ct.get("auto_renewal", False),
+            "renewalNoticeDays": ct.get("renewal_notice_days"),
+            "terminationNoticeDays": ct.get("termination_notice_days"),
+            "liabilityCap": ct.get("liability_cap"),
+            "liabilityCapDescription": ct.get("liability_cap_description"),
+            "warrantyMonths": ct.get("warranty_months"),
+            "confidentialityYears": ct.get("confidentiality_years"),
+            # Clause summaries
+            "slaSummary": ct.get("sla_summary"),
+            "penaltyClauses": ct.get("penalty_clauses"),
+            "ipOwnership": ct.get("ip_ownership"),
+            "insuranceRequirements": ct.get("insurance_requirements"),
+            "forceMajeureDays": ct.get("force_majeure_days"),
+            "terminationForConvenience": ct.get("termination_for_convenience"),
+        })
     elif dt in ("credit_note", "debit_note"):
         base.update({"status": "pending",
             "documentNumber": extracted.get("document_number",
                 f"{'CN' if dt == 'credit_note' else 'DN'}-{file_id}"),
-            "originalInvoiceRef": extracted.get("original_invoice_ref")})
+            "originalInvoiceRef": extracted.get("original_invoice_ref"),
+            "creditDebitReason": extracted.get("credit_debit_reason"),
+            "adjustmentType": extracted.get("adjustment_type"),
+        })
     elif dt == "goods_receipt":
         base.update({"status": "received",
             "grnNumber": extracted.get("document_number", f"GRN-{file_id}"),
             "poReference": extracted.get("po_reference"),
             "receivedDate": extracted.get("received_date") or extracted.get("issue_date"),
             "receivedBy": extracted.get("received_by"),
-            "conditionNotes": extracted.get("condition_notes")})
+            "conditionNotes": extracted.get("condition_notes"),
+            "shipFrom": extracted.get("ship_from"),
+            "warehouseLocation": extracted.get("warehouse_location"),
+        })
     return base
 
 

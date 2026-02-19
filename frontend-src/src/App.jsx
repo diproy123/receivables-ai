@@ -605,10 +605,11 @@ function Contracts() {
 
   // Contract status
   const getStatus = (ctr) => {
-    if (!ctr.issueDate) return { label: 'Unknown', color: 'muted' };
+    const startStr = ctr.effectiveDate || ctr.issueDate;
+    if (!startStr) return { label: 'Unknown', color: 'muted' };
     const now = new Date();
     const end = ctr.endDate ? new Date(ctr.endDate) : null;
-    const start = new Date(ctr.issueDate);
+    const start = new Date(startStr);
     if (start > now) return { label: 'Upcoming', color: 'info' };
     if (end && end < now) return { label: 'Expired', color: 'err' };
     if (end) {
@@ -645,15 +646,39 @@ function Contracts() {
             <div className="grid grid-cols-2 gap-3">
               <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Counterparty</div><div className="text-sm font-semibold">{c.vendor || '—'}</div></div>
               <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Contract #</div><div className="text-sm font-semibold">{c.contractNumber || c.invoiceNumber || c.id}</div></div>
-              <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Effective Date</div><div className="text-sm">{date(c.issueDate)}</div></div>
-              <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Expiry Date</div><div className="text-sm">{date(c.endDate) || '—'}</div></div>
+              <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Effective Date</div><div className="text-sm">{date(c.effectiveDate || c.issueDate)}</div></div>
+              <div><div className="text-[10px] font-semibold text-slate-500 uppercase">End Date</div><div className="text-sm">{date(c.endDate) || '—'}</div></div>
+              {c.termMonths && <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Term</div><div className="text-sm">{c.termMonths} months</div></div>}
+              {c.signingDate && <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Signing Date</div><div className="text-sm">{date(c.signingDate)}</div></div>}
+              <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Contract Value</div><div className="text-sm font-semibold">{$(c.amount, c.currency)}</div></div>
               <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Currency</div><div className="text-sm">{c.currency || 'USD'}</div></div>
               <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Payment Terms</div><div className="text-sm">{c.paymentTerms || '—'}</div></div>
+              {c.governingLaw && <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Governing Law</div><div className="text-sm">{c.governingLaw}</div></div>}
+              {c.autoRenewal != null && <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Auto-Renewal</div><div className="text-sm">{c.autoRenewal ? `Yes${c.renewalNoticeDays ? ` (${c.renewalNoticeDays}d notice)` : ''}` : 'No'}</div></div>}
+              {c.terminationNoticeDays && <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Termination Notice</div><div className="text-sm">{c.terminationNoticeDays} days</div></div>}
               {parties.length > 0 && <div className="col-span-2"><div className="text-[10px] font-semibold text-slate-500 uppercase">Parties</div><div className="text-sm">{parties.join(' & ')}</div></div>}
+            </div>
+            {/* Key Clauses */}
+            {(c.liabilityCapDescription || c.warrantyMonths || c.penaltyClauses || c.slaSummary || c.insuranceRequirements || c.terminationForConvenience) && (
+              <div>
+                <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-2 mb-2">Key Clauses</div>
+                <div className="space-y-2 text-sm">
+                  {(c.liabilityCap || c.liabilityCapDescription) && <div className="p-2 bg-slate-50 rounded-lg"><span className="font-semibold text-slate-600">Liability Cap:</span> {c.liabilityCapDescription || $f(c.liabilityCap, c.currency)}</div>}
+                  {c.warrantyMonths && <div className="p-2 bg-slate-50 rounded-lg"><span className="font-semibold text-slate-600">Warranty:</span> {c.warrantyMonths} months</div>}
+                  {c.slaSummary && <div className="p-2 bg-slate-50 rounded-lg"><span className="font-semibold text-slate-600">SLA:</span> {c.slaSummary}</div>}
+                  {c.penaltyClauses && <div className="p-2 bg-slate-50 rounded-lg"><span className="font-semibold text-slate-600">Penalties:</span> {c.penaltyClauses}</div>}
+                  {c.insuranceRequirements && <div className="p-2 bg-slate-50 rounded-lg"><span className="font-semibold text-slate-600">Insurance:</span> {c.insuranceRequirements}</div>}
+                  {c.terminationForConvenience && <div className="p-2 bg-slate-50 rounded-lg"><span className="font-semibold text-slate-600">Termination:</span> {c.terminationForConvenience}</div>}
+                  {c.ipOwnership && <div className="p-2 bg-slate-50 rounded-lg"><span className="font-semibold text-slate-600">IP:</span> {c.ipOwnership}</div>}
+                  {c.confidentialityYears && <div className="p-2 bg-slate-50 rounded-lg"><span className="font-semibold text-slate-600">Confidentiality:</span> {c.confidentialityYears} years post-termination</div>}
+                  {c.forceMajeureDays && <div className="p-2 bg-slate-50 rounded-lg"><span className="font-semibold text-slate-600">Force Majeure:</span> {c.forceMajeureDays} days threshold</div>}
+                </div>
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-100">
               <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Confidence</div><div className="text-sm font-semibold">{pct(c.confidence)}</div></div>
               <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Uploaded By</div><div className="text-sm">{c.uploadedBy || '—'}</div></div>
             </div>
-            {c.notes && <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Notes</div><div className="text-sm text-slate-600">{c.notes}</div></div>}
           </div>
 
           {/* Right: Linked Invoices */}
@@ -699,8 +724,8 @@ function Contracts() {
           { label: 'Contract', render: r => <div><div className="font-semibold">{r.contractNumber || r.invoiceNumber || r.id}</div><div className="text-xs text-slate-500">{r.vendor}</div></div> },
           { label: 'Status', render: r => { const st = getStatus(r); return <Badge c={st.color}>{st.label}</Badge>; }},
           { label: 'Value', right: true, render: r => <span className="font-semibold font-mono">{$(r.amount, r.currency)}</span> },
-          { label: 'Start', render: r => <span className="text-slate-500">{date(r.issueDate)}</span> },
-          { label: 'End', render: r => <span className="text-slate-500">{date(r.endDate) || '—'}</span> },
+          { label: 'Effective', render: r => <span className="text-slate-600">{date(r.effectiveDate || r.issueDate)}</span> },
+          { label: 'End', render: r => <span className="text-slate-600">{date(r.endDate) || '—'}</span> },
           { label: 'Confidence', render: r => <ConfidenceRing score={r.confidence || 0} /> },
         ]}
         rows={contracts}
@@ -1295,25 +1320,56 @@ function DocModal() {
               {doc.type !== 'goods_receipt' && <Field label="Currency" val={doc.currency || 'USD'} k="currency" />}
 
               {/* Date fields — type-specific */}
-              {doc.type !== 'goods_receipt' && <Field label={doc.type === 'contract' ? 'Effective Date' : 'Issued'} val={date(doc.issueDate)} k="issueDate" type="date" />}
+              {doc.type !== 'goods_receipt' && doc.type !== 'contract' && <Field label="Issued" val={date(doc.issueDate)} k="issueDate" type="date" />}
               {doc.type === 'invoice' && <Field label="Due Date" val={date(doc.dueDate)} k="dueDate" type="date" />}
               {doc.type === 'purchase_order' && <Field label="Delivery Date" val={date(doc.deliveryDate)} k="deliveryDate" type="date" />}
+              {doc.type === 'purchase_order' && <Field label="Payment Terms" val={doc.paymentTerms} k="paymentTerms" />}
+              {doc.type === 'purchase_order' && doc.shipTo && <Field label="Ship To" val={doc.shipTo} />}
+              {doc.type === 'purchase_order' && doc.billTo && <Field label="Bill To" val={doc.billTo} />}
+              {doc.type === 'purchase_order' && doc.buyerName && <Field label="Buyer" val={doc.buyerContact ? `${doc.buyerName} (${doc.buyerContact})` : doc.buyerName} />}
+              {doc.type === 'purchase_order' && doc.incoterms && <Field label="Incoterms" val={doc.incoterms} />}
+              {doc.type === 'purchase_order' && doc.shippingMethod && <Field label="Shipping" val={doc.shippingMethod} />}
 
               {/* Invoice-specific */}
               {doc.type === 'invoice' && <Field label="PO Reference" val={doc.poReference} k="poReference" />}
               {doc.type === 'invoice' && <Field label="Payment Terms" val={doc.paymentTerms} k="paymentTerms" />}
+              {doc.type === 'invoice' && doc.earlyPaymentDiscount && <Field label="Early Pay Discount" val={`${doc.earlyPaymentDiscount.discount_percent}% if paid within ${doc.earlyPaymentDiscount.days} days`} />}
+              {doc.type === 'invoice' && doc.billTo && <Field label="Bill To" val={doc.billTo} />}
+              {doc.type === 'invoice' && doc.shipTo && <Field label="Ship To" val={doc.shipTo} />}
 
               {/* Credit/Debit Note-specific */}
               {(doc.type === 'credit_note' || doc.type === 'debit_note') && <Field label="Original Invoice Ref" val={doc.originalInvoiceRef} />}
+              {(doc.type === 'credit_note' || doc.type === 'debit_note') && doc.creditDebitReason && <Field label="Reason" val={doc.creditDebitReason} />}
+              {(doc.type === 'credit_note' || doc.type === 'debit_note') && doc.adjustmentType && <Field label="Adjustment Type" val={(doc.adjustmentType || '').replace(/_/g, ' ')} />}
 
               {/* GRN-specific */}
               {doc.type === 'goods_receipt' && <Field label="PO Reference" val={doc.poReference} k="poReference" />}
               {doc.type === 'goods_receipt' && <Field label="Received Date" val={date(doc.receivedDate)} />}
               {doc.type === 'goods_receipt' && <Field label="Received By" val={doc.receivedBy} />}
+              {doc.type === 'goods_receipt' && doc.conditionNotes && <Field label="Condition" val={doc.conditionNotes} />}
+              {doc.type === 'goods_receipt' && doc.shipFrom && <Field label="Shipped From" val={doc.shipFrom} />}
+              {doc.type === 'goods_receipt' && doc.warehouseLocation && <Field label="Warehouse" val={doc.warehouseLocation} />}
 
-              {/* Contract-specific */}
+              {/* Contract-specific — comprehensive F&A fields */}
+              {doc.type === 'contract' && <Field label="Effective Date" val={date(doc.effectiveDate || doc.issueDate)} />}
+              {doc.type === 'contract' && <Field label="End Date" val={date(doc.endDate)} />}
+              {doc.type === 'contract' && <Field label="Signing Date" val={date(doc.signingDate || doc.issueDate)} />}
+              {doc.type === 'contract' && doc.termMonths && <Field label="Term" val={`${doc.termMonths} months`} />}
               {doc.type === 'contract' && <Field label="Payment Terms" val={doc.paymentTerms} k="paymentTerms" />}
+              {doc.type === 'contract' && <Field label="Currency" val={doc.currency || 'USD'} />}
               {doc.type === 'contract' && doc.parties && <Field label="Parties" val={Array.isArray(doc.parties) ? doc.parties.join(' & ') : doc.parties} />}
+              {doc.type === 'contract' && doc.governingLaw && <Field label="Governing Law" val={doc.governingLaw} />}
+              {doc.type === 'contract' && doc.autoRenewal != null && <Field label="Auto-Renewal" val={doc.autoRenewal ? `Yes${doc.renewalNoticeDays ? ` (${doc.renewalNoticeDays}d notice)` : ''}` : 'No'} />}
+              {doc.type === 'contract' && doc.terminationNoticeDays && <Field label="Termination Notice" val={`${doc.terminationNoticeDays} days`} />}
+              {doc.type === 'contract' && (doc.liabilityCap || doc.liabilityCapDescription) && <Field label="Liability Cap" val={doc.liabilityCapDescription || $f(doc.liabilityCap, cur)} />}
+              {doc.type === 'contract' && doc.warrantyMonths && <Field label="Warranty" val={`${doc.warrantyMonths} months`} />}
+              {doc.type === 'contract' && doc.confidentialityYears && <Field label="Confidentiality" val={`${doc.confidentialityYears} years`} />}
+              {doc.type === 'contract' && doc.forceMajeureDays && <Field label="Force Majeure" val={`${doc.forceMajeureDays} days threshold`} />}
+              {doc.type === 'contract' && doc.slaSummary && <Field label="SLA Summary" val={doc.slaSummary} />}
+              {doc.type === 'contract' && doc.penaltyClauses && <Field label="Penalties" val={doc.penaltyClauses} />}
+              {doc.type === 'contract' && doc.ipOwnership && <Field label="IP Ownership" val={doc.ipOwnership} />}
+              {doc.type === 'contract' && doc.insuranceRequirements && <Field label="Insurance" val={doc.insuranceRequirements} />}
+              {doc.type === 'contract' && doc.terminationForConvenience && <Field label="Termination" val={doc.terminationForConvenience} />}
 
               {/* Always: Status + Uploaded */}
               <Field label="Status" val={(doc.status || '').replace(/_/g, ' ').toUpperCase()} />

@@ -58,20 +58,42 @@ Return ONLY valid JSON (no markdown, no explanation) with this exact structure:
   "delivery_date": "YYYY-MM-DD or null",
   "po_reference": "PO number referenced in invoice or goods receipt, or null",
   "original_invoice_ref": "for credit/debit notes — the original invoice number, or null",
+  "credit_debit_reason": "for credit/debit notes — reason for adjustment (e.g. 'quality defect', 'pricing error', 'quantity dispute', 'return', 'discount correction', 'duplicate billing'), or null",
+  "adjustment_type": "for credit/debit notes — 'full_refund', 'partial_refund', 'price_adjustment', 'quantity_correction', 'goodwill', or null",
   "received_date": "YYYY-MM-DD — date goods were received (for goods receipts), or null",
   "received_by": "name of person who received goods, or null",
-  "condition_notes": "quality/condition notes on receipt, or null",
+  "condition_notes": "quality/condition notes on receipt (e.g. 'All items in good condition', '2 units damaged'), or null",
+  "ship_from": "origin/shipping address for goods receipts, or null",
+  "warehouse_location": "receiving warehouse or storage location, or null",
+  "bill_to": "billing address or null",
+  "ship_to": "shipping/delivery address or null",
+  "buyer_name": "name of person/department who placed the order (for POs), or null",
+  "buyer_contact": "buyer's email or phone (for POs), or null",
+  "incoterms": "Incoterms (e.g. 'FOB', 'CIF', 'DDP', 'EXW') if mentioned, or null",
+  "shipping_method": "shipping method (e.g. 'Air Freight', 'Sea Freight', 'Ground', 'Express') if mentioned, or null",
   "payment_terms": "Net 30, 2/10 Net 30, etc. or null",
   "early_payment_discount": {"discount_percent": 2.0, "days": 10} or null,
   "line_items": [{"description": "item", "quantity": 5, "unit_price": 100.00, "total": 500.00}],
   "pricing_terms": [{"item": "item name", "rate": 100.00, "unit": "per unit/per hour/per year"}],
   "contract_terms": {
-    "effective_date": "YYYY-MM-DD or null",
-    "expiry_date": "YYYY-MM-DD or null",
+    "effective_date": "YYYY-MM-DD — the date the contract BECOMES ACTIVE (not the signing date). Look for 'Effective Date', 'Commencement Date', 'Start Date'. If only a signing date exists, use that.",
+    "expiry_date": "YYYY-MM-DD — the date the contract ENDS. Look for 'Expiration', 'Termination Date', 'End Date', 'Term: ... through [date]'.",
+    "signing_date": "YYYY-MM-DD — the date parties actually signed/executed. Look near signature blocks. May differ from effective_date.",
+    "term_months": "integer — contract duration in months. Look for 'Term: 36 months', '3-year agreement', etc.",
     "auto_renewal": true/false,
     "renewal_notice_days": 60,
+    "governing_law": "jurisdiction/governing law, e.g. 'German law — Stuttgart Commercial Court', 'State of Michigan, USA'",
     "liability_cap": 500000 or null,
-    "warranty_months": 36 or null
+    "liability_cap_description": "e.g. '150% of annual contract value'",
+    "warranty_months": 36 or null,
+    "termination_notice_days": 180,
+    "termination_for_convenience": "summary of convenience termination clause or null",
+    "insurance_requirements": "summary of required insurance or null",
+    "confidentiality_years": 5,
+    "sla_summary": "summary of key SLA terms or null",
+    "penalty_clauses": "summary of penalty/liquidated damages clauses or null",
+    "ip_ownership": "summary of IP ownership terms or null",
+    "force_majeure_days": 120
   },
   "parties": ["Party A", "Party B"],
   "notes": "any notes",
@@ -87,6 +109,34 @@ CRITICAL RULES:
 - Detect "2/10 Net 30" style terms as early_payment_discount
 - For credit/debit notes, extract original_invoice_ref
 - For goods receipts: extract po_reference, received_date, received_by, and line_items with quantities actually received. If the document shows "ordered qty" vs "received qty", use received qty in quantity field.
+- FOR CONTRACTS — CRITICAL RULES:
+  - issue_date = signing/execution date (when parties signed). Look near signature blocks for "Date:" fields.
+  - contract_terms.effective_date = when obligations BEGIN (may differ from signing date). Look for "Effective Date", "Commencement", "Start Date" in the header/key terms table.
+  - contract_terms.expiry_date = when the contract ENDS. Look for "Expiration", "Term: ... through [date]", "End Date".
+  - contract_terms.term_months = duration. Calculate from effective→expiry if not stated explicitly.
+  - total_amount = Total Contract Value (full value over entire term, not annual fee).
+  - For service agreements: line_items should capture the pricing breakdown (annual fee components, not individual service visits).
+  - parties = list ALL named parties. Use their full legal entity names.
+  - contract_terms.governing_law = jurisdiction. Look for "Governing Law" or "Jurisdiction" clause.
+  - Extract ALL key clause summaries (termination, SLA, penalties, IP, insurance, force majeure) — these are critical for contract management.
+- FOR PURCHASE ORDERS — CRITICAL RULES:
+  - Extract buyer_name (who placed the order) and buyer_contact if present.
+  - ship_to = delivery address. bill_to = billing address. These are critical for PO matching.
+  - delivery_date = expected delivery date. Look for "Required By", "Delivery Date", "Ship By".
+  - payment_terms = payment terms on the PO (Net 30, etc.).
+  - incoterms = shipping terms (FOB, CIF, DDP, EXW, etc.) if mentioned.
+  - line_items must include part numbers, descriptions, quantities, and unit prices.
+- FOR CREDIT/DEBIT NOTES — CRITICAL RULES:
+  - original_invoice_ref = the original invoice being adjusted. This is MANDATORY if visible.
+  - credit_debit_reason = WHY the adjustment was made. Look for "Reason", "Description", narrative text.
+  - adjustment_type = categorize: 'full_refund', 'partial_refund', 'price_adjustment', 'quantity_correction', 'goodwill'.
+  - total_amount = the adjustment amount (positive number). The system handles debit/credit direction from document_type.
+- FOR GOODS RECEIPTS — CRITICAL RULES:
+  - po_reference = the PO this receipt fulfills. MANDATORY if visible.
+  - For line_items: if the document shows "ordered qty" vs "received qty", use received qty in quantity field. Add a "ordered_qty" field to each line item if both are shown.
+  - condition_notes = quality observations. Look for "Condition", "Quality", "Inspection Notes", "Remarks".
+  - warehouse_location = where goods were stored. Look for "Warehouse", "Location", "Bay", "Bin".
+  - ship_from = origin address or vendor shipping location.
 - Be precise with numbers. If a field is not visible, use null.
 - MULTILINGUAL: All amounts must be output as plain numbers using period (.) as decimal separator, regardless of the document's locale. For example, European "1.500,00" → output 1500.00. Chinese "￥15,000" → output 15000.
 - DATES: Always output dates as YYYY-MM-DD regardless of the document's date format. Parse DD/MM/YYYY (European), MM/DD/YYYY (US), YYYY年MM月DD日 (CJK), DD.MM.YYYY (German), etc.
@@ -299,7 +349,7 @@ def normalize_extraction_locale(result: dict) -> dict:
     # Normalize contract dates
     ct = result.get("contract_terms")
     if ct and isinstance(ct, dict):
-        for df in ("effective_date", "expiry_date"):
+        for df in ("effective_date", "expiry_date", "signing_date"):
             val = ct.get(df)
             if val and isinstance(val, str):
                 ct[df] = parse_locale_date(val, locale_code)
