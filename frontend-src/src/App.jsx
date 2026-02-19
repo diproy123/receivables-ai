@@ -1758,10 +1758,10 @@ function LandingPage({ onGo }) {
       {/* ── Processing Pipeline (LIVE DEMO) ── */}
       <section className="px-6 pb-12">
         <div className="max-w-5xl mx-auto">
-          <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden relative">
-            <div className="absolute top-3 right-3 px-2.5 py-1 rounded-md bg-emerald-600 text-white text-[9px] font-bold tracking-wider shadow-sm">LIVE DEMO</div>
-            <div className="px-6 py-4 border-b border-slate-100">
+          <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
               <span className="text-sm font-bold text-slate-900 uppercase tracking-wider">⚡ How AuditLens Processes Every Invoice</span>
+              <span className="shrink-0 px-2.5 py-1 rounded-md bg-emerald-600 text-white text-[9px] font-bold tracking-wider shadow-sm">LIVE DEMO</span>
             </div>
             <div className="p-5 space-y-2">
               {[
