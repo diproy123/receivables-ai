@@ -741,7 +741,17 @@ function UploadPage() {
   const fileRef = useRef();
   const importRef = useRef();
 
-  const procSteps = ['Reading document', 'Extracting fields & line items', 'Matching to purchase orders', 'Cross-referencing contracts', 'Running anomaly detection', 'Computing confidence score'];
+  const procSteps = (() => {
+    const t = docType;
+    if (t === 'auto') return ['Reading document', 'Detecting document type', 'Extracting fields & line items', 'Running document-specific validations', 'Computing confidence score'];
+    const base = ['Reading document', 'Extracting fields & line items'];
+    if (t === 'invoice') return [...base, 'Matching to purchase orders', 'Cross-referencing contracts', 'Running anomaly detection', 'Computing confidence score'];
+    if (t === 'purchase_order') return [...base, 'Checking for linked invoices', 'Validating delivery terms', 'Computing confidence score'];
+    if (t === 'contract') return [...base, 'Extracting parties & terms', 'Validating contract clauses', 'Computing confidence score'];
+    if (t === 'goods_receipt') return [...base, 'Matching to purchase order', 'Verifying received quantities', 'Computing confidence score'];
+    if (t === 'credit_note' || t === 'debit_note') return [...base, 'Linking to original invoice', 'Running anomaly detection', 'Computing confidence score'];
+    return [...base, 'Running anomaly detection', 'Computing confidence score'];
+  })();
 
   async function handleFiles(files) {
     setUploading(true);
