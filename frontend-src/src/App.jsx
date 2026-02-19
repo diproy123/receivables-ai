@@ -25,7 +25,7 @@ function StatCard({ icon: Icon, label, value, sub, color = '#3b82f6' }) {
         </div>
       </div>
       <div className="text-[26px] font-extrabold tracking-tight text-slate-900 leading-none">{value}</div>
-      <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mt-1.5">{label}</div>
+      <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mt-1.5">{label}</div>
       {sub && <div className="text-[12px] text-slate-500 mt-1">{sub}</div>}
     </div>
   );
@@ -38,7 +38,7 @@ function Table({ cols, rows, onRow }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-slate-50/80">
-              {cols.map((c, i) => <th key={i} className={cn('px-4 py-3 text-[11px] font-semibold text-slate-400 uppercase tracking-wider', c.right && 'text-right')}>{c.label}</th>)}
+              {cols.map((c, i) => <th key={i} className={cn('px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider', c.right && 'text-right')}>{c.label}</th>)}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -47,7 +47,7 @@ function Table({ cols, rows, onRow }) {
                 {cols.map((c, j) => <td key={j} className={cn('px-4 py-3', c.right && 'text-right', c.mono && 'font-mono')}>{c.render ? c.render(r) : r[c.key]}</td>)}
               </tr>
             ))}
-            {rows.length === 0 && <tr><td colSpan={cols.length} className="px-4 py-12 text-center text-slate-400">No data yet</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={cols.length} className="px-4 py-12 text-center text-slate-500">No data yet</td></tr>}
           </tbody>
         </table>
       </div>
@@ -146,7 +146,7 @@ function Sidebar() {
         </div>
         <div>
           <div className="text-[17px] font-extrabold tracking-tight">AuditLens</div>
-          <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-[.12em]">AP Intelligence</div>
+          <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-[.12em]">AP Intelligence</div>
         </div>
       </div>
       <div className="px-3 mb-3">
@@ -163,8 +163,8 @@ function Sidebar() {
               return (
                 <button key={it.id} onClick={() => d({ type: 'TAB', tab: it.id })}
                   className={cn('w-full flex items-center gap-3 px-3 py-[9px] rounded-xl text-[13.5px] font-medium transition-all mb-0.5',
-                    on ? 'bg-accent-50 text-accent-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800')}>
-                  <Ic className={cn('w-[18px] h-[18px]', on ? 'text-accent-600' : 'text-slate-400')} strokeWidth={on ? 2.2 : 1.8} />
+                    on ? 'bg-accent-50 text-accent-700 font-semibold' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900')}>
+                  <Ic className={cn('w-[18px] h-[18px]', on ? 'text-accent-600' : 'text-slate-500')} strokeWidth={on ? 2.2 : 1.8} />
                   {it.label}
                   {it.badge > 0 && <span className={`badge badge-${it.bc} ml-auto`}>{it.badge}</span>}
                 </button>
@@ -285,7 +285,7 @@ function Dashboard() {
               <div className="w-36 h-36"><ResponsiveContainer><PieChart><Pie data={pie} dataKey="value" cx="50%" cy="50%" outerRadius={60} innerRadius={38} strokeWidth={2}>{pie.map((_, i) => <Cell key={i} fill={PIE_C[i]} />)}</Pie></PieChart></ResponsiveContainer></div>
               <div className="space-y-3">{pie.map((p, i) => <div key={p.name} className="flex items-center gap-3"><div className="w-2.5 h-2.5 rounded-full" style={{ background: PIE_C[i] }} /><span className="text-sm text-slate-600">{p.name}</span><span className="font-bold text-sm ml-auto font-mono">{p.value}</span></div>)}</div>
             </div>
-          ) : <div className="text-center py-10 text-slate-400 text-sm">Upload invoices to begin</div>}
+          ) : <div className="text-center py-10 text-slate-500 text-sm">Upload invoices to begin</div>}
         </div>
         <div className="card p-6">
           <h3 className="text-[11px] font-bold text-slate-900 uppercase tracking-wider mb-5">Invoice Aging</h3>
@@ -293,7 +293,7 @@ function Dashboard() {
             <ResponsiveContainer width="100%" height={150}>
               <BarChart data={aging}><XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} /><YAxis tick={{ fontSize: 12, fill: '#94a3b8' }} axisLine={false} tickLine={false} /><Tooltip contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 8px 32px rgba(0,0,0,.1)', fontSize: 13 }} /><Bar dataKey="v" fill="#3b82f6" radius={[6, 6, 0, 0]} /></BarChart>
             </ResponsiveContainer>
-          ) : <div className="text-center py-10 text-slate-400 text-sm">No aging data</div>}
+          ) : <div className="text-center py-10 text-slate-500 text-sm">No aging data</div>}
         </div>
       </div>
 
@@ -325,7 +325,7 @@ function Dashboard() {
           <div className="space-y-2">{oa.slice(0, 5).map(a => (
             <div key={a.id} className="flex items-center gap-4 p-3 rounded-xl bg-slate-50 hover:bg-slate-100 transition-colors">
               <div className={cn('w-2 h-2 rounded-full', a.severity === 'high' ? 'bg-red-500' : a.severity === 'medium' ? 'bg-amber-500' : 'bg-emerald-500')} />
-              <div className="flex-1 min-w-0"><div className="text-sm font-medium truncate">{a.description}</div><div className="text-xs text-slate-400">{a.invoiceNumber} · {a.vendor}</div></div>
+              <div className="flex-1 min-w-0"><div className="text-sm font-medium truncate">{a.description}</div><div className="text-xs text-slate-500">{a.invoiceNumber} · {a.vendor}</div></div>
               <div className="text-sm font-bold text-red-600 font-mono">{$(Math.abs(a.amount_at_risk || 0))}</div>
             </div>
           ))}</div>
@@ -350,7 +350,7 @@ function Documents() {
       </PageHeader>
       <Table
         cols={[
-          { label: 'Document', render: r => <div><div className="font-semibold text-slate-900">{r.invoiceNumber || r.poNumber || r.documentNumber || r.id}</div><div className="text-xs text-slate-400">{r.vendor}</div></div> },
+          { label: 'Document', render: r => <div><div className="font-semibold text-slate-900">{r.invoiceNumber || r.poNumber || r.documentNumber || r.id}</div><div className="text-xs text-slate-500">{r.vendor}</div></div> },
           { label: 'Type', render: r => <Badge c={docColor(r.type)}>{docLabel(r.type)}</Badge> },
           { label: 'Amount', right: true, mono: true, render: r => <span className="font-semibold">{$(r.amount, r.currency)}</span> },
           { label: 'Date', render: r => <span className="text-slate-500">{date(r.issueDate)}</span> },
@@ -380,7 +380,7 @@ function Anomalies() {
       <PageHeader title="Anomalies" sub={`${anoms.filter(a => a.status === 'open').length} open anomalies`} />
       <Table
         cols={[
-          { label: 'Anomaly', render: r => <div><div className="font-semibold">{r.description?.slice(0, 60)}</div><div className="text-xs text-slate-400">{r.invoiceNumber} · {r.vendor}</div></div> },
+          { label: 'Anomaly', render: r => <div><div className="font-semibold">{r.description?.slice(0, 60)}</div><div className="text-xs text-slate-500">{r.invoiceNumber} · {r.vendor}</div></div> },
           { label: 'Severity', render: r => <Badge c={sevColor(r.severity) === 'err' ? 'err' : sevColor(r.severity) === 'warn' ? 'warn' : 'ok'}>{r.severity}</Badge> },
           { label: 'Risk', right: true, mono: true, render: r => <span className="text-red-600 font-semibold">{$(Math.abs(r.amount_at_risk || 0))}</span> },
           { label: 'Type', render: r => <span className="text-xs text-slate-500">{(r.type || '').replace(/_/g, ' ')}</span> },
@@ -411,7 +411,7 @@ function Matching() {
       <PageHeader title="PO Matching" sub={`${matches.length} matches`} />
       <Table
         cols={[
-          { label: 'Invoice → PO', render: r => <div><span className="font-semibold">{r.invoiceNumber}</span><span className="text-slate-400 mx-2">→</span><span className="font-semibold text-accent-600">{r.poNumber}</span></div> },
+          { label: 'Invoice → PO', render: r => <div><span className="font-semibold">{r.invoiceNumber}</span><span className="text-slate-500 mx-2">→</span><span className="font-semibold text-accent-600">{r.poNumber}</span></div> },
           { label: 'Vendor', render: r => <span className="text-slate-600">{r.vendor}</span> },
           { label: 'Δ Amount', right: true, render: r => { const d = r.amountDifference || 0; return <span className={cn('font-mono font-semibold', Math.abs(d) > 0 ? 'text-red-600' : 'text-emerald-600')}>{d > 0 ? '+' : ''}{$f(d)}</span>; }},
           { label: 'Match', render: r => <ConfidenceRing score={r.matchScore || 0} /> },
@@ -458,14 +458,14 @@ function Triage() {
                 <span className={`badge badge-${laneColor(lane)}`}>{items.length}</span>
               </div>
               <div className="divide-y divide-slate-50 max-h-[320px] overflow-y-auto">
-                {items.length === 0 && <div className="p-6 text-center text-sm text-slate-400">No invoices</div>}
+                {items.length === 0 && <div className="p-6 text-center text-sm text-slate-500">No invoices</div>}
                 {items.map(inv => (
                   <div key={inv.id} className="px-5 py-3 hover:bg-slate-50 transition-colors">
                     <div className="flex items-center justify-between">
                       <div className="font-semibold text-sm">{inv.invoiceNumber || inv.id}</div>
                       <span className="text-sm font-bold font-mono">{$(inv.amount, inv.currency)}</span>
                     </div>
-                    <div className="text-xs text-slate-400 mt-0.5">{inv.vendor} · {pct(inv.confidence)} conf</div>
+                    <div className="text-xs text-slate-500 mt-0.5">{inv.vendor} · {pct(inv.confidence)} conf</div>
                   </div>
                 ))}
               </div>
@@ -500,7 +500,7 @@ function Cases() {
       </PageHeader>
       <Table
         cols={[
-          { label: 'Case', render: r => <div><div className="font-semibold">{r.title || r.id}</div><div className="text-xs text-slate-400">{r.id}</div></div> },
+          { label: 'Case', render: r => <div><div className="font-semibold">{r.title || r.id}</div><div className="text-xs text-slate-500">{r.id}</div></div> },
           { label: 'Priority', render: r => <Badge c={priColor[r.priority] || 'muted'}>{r.priority}</Badge> },
           { label: 'Status', render: r => <Badge c={r.status === 'resolved' ? 'ok' : r.status === 'escalated' ? 'err' : 'warn'}>{(r.status || '').replace(/_/g, ' ')}</Badge> },
           { label: 'Invoice', render: r => <span className="text-xs font-mono text-slate-500">{r.invoiceId || '—'}</span> },
@@ -517,15 +517,15 @@ function Cases() {
             <div className="flex justify-between items-start mb-4">
               <div>
                 <div className="text-lg font-bold">{detail.title}</div>
-                <div className="text-xs text-slate-400 font-mono mt-1">{detail.id}</div>
+                <div className="text-xs text-slate-500 font-mono mt-1">{detail.id}</div>
               </div>
               <button onClick={() => setDetail(null)} className="p-2 rounded-lg hover:bg-slate-100"><X className="w-5 h-5 text-slate-400" /></button>
             </div>
             <div className="grid grid-cols-2 gap-4 mb-4">
-              <div><div className="text-[10px] font-semibold text-slate-400 uppercase">Priority</div><Badge c={priColor[detail.priority] || 'muted'}>{detail.priority}</Badge></div>
-              <div><div className="text-[10px] font-semibold text-slate-400 uppercase">Status</div><Badge c={detail.status === 'resolved' ? 'ok' : 'warn'}>{(detail.status || '').replace(/_/g, ' ')}</Badge></div>
-              <div><div className="text-[10px] font-semibold text-slate-400 uppercase">Assigned</div><div className="text-sm font-medium">{detail.assignedTo || '—'}</div></div>
-              <div><div className="text-[10px] font-semibold text-slate-400 uppercase">Created</div><div className="text-sm">{dateTime(detail.createdAt)}</div></div>
+              <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Priority</div><Badge c={priColor[detail.priority] || 'muted'}>{detail.priority}</Badge></div>
+              <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Status</div><Badge c={detail.status === 'resolved' ? 'ok' : 'warn'}>{(detail.status || '').replace(/_/g, ' ')}</Badge></div>
+              <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Assigned</div><div className="text-sm font-medium">{detail.assignedTo || '—'}</div></div>
+              <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Created</div><div className="text-sm">{dateTime(detail.createdAt)}</div></div>
             </div>
             {detail.description && <div className="p-3 bg-slate-50 rounded-xl text-sm text-slate-600 mb-4">{detail.description}</div>}
             {/* Notes */}
@@ -634,36 +634,36 @@ function Contracts() {
 
         {/* Contract Summary Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <div className="card p-4"><div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Status</div><Badge c={status.color}>{status.label}</Badge></div>
-          <div className="card p-4"><div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Contract Value</div><div className="text-lg font-bold text-slate-900">{$(c.amount, c.currency)}</div></div>
-          <div className="card p-4"><div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Invoiced to Date</div><div className="text-lg font-bold text-emerald-600">{$(totalInvoiced, c.currency)}</div></div>
-          <div className="card p-4"><div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Utilization</div><div className="text-lg font-bold" style={{ color: utilization > 90 ? '#dc2626' : utilization > 70 ? '#d97706' : '#059669' }}>{pct(utilization)}</div></div>
+          <div className="card p-4"><div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Status</div><Badge c={status.color}>{status.label}</Badge></div>
+          <div className="card p-4"><div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Contract Value</div><div className="text-lg font-bold text-slate-900">{$(c.amount, c.currency)}</div></div>
+          <div className="card p-4"><div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Invoiced to Date</div><div className="text-lg font-bold text-emerald-600">{$(totalInvoiced, c.currency)}</div></div>
+          <div className="card p-4"><div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Utilization</div><div className="text-lg font-bold" style={{ color: utilization > 90 ? '#dc2626' : utilization > 70 ? '#d97706' : '#059669' }}>{pct(utilization)}</div></div>
         </div>
 
         {/* Two column layout */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Left: Contract Details */}
           <div className="card p-5 space-y-4">
-            <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Contract Details</div>
+            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Contract Details</div>
             <div className="grid grid-cols-2 gap-3">
-              <div><div className="text-[10px] font-semibold text-slate-400 uppercase">Counterparty</div><div className="text-sm font-semibold">{c.vendor || '—'}</div></div>
-              <div><div className="text-[10px] font-semibold text-slate-400 uppercase">Contract #</div><div className="text-sm font-semibold">{c.contractNumber || c.invoiceNumber || c.id}</div></div>
-              <div><div className="text-[10px] font-semibold text-slate-400 uppercase">Effective Date</div><div className="text-sm">{date(c.issueDate)}</div></div>
-              <div><div className="text-[10px] font-semibold text-slate-400 uppercase">Expiry Date</div><div className="text-sm">{date(c.endDate) || '—'}</div></div>
-              <div><div className="text-[10px] font-semibold text-slate-400 uppercase">Currency</div><div className="text-sm">{c.currency || 'USD'}</div></div>
-              <div><div className="text-[10px] font-semibold text-slate-400 uppercase">Payment Terms</div><div className="text-sm">{c.paymentTerms || '—'}</div></div>
-              {parties.length > 0 && <div className="col-span-2"><div className="text-[10px] font-semibold text-slate-400 uppercase">Parties</div><div className="text-sm">{parties.join(' & ')}</div></div>}
-              <div><div className="text-[10px] font-semibold text-slate-400 uppercase">Confidence</div><div className="text-sm font-semibold">{pct(c.confidence)}</div></div>
-              <div><div className="text-[10px] font-semibold text-slate-400 uppercase">Uploaded By</div><div className="text-sm">{c.uploadedBy || '—'}</div></div>
+              <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Counterparty</div><div className="text-sm font-semibold">{c.vendor || '—'}</div></div>
+              <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Contract #</div><div className="text-sm font-semibold">{c.contractNumber || c.invoiceNumber || c.id}</div></div>
+              <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Effective Date</div><div className="text-sm">{date(c.issueDate)}</div></div>
+              <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Expiry Date</div><div className="text-sm">{date(c.endDate) || '—'}</div></div>
+              <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Currency</div><div className="text-sm">{c.currency || 'USD'}</div></div>
+              <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Payment Terms</div><div className="text-sm">{c.paymentTerms || '—'}</div></div>
+              {parties.length > 0 && <div className="col-span-2"><div className="text-[10px] font-semibold text-slate-500 uppercase">Parties</div><div className="text-sm">{parties.join(' & ')}</div></div>}
+              <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Confidence</div><div className="text-sm font-semibold">{pct(c.confidence)}</div></div>
+              <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Uploaded By</div><div className="text-sm">{c.uploadedBy || '—'}</div></div>
             </div>
-            {c.notes && <div><div className="text-[10px] font-semibold text-slate-400 uppercase">Notes</div><div className="text-sm text-slate-600">{c.notes}</div></div>}
+            {c.notes && <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Notes</div><div className="text-sm text-slate-600">{c.notes}</div></div>}
           </div>
 
           {/* Right: Linked Invoices */}
           <div className="card p-5">
-            <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Invoices Against This Contract <Badge c="muted">{linkedInvoices.length}</Badge></div>
+            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Invoices Against This Contract <Badge c="muted">{linkedInvoices.length}</Badge></div>
             {linkedInvoices.length === 0 ? (
-              <div className="text-sm text-slate-400 py-6 text-center">No invoices found for this vendor</div>
+              <div className="text-sm text-slate-500 py-6 text-center">No invoices found for this vendor</div>
             ) : (
               <div className="space-y-2 max-h-[300px] overflow-y-auto">
                 {linkedInvoices.map(inv => (
@@ -682,7 +682,7 @@ function Contracts() {
             )}
             {linkedInvoices.length > 0 && (
               <div className="mt-3 pt-3 border-t border-slate-100 flex justify-between text-xs">
-                <span className="text-slate-400">Total invoiced</span>
+                <span className="text-slate-500">Total invoiced</span>
                 <span className="font-bold font-mono">{$(totalInvoiced, c.currency)}</span>
               </div>
             )}
@@ -695,11 +695,11 @@ function Contracts() {
   return (
     <div className="page-enter">
       <PageHeader title="Contracts" sub={`${contracts.length} vendor contracts`}>
-        <button onClick={() => d({ type: 'TAB', tab: 'upload' })} className="btn-o"><Upload className="w-4 h-4" /> Upload Contract</button>
+        <button onClick={() => d({ type: 'TAB', tab: 'upload' })} className="btn-p"><Upload className="w-4 h-4" /> Upload Contract</button>
       </PageHeader>
       <Table
         cols={[
-          { label: 'Contract', render: r => <div><div className="font-semibold">{r.contractNumber || r.invoiceNumber || r.id}</div><div className="text-xs text-slate-400">{r.vendor}</div></div> },
+          { label: 'Contract', render: r => <div><div className="font-semibold">{r.contractNumber || r.invoiceNumber || r.id}</div><div className="text-xs text-slate-500">{r.vendor}</div></div> },
           { label: 'Status', render: r => { const st = getStatus(r); return <Badge c={st.color}>{st.label}</Badge>; }},
           { label: 'Value', right: true, render: r => <span className="font-semibold font-mono">{$(r.amount, r.currency)}</span> },
           { label: 'Start', render: r => <span className="text-slate-500">{date(r.issueDate)}</span> },
@@ -1032,7 +1032,7 @@ function UploadPage() {
           <>
             <UploadCloud className="w-12 h-12 text-slate-300 mx-auto mb-4" />
             <div className="text-lg font-bold text-slate-700 mb-2">Drop files here or click to upload</div>
-            <div className="text-sm text-slate-400">PDF, JPEG, PNG — single or multiple files</div>
+            <div className="text-sm text-slate-500">PDF, JPEG, PNG — single or multiple files</div>
             <div className="flex items-center justify-center gap-2 mt-4"><Badge c="info">AI Extraction Active</Badge></div>
           </>
         )}
@@ -1146,9 +1146,9 @@ function Training() {
         <div className={cn('card p-6 border-l-4', job.status === 'completed' ? 'border-emerald-500' : job.status === 'failed' ? 'border-red-500' : 'border-blue-500')}>
           <h3 className="text-sm font-bold mb-2">Active Job: {job.job_id}</h3>
           <div className="grid grid-cols-3 gap-4 text-sm">
-            <div><span className="text-slate-400">Status:</span> <span className="font-semibold capitalize">{job.status}</span></div>
-            <div><span className="text-slate-400">Model:</span> <span className="font-mono text-xs">{job.model || '—'}</span></div>
-            <div><span className="text-slate-400">Events:</span> <span>{job.events?.length || 0}</span></div>
+            <div><span className="text-slate-500">Status:</span> <span className="font-semibold capitalize">{job.status}</span></div>
+            <div><span className="text-slate-500">Model:</span> <span className="font-mono text-xs">{job.model || '—'}</span></div>
+            <div><span className="text-slate-500">Events:</span> <span>{job.events?.length || 0}</span></div>
           </div>
           {polling && <div className="mt-3 text-xs text-accent-600 flex items-center gap-2"><div className="w-3 h-3 rounded-full border-2 border-accent-200 border-t-accent-600 animate-spin" /> Polling every 5s...</div>}
           {!polling && (job.status === 'running' || job.status === 'pending') && (
@@ -1223,13 +1223,13 @@ function DocModal() {
   const Field = ({ label, val, k, type = 'text' }) => {
     if (editing && k) return (
       <div>
-        <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">{label}</div>
+        <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">{label}</div>
         <input type={type} defaultValue={val || ''} onChange={e => setFields(f => ({ ...f, [k]: e.target.value }))}
           className="inp text-sm py-1.5 border-accent-300 bg-accent-50/30" />
       </div>
     );
     return (
-      <div><div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">{label}</div><div className="text-sm font-semibold text-slate-800">{val || '—'}</div></div>
+      <div><div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">{label}</div><div className="text-sm font-semibold text-slate-800">{val || '—'}</div></div>
     );
   };
 
@@ -1281,7 +1281,7 @@ function DocModal() {
             </div>
           )}
           <div className={cn('overflow-y-auto p-6 space-y-5', hasFile && view === 'split' ? 'w-1/2' : 'w-full')}>
-            {view === 'split' && <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Extracted Data — {pct(doc.confidence)} confidence</div>}
+            {view === 'split' && <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Extracted Data — {pct(doc.confidence)} confidence</div>}
             <div className="grid grid-cols-2 gap-4">
               {/* Always: Vendor/Counterparty + Confidence */}
               <Field label={doc.type === 'contract' ? 'Counterparty' : 'Vendor'} val={doc.vendor} k="vendor" />
@@ -1452,7 +1452,7 @@ function DocModal() {
             {/* Triage */}
             {doc.triageLane && doc.triageReasons && (
               <div className={cn('p-3 rounded-xl border', doc.triageLane === 'AUTO_APPROVE' ? 'bg-emerald-50 border-emerald-200' : doc.triageLane === 'BLOCK' ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200')}>
-                <div className="flex items-center gap-2 mb-1"><Badge c={laneColor(doc.triageLane)}>{laneLabel(doc.triageLane)}</Badge><span className="text-xs text-slate-400">{pct(doc.triageConfidence)} confidence</span></div>
+                <div className="flex items-center gap-2 mb-1"><Badge c={laneColor(doc.triageLane)}>{laneLabel(doc.triageLane)}</Badge><span className="text-xs text-slate-500">{pct(doc.triageConfidence)} confidence</span></div>
                 {doc.triageReasons.map((r, i) => <div key={i} className="text-sm text-slate-600 mt-0.5">• {r}</div>)}
                 {!editing && doc.type === 'invoice' && (
                   <div className="flex gap-1 mt-2">{['AUTO_APPROVE', 'REVIEW', 'BLOCK'].filter(l => l !== doc.triageLane).map(l => (
@@ -1791,7 +1791,7 @@ function LandingPage({ onGo }) {
               </div>
               {Object.keys(sla).length > 0 && (
                 <div className="mt-3 pt-3 border-t border-slate-100">
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">SLA Targets</div>
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">SLA Targets</div>
                   <div className="flex flex-wrap gap-1">
                     {Object.entries(sla).map(([k, v]) => (
                       <span key={k} className="text-[10px] px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100">{k}: <strong>{v}h</strong></span>
@@ -1862,7 +1862,7 @@ function LandingPage({ onGo }) {
         <div className="max-w-5xl mx-auto">
           <div className="rounded-2xl p-10 text-center text-white" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)' }}>
             <h2 className="text-3xl font-extrabold tracking-tight mb-2">See what your AP team is missing.</h2>
-            <p className="text-base text-slate-400 mb-6">Upload your first invoice — extracted, matched, and audited in under 8 seconds.</p>
+            <p className="text-base text-slate-500 mb-6">Upload your first invoice — extracted, matched, and audited in under 8 seconds.</p>
             <button onClick={onGo} className="px-8 py-3 text-sm font-semibold text-slate-900 bg-white rounded-xl hover:bg-slate-50 transition-all shadow-lg">Start Free →</button>
           </div>
         </div>
