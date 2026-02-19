@@ -358,10 +358,7 @@ function Documents() {
           { label: 'Status', render: r => <Badge c={r.status === 'paid' ? 'ok' : r.status === 'disputed' ? 'err' : r.status === 'approved' ? 'ok' : 'warn'}>{(r.status || '').replace(/_/g, ' ')}</Badge> },
         ]}
         rows={docs}
-        onRow={r => {
-          if (r.type === 'contract') { d({ type: 'TAB', tab: 'contracts', contractId: r.id }); }
-          else { d({ type: 'SEL', doc: r }); }
-        }}
+        onRow={r => d({ type: 'SEL', doc: r })}
       />
     </div>
   );
