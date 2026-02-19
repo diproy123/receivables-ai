@@ -15,7 +15,7 @@ function reducer(s, a) {
     case 'AUTH': return { ...s, user: a.user, token: a.token };
     case 'LOGOUT': return { ...s, user: null, token: null };
     case 'DATA': return { ...s, ...a.d, loading: false };
-    case 'TAB': return { ...s, tab: a.tab };
+    case 'TAB': return { ...s, tab: a.tab, contractId: a.contractId || null };
     case 'SEL': return { ...s, sel: a.doc };
     case 'PROC': return { ...s, proc: a.d };
     case 'TOAST': return { ...s, toast: a.msg ? { msg: a.msg, t: a.t || 'info' } : null };

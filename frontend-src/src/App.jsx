@@ -358,7 +358,10 @@ function Documents() {
           { label: 'Status', render: r => <Badge c={r.status === 'paid' ? 'ok' : r.status === 'disputed' ? 'err' : r.status === 'approved' ? 'ok' : 'warn'}>{(r.status || '').replace(/_/g, ' ')}</Badge> },
         ]}
         rows={docs}
-        onRow={r => d({ type: 'SEL', doc: r })}
+        onRow={r => {
+          if (r.type === 'contract') { d({ type: 'TAB', tab: 'contracts', contractId: r.id }); }
+          else { d({ type: 'SEL', doc: r }); }
+        }}
       />
     </div>
   );
@@ -586,6 +589,15 @@ function Contracts() {
   const contracts = (s.docs || []).filter(x => x.type === 'contract');
   const invoices = (s.docs || []).filter(x => x.type === 'invoice');
   const [sel, setSel] = useState(null);
+
+  // Auto-select if navigated from Documents page with contractId
+  useEffect(() => {
+    if (s.contractId && !sel) {
+      const target = contracts.find(c => c.id === s.contractId);
+      if (target) setSel(target);
+      d({ type: 'TAB', tab: 'contracts' }); // clear contractId
+    }
+  }, [s.contractId]);
   const c = sel; // selected contract
 
   // Invoices linked to this contract's vendor
