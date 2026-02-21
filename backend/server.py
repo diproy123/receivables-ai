@@ -1791,9 +1791,13 @@ async def get_dashboard():
     # ── Pre-compute values needed by both legacy and React frontend ──
     _total_risk = round(sum(_n(a.get("amount_at_risk")) for a in oa if _n(a.get("amount_at_risk")) > 0), 2)
     _high_severity = sum(1 for a in oa if a.get("severity") == "high")
+    # Savings = only RESOLVED anomalies (confirmed and acted upon).
+    # Open anomalies are unconfirmed risk, NOT savings.
+    # Dismissed anomalies are false positives, NOT savings.
+    _resolved = [a for a in db.get("anomalies", []) if a.get("status") == "resolved"]
     _savings_discovered = round(
-        sum(_n(a.get("amount_at_risk")) for a in db.get("anomalies", [])
-            if _n(a.get("amount_at_risk")) > 0 and a.get("status") != "dismissed"), 2)
+        sum(_n(a.get("amount_at_risk")) for a in _resolved
+            if _n(a.get("amount_at_risk")) > 0), 2)
     _processing_speed = _compute_processing_speed(db)
     _total_invoices = len(db["invoices"])
 
@@ -1860,18 +1864,18 @@ async def get_dashboard():
         "total_risk": _total_risk, "high_severity": _high_severity,
         "savings_discovered": _savings_discovered,
         "savings_breakdown": {
-            "overcharges": round(sum(_n(a.get("amount_at_risk")) for a in db.get("anomalies", [])
+            "overcharges": round(sum(_n(a.get("amount_at_risk")) for a in _resolved
                 if a.get("type") in ("PRICE_OVERCHARGE", "AMOUNT_DISCREPANCY", "CONTRACT_PRICE_VIOLATION")
-                and _n(a.get("amount_at_risk")) > 0 and a.get("status") != "dismissed"), 2),
-            "duplicates_prevented": round(sum(_n(a.get("amount_at_risk")) for a in db.get("anomalies", [])
+                and _n(a.get("amount_at_risk")) > 0), 2),
+            "duplicates_prevented": round(sum(_n(a.get("amount_at_risk")) for a in _resolved
                 if a.get("type") == "DUPLICATE_INVOICE"
-                and _n(a.get("amount_at_risk")) > 0 and a.get("status") != "dismissed"), 2),
-            "contract_violations": round(sum(_n(a.get("amount_at_risk")) for a in db.get("anomalies", [])
+                and _n(a.get("amount_at_risk")) > 0), 2),
+            "contract_violations": round(sum(_n(a.get("amount_at_risk")) for a in _resolved
                 if a.get("type") == "TERMS_VIOLATION"
-                and _n(a.get("amount_at_risk")) > 0 and a.get("status") != "dismissed"), 2),
-            "unauthorized_items": round(sum(_n(a.get("amount_at_risk")) for a in db.get("anomalies", [])
+                and _n(a.get("amount_at_risk")) > 0), 2),
+            "unauthorized_items": round(sum(_n(a.get("amount_at_risk")) for a in _resolved
                 if a.get("type") in ("UNAUTHORIZED_ITEM", "QUANTITY_OVERCHARGE")
-                and _n(a.get("amount_at_risk")) > 0 and a.get("status") != "dismissed"), 2),
+                and _n(a.get("amount_at_risk")) > 0), 2),
             "early_payment_opportunities": round(epd_savings, 2),
         },
         "processing_speed": _processing_speed,

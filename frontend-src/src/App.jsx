@@ -221,14 +221,14 @@ function Dashboard() {
     <div className="page-enter space-y-6">
       <PageHeader title="Dashboard" sub="Real-time AP audit intelligence" />
 
-      {/* ── Savings Discovered Banner ── */}
+      {/* ── Savings Discovered Banner (only confirmed/resolved anomalies) ── */}
       {sv > 0 && (
         <div className="rounded-2xl p-6 text-white" style={{ background: 'linear-gradient(135deg, #059669, #047857)' }}>
           <div className="flex justify-between items-center flex-wrap gap-4">
             <div>
-              <div className="text-sm font-medium opacity-85 mb-1">✔ Total Savings Discovered</div>
+              <div className="text-sm font-medium opacity-85 mb-1">✔ Confirmed Savings</div>
               <div className="text-4xl font-extrabold tracking-tight">{$(sv)}</div>
-              <div className="text-sm opacity-70 mt-1">Across {num(d.total_documents || 0)} documents</div>
+              <div className="text-sm opacity-70 mt-1">From {num(d.total_documents || 0)} documents processed</div>
             </div>
             <div className="flex gap-6 flex-wrap">
               {svb.overcharges > 0 && <div className="text-center"><div className="text-xl font-bold">{$(svb.overcharges)}</div><div className="text-xs opacity-75">Overcharges</div></div>}
