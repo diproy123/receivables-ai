@@ -74,7 +74,7 @@ Check for ALL anomaly types:
 16. QUANTITY_RECEIVED_MISMATCH — GRN quantity differs significantly from invoice quantity
 17. SHORT_SHIPMENT — GRN shows significantly fewer items received than PO authorized
 18. STALE_INVOICE — invoice date is very old (beyond acceptable age threshold)
-19. WEEKEND_INVOICE — invoice dated on a Saturday or Sunday (unusual for business transactions)
+19. WEEKEND_INVOICE — invoice dated on a Saturday or Sunday (unusual for business transactions). ONLY flag if the date actually falls on Saturday (day 6) or Sunday (day 7). Do NOT flag Monday through Friday — those are normal business days.
 20. ROUND_NUMBER_INVOICE — invoice total is a suspiciously round number
 21. UNRECEIPTED_INVOICE — invoice references a PO but no goods receipt exists
 
@@ -145,7 +145,75 @@ Be more aggressive flagging anomalies for this vendor."""
             if text.endswith("```"): text = text[:-3]
             text = text.strip()
         result = json.loads(text)
-        return result if isinstance(result, list) else []
+        anomalies = result if isinstance(result, list) else []
+
+        # Post-processing: validate AI anomalies against deterministic facts
+        # AI can hallucinate — verify checkable claims before accepting
+        validated = []
+        seen_types = set()  # prevent duplicate anomaly types
+        inv_total_val = float(invoice.get("amount") or 0)
+        for a in anomalies:
+            atype = a.get("type")
+
+            # WEEKEND_INVOICE: verify date is actually Sat/Sun
+            if atype == "WEEKEND_INVOICE":
+                issue_date = invoice.get("issueDate") or invoice.get("issue_date")
+                if issue_date:
+                    try:
+                        dt = datetime.strptime(str(issue_date)[:10], "%Y-%m-%d")
+                        if dt.weekday() < 5:  # Mon-Fri = 0-4
+                            continue  # discard — not a weekend
+                    except (ValueError, TypeError):
+                        pass
+
+            # ROUND_NUMBER: verify amount is actually round and above threshold
+            if atype == "ROUND_NUMBER_INVOICE":
+                policy = get_policy()
+                rn_threshold = policy.get("round_number_threshold", 1000)
+                if inv_total_val < rn_threshold or inv_total_val != round(inv_total_val, -3):
+                    continue  # discard — not actually a round number or below threshold
+
+            # CURRENCY_MISMATCH: verify currencies actually differ
+            if atype == "CURRENCY_MISMATCH":
+                inv_cur = (invoice.get("currency") or "USD").upper()
+                po_cur = (po.get("currency") or "USD").upper() if po else inv_cur
+                if inv_cur == po_cur:
+                    continue  # discard — AI hallucinated mismatch
+
+            # STALE_INVOICE: verify age calculation
+            if atype == "STALE_INVOICE":
+                issue_date = invoice.get("issueDate") or invoice.get("issue_date")
+                if issue_date:
+                    try:
+                        dt = datetime.strptime(str(issue_date)[:10], "%Y-%m-%d")
+                        age = (datetime.now() - dt).days
+                        policy = get_policy()
+                        max_age = policy.get("max_invoice_age_days", 365)
+                        if 0 <= age <= max_age:
+                            continue  # discard — invoice is within acceptable age
+                    except (ValueError, TypeError):
+                        pass
+
+            # DUPLICATE_INVOICE: verify the claimed duplicate actually exists in history
+            if atype == "DUPLICATE_INVOICE":
+                if history:
+                    claimed_inv = a.get("description", "")
+                    # Check if any history invoice number appears in the AI's description
+                    history_inv_nums = {h.get("invoiceNumber", "").lower() for h in history if h.get("invoiceNumber")}
+                    found_in_history = any(hn in claimed_inv.lower() for hn in history_inv_nums if hn)
+                    if not found_in_history:
+                        # AI claimed a duplicate that doesn't exist in vendor history
+                        continue  # discard hallucinated duplicate
+                else:
+                    continue  # no history at all — can't be a duplicate
+
+            # Deduplicate: prevent AI from flagging same type multiple times
+            if atype in seen_types and atype not in ("PRICE_OVERCHARGE", "QUANTITY_MISMATCH", "UNAUTHORIZED_ITEM"):
+                continue  # allow multiple per-line-item types, deduplicate others
+            seen_types.add(atype)
+
+            validated.append(a)
+        return validated
     except Exception as e:
         print(f"Anomaly detection error: {e}")
         return detect_anomalies_rule_based(invoice, po, contract, history, tolerances)
@@ -158,7 +226,9 @@ def detect_anomalies_rule_based(invoice, po, contract, history, tolerances=None)
     cur = invoice.get("currency") or "USD"
     sym = currency_symbol(cur)
     inv_total = float(invoice.get("amount") or 0)
-    inv_subtotal = float(invoice.get("subtotal") or inv_total or 0)
+    _subtotal_raw = invoice.get("subtotal")
+    _subtotal_is_fallback = _subtotal_raw in (None, 0, "", "0")
+    inv_subtotal = float(_subtotal_raw or inv_total or 0)
 
     if po:
         if po.get("amount") is None:
@@ -183,15 +253,17 @@ def detect_anomalies_rule_based(invoice, po, contract, history, tolerances=None)
                 "recommendation": "Verify line item totals. Possible hidden charges or calculation error."})
 
     # ── 2. MISSING PO CHECK ──
+    # Note: amount_at_risk = 0 because a missing PO means the invoice is unapproved,
+    # NOT that the full amount is fraudulent. The risk is procedural, not financial.
     if not po and not invoice.get("poReference"):
-        anomalies.append({"type": "MISSING_PO", "severity": "medium",
-            "description": f"Invoice {invoice.get('invoiceNumber', '?')} has no purchase order reference.",
-            "amount_at_risk": inv_total, "contract_clause": None,
+        anomalies.append({"type": "MISSING_PO", "severity": "high",
+            "description": f"Invoice {invoice.get('invoiceNumber', '?')} has no purchase order reference. Cannot verify authorization.",
+            "amount_at_risk": 0, "contract_clause": None,
             "recommendation": "Verify this purchase was authorized before payment."})
     elif not po and invoice.get("poReference"):
-        anomalies.append({"type": "MISSING_PO", "severity": "medium",
+        anomalies.append({"type": "MISSING_PO", "severity": "high",
             "description": f"Invoice references {invoice['poReference']} but no matching PO found in the system.",
-            "amount_at_risk": inv_total, "contract_clause": None,
+            "amount_at_risk": 0, "contract_clause": None,
             "recommendation": f"Upload or locate PO {invoice['poReference']} before approving payment."})
 
     # ── 3. PO COMPARISON (tax-aware) ──
@@ -208,15 +280,62 @@ def detect_anomalies_rule_based(invoice, po, contract, history, tolerances=None)
         po_items = {((li.get("description") or "")).lower().strip(): li for li in po.get("lineItems", [])}
         line_item_risk_total = 0
 
+        def _match_score(desc_a, desc_b, li_a, li_b):
+            """Multi-signal item matching: part number > word overlap > character similarity."""
+            # 1. Part number match (strongest signal)
+            pn_a = (li_a.get("partNumber") or li_a.get("itemCode") or li_a.get("sku") or "").strip()
+            pn_b = (li_b.get("partNumber") or li_b.get("itemCode") or li_b.get("sku") or "").strip()
+            if pn_a and pn_b and pn_a.lower() == pn_b.lower():
+                return 1.0  # exact part number match
+
+            # 2. Substring containment
+            if desc_a in desc_b or desc_b in desc_a:
+                # But verify they aren't trivially short (e.g. "a" in "apple")
+                if min(len(desc_a), len(desc_b)) > 5:
+                    return 1.0
+
+            # 3. Word overlap (handles reordering: "IT Consulting" ↔ "Consulting Services")
+            all_words_a = set(desc_a.split())
+            all_words_b = set(desc_b.split())
+            sig_a = set(w for w in all_words_a if len(w) > 2)
+            sig_b = set(w for w in all_words_b if len(w) > 2)
+            if sig_a and sig_b:
+                sig_overlap = len(sig_a & sig_b)
+                sig_union = len(sig_a | sig_b)
+                if sig_overlap >= 2:
+                    # Strong match: 2+ significant words in common
+                    word_sim = sig_overlap / sig_union if sig_union > 0 else 0
+                    boosted = min(1.0, word_sim + 0.4)
+                    return max(boosted, SequenceMatcher(None, desc_a, desc_b).ratio())
+                elif sig_overlap == 1:
+                    # Weak match: 1 significant word in common
+                    # Only boost if the shared word is the longest (dominant term)
+                    # AND the other words are pure qualifiers that don't conflict
+                    shared_word = list(sig_a & sig_b)[0]
+                    longest_a = max(sig_a, key=len)
+                    longest_b = max(sig_b, key=len)
+                    diffs_a = all_words_a - all_words_b
+                    diffs_b = all_words_b - all_words_a
+                    # If BOTH sides have differing words, they could be different items
+                    # "Widget A" vs "Widget B" → diffs_a={a}, diffs_b={b} → skip
+                    # "Consulting Services" vs "IT Consulting" → diffs_a={services}, diffs_b={it} → conflicting nouns
+                    # Actually: allow ONLY when one side has no diffs (pure subset)
+                    # OR the shared word is dominant and diffs are very minor (len <= 2)
+                    if shared_word == longest_a or shared_word == longest_b:
+                        minor_diffs_only = all(len(w) <= 2 for w in diffs_a) or all(len(w) <= 2 for w in diffs_b)
+                        if minor_diffs_only and (len(diffs_a) <= 1 or len(diffs_b) <= 1):
+                            return max(0.75, SequenceMatcher(None, desc_a, desc_b).ratio())
+
+            # 4. Character-level similarity (original)
+            return SequenceMatcher(None, desc_a, desc_b).ratio()
+
         for desc, inv_li in inv_items.items():
             matched = None
             best_sim = 0
             for pd, pli in po_items.items():
-                sim = SequenceMatcher(None, desc, pd).ratio()
+                sim = _match_score(desc, pd, inv_li, pli)
                 if sim > 0.7 and sim > best_sim:
                     matched = pli; best_sim = sim
-                elif desc in pd or pd in desc:
-                    matched = pli; best_sim = 1.0
 
             if matched:
                 iq, pq = _n(inv_li.get("quantity")), _n(matched.get("quantity"))
@@ -252,10 +371,12 @@ def detect_anomalies_rule_based(invoice, po, contract, history, tolerances=None)
 
         if po_level_diff > 0 and line_item_risk_total < po_level_diff * 0.9:
             unexplained = po_level_diff - line_item_risk_total
+            _tax_note = " Note: subtotal unavailable — using total which may include tax, inflating the variance." if _subtotal_is_fallback else ""
             anomalies.append({"type": "AMOUNT_DISCREPANCY",
-                "severity": severity_for_amount(unexplained, po_amt),
+                "severity": severity_for_amount(unexplained, po_amt) if not _subtotal_is_fallback else "medium",
                 "description": f"Invoice subtotal ({sym}{compare_amt:,.2f}) exceeds PO total ({sym}{po_amt:,.2f}) by {sym}{po_level_diff:,.2f}"
-                    + (f". {sym}{line_item_risk_total:,.2f} explained by line-item overcharges, {sym}{unexplained:,.2f} unexplained." if line_item_risk_total > 0 else f", representing a {po_level_diff/po_amt*100:.2f}% variance which exceeds the {amt_tol_pct}% tolerance threshold{risk_note}."),
+                    + (f". {sym}{line_item_risk_total:,.2f} explained by line-item overcharges, {sym}{unexplained:,.2f} unexplained." if line_item_risk_total > 0 else f", representing a {po_level_diff/po_amt*100:.2f}% variance which exceeds the {amt_tol_pct}% tolerance threshold{risk_note}.")
+                    + _tax_note,
                 "amount_at_risk": round(unexplained, 2), "contract_clause": "Purchase order authorization limits",
                 "recommendation": f"Reject invoice pending price correction to match contracted rates. Total should be {sym}{po_amt:,.2f} based on contract pricing."})
 
@@ -320,7 +441,7 @@ def detect_anomalies_rule_based(invoice, po, contract, history, tolerances=None)
             h_inv = h.get("invoiceNumber", "")
             inv_inv = invoice.get("invoiceNumber", "")
             if h_inv and inv_inv and h_inv == inv_inv:
-                dup_score += 50
+                dup_score += 60  # same invoice# is very strong signal
                 dup_reasons.append("identical invoice number")
 
             h_amt = float(h.get("amount") or 0)
@@ -381,7 +502,6 @@ def detect_anomalies_rule_based(invoice, po, contract, history, tolerances=None)
         inv_locale = invoice.get("locale") or invoice.get("_detected_locale") or CURRENCY_LOCALE_MAP.get(inv_currency, DEFAULT_LOCALE)
         locale_profile = LOCALE_PROFILES.get(inv_locale, LOCALE_PROFILES[DEFAULT_LOCALE])
         tax_ceiling = locale_profile.get("tax_rate_ceiling", 30)
-        tax_floor_min = locale_profile.get("tax_rate_floor", 0)
 
         if effective_rate > tax_ceiling:
             anomalies.append({"type": "TAX_RATE_ANOMALY", "severity": "medium",
@@ -389,23 +509,36 @@ def detect_anomalies_rule_based(invoice, po, contract, history, tolerances=None)
                 "amount_at_risk": round(total_tax, 2), "contract_clause": None,
                 "recommendation": f"Verify tax calculation. Rate exceeds the expected maximum of {tax_ceiling}% for {locale_profile.get('name', inv_locale)}."})
         elif effective_rate > 0 and effective_rate < 1:
-            anomalies.append({"type": "TAX_RATE_ANOMALY", "severity": "low",
-                "description": f"Effective tax rate is only {effective_rate:.1f}%. Unusually low — verify tax is applied correctly.",
-                "amount_at_risk": 0, "contract_clause": None,
-                "recommendation": "Confirm tax exemption or verify rate."})
+            # Don't flag if any tax line has explicit 0% rate (reverse charge / zero-rated)
+            has_explicit_zero = any(_n(t.get("rate")) == 0 for t in tax_details)
+            # Don't flag if total tax is very small (rounding artifact)
+            if not has_explicit_zero and total_tax > 1.0:
+                anomalies.append({"type": "TAX_RATE_ANOMALY", "severity": "low",
+                    "description": f"Effective tax rate is only {effective_rate:.1f}%. Unusually low — verify tax is applied correctly. If this is a reverse-charge or zero-rated transaction, this is expected.",
+                    "amount_at_risk": 0, "contract_clause": None,
+                    "recommendation": "Confirm tax exemption, reverse charge, or verify rate."})
 
         for td in tax_details:
             stated_rate = _n(td.get("rate"))
             tax_amount = _n(td.get("amount"))
             if stated_rate > 0 and tax_amount > 0 and inv_subtotal > 0:
+                # Calculate expected tax — use line item subtotals if only some items
+                # are taxable, otherwise fall back to full subtotal
+                n_tax_lines = len(tax_details)
+                n_items = len(invoice.get("lineItems", []))
+                # If there's 1 tax line for many items, it likely applies to full subtotal
+                # If multiple tax lines, each may apply to specific items
                 expected_tax = inv_subtotal * (stated_rate / 100)
                 tax_diff = abs(tax_amount - expected_tax)
-                if tax_diff > max(1.0, expected_tax * 0.05):
+                # Use wider tolerance (10%) when tax may apply to partial subtotal
+                tolerance_pct = 0.10 if n_tax_lines > 1 or n_items > 3 else 0.05
+                if tax_diff > max(1.0, expected_tax * tolerance_pct):
                     tax_type_name = td.get('type', 'tax')
+                    partial_note = " (tax may apply to only some line items)" if n_items > 1 else ""
                     anomalies.append({"type": "TAX_RATE_ANOMALY", "severity": "medium",
-                        "description": f"Tax amount {sym}{tax_amount:,.2f} doesn't match stated {tax_type_name} rate of {stated_rate}%. Expected {sym}{expected_tax:,.2f}, difference: {sym}{tax_diff:,.2f}.",
+                        "description": f"Tax amount {sym}{tax_amount:,.2f} doesn't match stated {tax_type_name} rate of {stated_rate}%. Expected {sym}{expected_tax:,.2f}, difference: {sym}{tax_diff:,.2f}.{partial_note}",
                         "amount_at_risk": round(tax_diff, 2), "contract_clause": None,
-                        "recommendation": f"Verify {tax_type_name} calculation. Stated rate {stated_rate}% on {sym}{inv_subtotal:,.2f} should be {sym}{expected_tax:,.2f}."})
+                        "recommendation": f"Verify {tax_type_name} calculation. Stated rate {stated_rate}% on {sym}{inv_subtotal:,.2f} should be {sym}{expected_tax:,.2f}. Check if tax applies to all items."})
 
     # ── 8. CURRENCY MISMATCH ──
     if po:
@@ -418,8 +551,9 @@ def detect_anomalies_rule_based(invoice, po, contract, history, tolerances=None)
                 "recommendation": f"Verify exchange rate and ensure amounts align. Invoice: {inv_cur}, PO: {po_cur}"})
 
     # ── 9. POLICY-DRIVEN CHECKS ──
-    if policy.get("flag_round_number_invoices") and inv_total >= 5000:
-        if inv_total == round(inv_total, -3):
+    if policy.get("flag_round_number_invoices"):
+        rn_threshold = policy.get("round_number_threshold", 1000)
+        if inv_total >= rn_threshold and inv_total == round(inv_total, -3):
             anomalies.append({"type": "ROUND_NUMBER_INVOICE", "severity": "low",
                 "description": f"Suspiciously round invoice amount: {sym}{inv_total:,.2f}. Legitimate invoices rarely land on exact thousands.",
                 "amount_at_risk": 0, "contract_clause": None,
@@ -444,7 +578,13 @@ def detect_anomalies_rule_based(invoice, po, contract, history, tolerances=None)
         try:
             dt = datetime.strptime(str(issue_date_str)[:10], "%Y-%m-%d")
             age = (datetime.now() - dt).days
-            if age > max_age:
+            if age < -1:
+                # Future-dated invoice — suspicious
+                anomalies.append({"type": "STALE_INVOICE", "severity": "high",
+                    "description": f"Invoice is dated {abs(age)} days in the FUTURE ({issue_date_str}). Possible data entry error or fraudulent backdating.",
+                    "amount_at_risk": inv_total, "contract_clause": None,
+                    "recommendation": "Verify invoice date with vendor. Future-dated invoices require investigation."})
+            elif age > max_age:
                 anomalies.append({"type": "STALE_INVOICE", "severity": "medium",
                     "description": f"Invoice is {age} days old (issued {issue_date_str}). Policy max: {max_age} days.",
                     "amount_at_risk": inv_total, "contract_clause": None,
