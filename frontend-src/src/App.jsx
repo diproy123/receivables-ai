@@ -370,27 +370,131 @@ function Documents() {
 function Anomalies() {
   const { s, toast, load } = useStore();
   const anoms = s.anomalies || [];
-  async function resolve(id) { const n = prompt('Resolution notes:'); if (n) { await post(`/api/anomalies/${id}/resolve`, { resolution: n }); await load(); toast('Resolved', 'success'); } }
-  async function dismiss(id) { const n = prompt('Reason:'); if (n) { await post(`/api/anomalies/${id}/dismiss`, { reason: n }); await load(); toast('Dismissed', 'success'); } }
+  const [sel, setSel] = React.useState(null);
+  const [notes, setNotes] = React.useState('');
+  const [tab, setTab] = React.useState('open');
+
+  const filtered = tab === 'all' ? anoms : anoms.filter(a => a.status === tab);
+
+  async function resolve(id) {
+    if (!notes.trim()) { toast('Please add resolution notes', 'warning'); return; }
+    await post(`/api/anomalies/${id}/resolve`, { resolution: notes });
+    await load(); setNotes(''); setSel(null); toast('Anomaly resolved', 'success');
+  }
+  async function dismiss(id) {
+    if (!notes.trim()) { toast('Please add a reason for dismissal', 'warning'); return; }
+    await post(`/api/anomalies/${id}/dismiss`, { reason: notes });
+    await load(); setNotes(''); setSel(null); toast('Anomaly dismissed', 'success');
+  }
+
+  const openCount = anoms.filter(a => a.status === 'open').length;
+  const resolvedCount = anoms.filter(a => a.status === 'resolved').length;
+
   return (
     <div className="page-enter">
-      <PageHeader title="Anomalies" sub={`${anoms.filter(a => a.status === 'open').length} open anomalies`} />
-      <Table
-        cols={[
-          { label: 'Anomaly', render: r => <div><div className="font-semibold">{r.description?.slice(0, 60)}</div><div className="text-xs text-slate-500">{r.invoiceNumber} · {r.vendor}</div></div> },
-          { label: 'Severity', render: r => <Badge c={sevColor(r.severity) === 'err' ? 'err' : sevColor(r.severity) === 'warn' ? 'warn' : 'ok'}>{r.severity}</Badge> },
-          { label: 'Risk', right: true, mono: true, render: r => <span className="text-red-600 font-semibold">{$(Math.abs(r.amount_at_risk || 0))}</span> },
-          { label: 'Type', render: r => <span className="text-xs text-slate-500">{(r.type || '').replace(/_/g, ' ')}</span> },
-          { label: 'Status', render: r => <Badge c={r.status === 'open' ? 'warn' : r.status === 'resolved' ? 'ok' : 'muted'}>{r.status}</Badge> },
-          { label: '', render: r => r.status === 'open' && (
-            <div className="flex gap-1">
-              <button onClick={e => { e.stopPropagation(); resolve(r.id); }} className="btn-g text-xs px-2 py-1"><Check className="w-3 h-3" /> Resolve</button>
-              <button onClick={e => { e.stopPropagation(); dismiss(r.id); }} className="btn-g text-xs px-2 py-1"><X className="w-3 h-3" /></button>
+      <PageHeader title="Anomalies" sub={`${openCount} open anomalies`} />
+
+      {/* Tabs */}
+      <div className="flex gap-2 mb-4">
+        {[['open', `Open (${openCount})`], ['resolved', `Resolved (${resolvedCount})`], ['all', `All (${anoms.length})`]].map(([k, label]) =>
+          <button key={k} onClick={() => { setTab(k); setSel(null); }} className={cn('px-3 py-1.5 rounded-lg text-xs font-medium transition-all', tab === k ? 'bg-accent-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')}>{label}</button>
+        )}
+      </div>
+
+      <div className="flex gap-6">
+        {/* Table */}
+        <div className={cn('transition-all', sel ? 'w-1/2' : 'w-full')}>
+          <Table
+            cols={[
+              { label: 'Anomaly', render: r => <div><div className="font-semibold text-sm leading-snug">{r.description}</div><div className="text-xs text-slate-500 mt-0.5">{r.invoiceNumber} · {r.vendor}</div></div> },
+              { label: 'Severity', render: r => <Badge c={sevColor(r.severity) === 'err' ? 'err' : sevColor(r.severity) === 'warn' ? 'warn' : 'ok'}>{r.severity}</Badge> },
+              { label: 'Risk', right: true, mono: true, render: r => <span className={cn('font-semibold', r.amount_at_risk > 0 ? 'text-red-600' : 'text-slate-400')}>{$(Math.abs(r.amount_at_risk || 0))}</span> },
+              { label: 'Type', render: r => <span className="text-xs text-slate-500">{(r.type || '').replace(/_/g, ' ')}</span> },
+              { label: 'Status', render: r => <Badge c={r.status === 'open' ? 'warn' : r.status === 'resolved' ? 'ok' : 'muted'}>{r.status}</Badge> },
+            ]}
+            rows={filtered}
+            onRow={r => setSel(r)}
+          />
+        </div>
+
+        {/* Detail Panel */}
+        {sel && (
+          <div className="w-1/2 bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sticky top-24 self-start max-h-[calc(100vh-8rem)] overflow-y-auto">
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <Badge c={sevColor(sel.severity) === 'err' ? 'err' : sevColor(sel.severity) === 'warn' ? 'warn' : 'ok'}>{sel.severity}</Badge>
+                  <span className="text-xs text-slate-500 font-mono">{(sel.type || '').replace(/_/g, ' ')}</span>
+                </div>
+                <h3 className="text-lg font-bold text-slate-900">{sel.invoiceNumber}</h3>
+                <div className="text-sm text-slate-500">{sel.vendor}</div>
+              </div>
+              <button onClick={() => setSel(null)} className="p-1 hover:bg-slate-100 rounded-lg"><X className="w-4 h-4" /></button>
             </div>
-          )},
-        ]}
-        rows={anoms}
-      />
+
+            {/* Full Description */}
+            <div className="mb-4">
+              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Description</div>
+              <div className="text-sm text-slate-800 leading-relaxed bg-slate-50 rounded-xl p-3">{sel.description}</div>
+            </div>
+
+            {/* Risk Amount */}
+            {(sel.amount_at_risk || 0) !== 0 && (
+              <div className="mb-4">
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Amount at Risk</div>
+                <div className={cn('text-2xl font-bold', sel.amount_at_risk > 0 ? 'text-red-600' : 'text-emerald-600')}>
+                  {sel.amount_at_risk > 0 ? '' : '−'}{$(Math.abs(sel.amount_at_risk || 0))}
+                </div>
+              </div>
+            )}
+
+            {/* Recommendation */}
+            {sel.recommendation && (
+              <div className="mb-4">
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Recommendation</div>
+                <div className="text-sm text-slate-700 bg-amber-50 border border-amber-100 rounded-xl p-3">{sel.recommendation}</div>
+              </div>
+            )}
+
+            {/* Contract Clause */}
+            {sel.contract_clause && (
+              <div className="mb-4">
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Contract Reference</div>
+                <div className="text-sm text-slate-700 bg-blue-50 border border-blue-100 rounded-xl p-3">{sel.contract_clause}</div>
+              </div>
+            )}
+
+            {/* Detection Timestamp */}
+            {sel.detectedAt && (
+              <div className="mb-4">
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Detected</div>
+                <div className="text-sm text-slate-600">{new Date(sel.detectedAt).toLocaleString()}</div>
+              </div>
+            )}
+
+            {/* Resolution section */}
+            {sel.status === 'open' ? (
+              <div className="mt-6 pt-4 border-t border-slate-200">
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Take Action</div>
+                <textarea value={notes} onChange={e => setNotes(e.target.value)}
+                  placeholder="Enter resolution notes — what did you find? What action was taken?"
+                  className="w-full border border-slate-200 rounded-xl p-3 text-sm h-24 resize-none focus:ring-2 focus:ring-accent-500 focus:border-accent-500 mb-3" />
+                <div className="flex gap-2">
+                  <button onClick={() => resolve(sel.id)} className="btn-p text-sm px-4 py-2 flex-1"><Check className="w-4 h-4" /> Resolve</button>
+                  <button onClick={() => dismiss(sel.id)} className="btn-g text-sm px-4 py-2 flex-1"><X className="w-4 h-4" /> Dismiss</button>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-6 pt-4 border-t border-slate-200">
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Resolution</div>
+                <div className="text-sm text-slate-700 bg-emerald-50 border border-emerald-100 rounded-xl p-3">
+                  {sel.resolution || sel.dismissReason || 'No notes recorded'}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
