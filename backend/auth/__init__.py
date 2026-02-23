@@ -67,7 +67,11 @@ def _save_users(users: list):
 security = HTTPBearer(auto_error=False)
 
 def _user_from_request(request: Request) -> dict:
-    """Extract user from JWT in Authorization header. Returns empty dict if no auth."""
+    """Extract user from JWT (Authorization: Bearer) or API key (X-API-Key).
+    Returns empty dict if no valid auth found.
+    API keys are checked against stored hashes — compatible with all existing endpoints.
+    """
+    # 1. Try JWT first (existing auth flow)
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
         try:
@@ -75,6 +79,20 @@ def _user_from_request(request: Request) -> dict:
             return {"id": payload["sub"], "email": payload["email"],
                     "name": payload["name"], "role": payload["role"], "authenticated": True}
         except: pass
+
+    # 2. Try API key (X-API-Key header — for ERP/middleware integration)
+    api_key = request.headers.get("X-API-Key", "")
+    if api_key and api_key.startswith("alens_"):
+        try:
+            from backend.integration import authenticate_api_key
+            from backend.db import get_db
+            db = get_db()
+            user = authenticate_api_key(api_key, db)
+            if user:
+                return user
+        except Exception:
+            pass  # Integration module not loaded or DB error — fall through
+
     return {}
 
 async def get_current_user(request: Request) -> dict:

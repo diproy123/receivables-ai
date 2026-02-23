@@ -45,6 +45,7 @@ EMPTY_DB = {
     "policy_history": [], "custom_model_config": {},
     "_policy_state": {}, "finetune_history": [],
     "active_finetune_job": None, "together_files": [],
+    "api_keys": [], "webhooks": [],
 }
 
 
@@ -311,7 +312,7 @@ def _sync_to_orm(db: dict, session):
     # KV Metadata — all non-relational collections
     kv_keys = ("_policy_state", "custom_model_config", "policy_history",
                "triage_decisions", "finetune_history", "active_finetune_job",
-               "together_files")
+               "together_files", "api_keys", "webhooks")
     for kv_key in kv_keys:
         if kv_key in db:
             existing_kv = session.get(KVMeta, kv_key)

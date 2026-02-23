@@ -118,6 +118,17 @@ from backend.contracts import (
     get_intelligence_summary,
 )
 
+# ERP Integration: API keys, batch import, idempotent upsert, webhooks
+from backend.integration import (
+    create_api_key_record, revoke_api_key, get_api_keys,
+    get_integration_status, WEBHOOK_EVENTS,
+    create_webhook, update_webhook, delete_webhook, get_webhook_config,
+    dispatch_webhook_event,
+    validate_batch_item, build_record_from_batch_item,
+    find_existing_document, upsert_document_fields,
+    BatchResult,
+)
+
 # RAG Engine
 try:
     from backend.rag_engine import (on_document_uploaded, on_anomaly_detected, on_document_edited,
@@ -955,6 +966,30 @@ async def upload_document(request: Request, file: UploadFile = File(...), docume
             d["processingTime"] = _timings
             break
     save_db(db)
+
+    # ── Webhook notifications (fire-and-forget, use existing db ref) ──
+    try:
+        await dispatch_webhook_event(db, "document.created", {
+            "id": record["id"], "type": record["type"],
+            "documentNumber": record.get("invoiceNumber") or record.get("poNumber") or record.get("contractNumber") or record.get("grnNumber"),
+            "vendor": record.get("vendor"), "amount": record.get("amount"),
+        })
+        if new_anomalies:
+            for anom in new_anomalies:
+                await dispatch_webhook_event(db, "anomaly.detected", {
+                    "id": anom["id"], "type": anom["type"], "severity": anom["severity"],
+                    "invoiceNumber": anom.get("invoiceNumber"), "vendor": anom.get("vendor"),
+                    "amount_at_risk": anom.get("amount_at_risk", 0),
+                })
+        if triage_result and triage_result.get("lane") == "BLOCK":
+            await dispatch_webhook_event(db, "triage.blocked", {
+                "invoiceId": record["id"],
+                "invoiceNumber": record.get("invoiceNumber"),
+                "vendor": record.get("vendor"), "amount": record.get("amount"),
+                "reasons": triage_result.get("reasons", []),
+            })
+    except Exception:
+        pass  # Webhooks are non-critical — never block the upload
 
     return {"success": True, "document": record, "new_matches": new_matches,
         "new_anomalies": new_anomalies, "extraction_source": extracted.get("_source", "unknown"),
@@ -2119,6 +2154,455 @@ async def ai_route_case(case_id: str):
     if not AI_INTELLIGENCE_ENABLED:
         raise HTTPException(503, "AI Intelligence module not available")
     return await recommend_case_assignment(case_id)
+
+
+# ╔══════════════════════════════════════════════════════════════╗
+# ║  ERP INTEGRATION ENDPOINTS                                  ║
+# ║  API Key Management, Batch Import, Webhooks, Status         ║
+# ╚══════════════════════════════════════════════════════════════╝
+
+# ── API Key Management ──
+
+@app.get("/api/integration/status")
+async def integration_status(request: Request):
+    """Integration health dashboard — API keys, webhooks, sync activity."""
+    db = get_db()
+    return get_integration_status(db)
+
+@app.get("/api/integration/api-keys")
+async def list_api_keys(user: dict = Depends(get_current_user)):
+    """List all API keys (without secrets). Requires authenticated user."""
+    if AUTHORITY_MATRIX.get(user["role"], {}).get("level", 0) < 3:  # VP+ only
+        raise HTTPException(403, "API key management requires VP or CFO role")
+    db = get_db()
+    keys = get_api_keys(db)
+    # Strip sensitive fields
+    return {"api_keys": [
+        {k: v for k, v in key.items() if k != "key_hash"}
+        for key in keys
+    ]}
+
+@app.post("/api/integration/api-keys")
+async def create_api_key(request: Request, user: dict = Depends(get_current_user)):
+    """Create a new API key. Returns the raw key ONCE — store it securely."""
+    if AUTHORITY_MATRIX.get(user["role"], {}).get("level", 0) < 3:
+        raise HTTPException(403, "API key creation requires VP or CFO role")
+    body = await request.json()
+    name = body.get("name", "").strip()
+    if not name:
+        raise HTTPException(400, "API key 'name' is required (e.g., 'SAP Integration', 'Coupa Sync')")
+    role = body.get("role", "analyst")
+    scopes = body.get("scopes", ["read", "write", "batch"])
+    db = get_db()
+    record = create_api_key_record(db, name=name, role=role, created_by=user["name"], scopes=scopes)
+    save_db(db)
+    return {
+        "success": True,
+        "api_key": record["raw_key"],
+        "key_id": record["id"],
+        "key_prefix": record["key_prefix"],
+        "role": record["role"],
+        "scopes": record["scopes"],
+        "message": "Store this API key securely — it will not be shown again.",
+    }
+
+@app.delete("/api/integration/api-keys/{key_id}")
+async def revoke_api_key_endpoint(key_id: str, user: dict = Depends(get_current_user)):
+    """Revoke an API key."""
+    if AUTHORITY_MATRIX.get(user["role"], {}).get("level", 0) < 3:
+        raise HTTPException(403, "API key revocation requires VP or CFO role")
+    db = get_db()
+    if revoke_api_key(db, key_id):
+        save_db(db)
+        return {"success": True, "message": f"API key {key_id} revoked"}
+    raise HTTPException(404, f"API key {key_id} not found")
+
+
+# ── Webhook Management ──
+
+@app.get("/api/integration/webhooks")
+async def list_webhooks(request: Request):
+    """List configured webhooks."""
+    db = get_db()
+    webhooks = get_webhook_config(db)
+    return {"webhooks": [
+        {k: v for k, v in wh.items() if k != "secret"}  # Don't expose signing secret
+        for wh in webhooks
+    ], "available_events": sorted(WEBHOOK_EVENTS)}
+
+@app.post("/api/integration/webhooks")
+async def create_webhook_endpoint(request: Request):
+    """Register a new webhook endpoint."""
+    body = await request.json()
+    url = body.get("url", "").strip()
+    if not url or not url.startswith("http"):
+        raise HTTPException(400, "Valid webhook 'url' (https://...) is required")
+    events = body.get("events", [])
+    if not events:
+        raise HTTPException(400, "'events' array is required (e.g., ['anomaly.detected', 'case.created'])")
+    name = body.get("name", "")
+    _user = _user_from_request(request)
+    db = get_db()
+    wh = create_webhook(db, url=url, events=events, name=name,
+                        created_by=_user.get("name", "System"))
+    save_db(db)
+    return {"success": True, "webhook": wh,
+            "message": "Store the 'secret' for payload signature verification."}
+
+@app.put("/api/integration/webhooks/{webhook_id}")
+async def update_webhook_endpoint(webhook_id: str, request: Request):
+    """Update a webhook configuration."""
+    body = await request.json()
+    db = get_db()
+    wh = update_webhook(db, webhook_id, body)
+    if wh:
+        save_db(db)
+        return {"success": True, "webhook": {k: v for k, v in wh.items() if k != "secret"}}
+    raise HTTPException(404, f"Webhook {webhook_id} not found")
+
+@app.delete("/api/integration/webhooks/{webhook_id}")
+async def delete_webhook_endpoint(webhook_id: str):
+    """Remove a webhook."""
+    db = get_db()
+    if delete_webhook(db, webhook_id):
+        save_db(db)
+        return {"success": True, "message": f"Webhook {webhook_id} deleted"}
+    raise HTTPException(404, f"Webhook {webhook_id} not found")
+
+
+# ── Batch Import (core integration endpoint) ──
+
+@app.post("/api/integration/batch")
+async def batch_import(request: Request):
+    """Bulk import documents from ERP systems.
+
+    Accepts an array of structured documents and runs the FULL processing pipeline
+    (matching, anomaly detection, contract compliance, triage, case creation)
+    on each one — identical to /api/upload but without AI extraction.
+
+    Supports idempotent upsert: if `upsert: true`, existing documents with the
+    same (documentNumber, vendor, type) are updated instead of creating duplicates.
+
+    Example request body:
+    {
+      "documents": [
+        {
+          "type": "purchase_order",
+          "documentNumber": "PO-2025-301",
+          "vendor": "GoldPak Industries Ltd.",
+          "amount": 9211.58,
+          "currency": "USD",
+          "lineItems": [...],
+          "paymentTerms": "2/10 Net 30",
+          "source": "sap_s4hana"
+        }
+      ],
+      "upsert": true,
+      "source": "sap_integration"
+    }
+    """
+    import time as _time
+    _t0 = _time.time()
+
+    _user = _user_from_request(request)
+    _by = _user.get("name", "System") if _user else "System"
+
+    # Validate scope (API key users need 'batch' scope)
+    if _user.get("is_api_key") and "batch" not in _user.get("scopes", []):
+        raise HTTPException(403, "This API key does not have 'batch' scope")
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "Invalid JSON")
+
+    documents = body.get("documents", [])
+    if not documents:
+        raise HTTPException(400, "Request must contain a 'documents' array")
+    if len(documents) > 500:
+        raise HTTPException(400, f"Maximum 500 documents per batch (received {len(documents)})")
+
+    upsert_mode = body.get("upsert", False)
+    source_label = body.get("source", "erp_integration")
+    result = BatchResult()
+
+    db = get_db()
+
+    for idx, item in enumerate(documents):
+        # Validate
+        err = validate_batch_item(item, idx)
+        if err:
+            result.errors.append({"index": idx, "documentNumber": item.get("documentNumber"), "error": err})
+            continue
+
+        item["source"] = item.get("source", source_label)
+        doc_type = item["type"]
+
+        try:
+            # ── Idempotent upsert check ──
+            if upsert_mode:
+                existing = find_existing_document(db, item["documentNumber"], item["vendor"], doc_type)
+                if existing:
+                    upsert_document_fields(existing, item)
+                    result.updated.append({
+                        "index": idx, "id": existing["id"],
+                        "documentNumber": item["documentNumber"],
+                        "action": "updated",
+                    })
+                    continue
+
+            # ── Build record ──
+            record = build_record_from_batch_item(item)
+            record["uploadedBy"] = _by
+            record["uploadedByEmail"] = _user.get("email", "") if _user else ""
+
+            # ── Store in DB ──
+            store_map = {"invoice": "invoices", "purchase_order": "purchase_orders",
+                         "contract": "contracts", "credit_note": "invoices",
+                         "debit_note": "invoices", "goods_receipt": "goods_receipts"}
+            db[store_map.get(doc_type, "invoices")].append(record)
+
+            # ── Run pipeline (mirrors /api/upload logic per document type) ──
+            new_matches = []
+            new_anomalies = []
+
+            # Matching (invoices and POs)
+            if doc_type in ("invoice", "purchase_order"):
+                new_matches = run_matching(db)
+                db["matches"].extend(new_matches)
+
+            # ── INVOICE pipeline: anomalies, contract compliance, GRN, triage, cases ──
+            if doc_type == "invoice":
+                mpo = None
+                for m in db["matches"]:
+                    if m.get("invoiceId") == record["id"]:
+                        mpo = next((p for p in db["purchase_orders"] if p["id"] == m.get("poId")), None)
+                        break
+                vc = find_vendor_contract(record["vendor"], db.get("contracts", []))
+                vh = [i for i in db["invoices"] if i.get("vendor") and record.get("vendor") and
+                      vendor_similarity(i["vendor"], record["vendor"]) >= 0.7 and i["id"] != record["id"]]
+                vendor_tols = get_dynamic_tolerances(record["vendor"], db)
+
+                detected = detect_anomalies_rule_based(record, mpo, vc, vh, tolerances=vendor_tols)
+                for a in detected:
+                    anom = {"id": str(uuid.uuid4())[:8].upper(), "invoiceId": record["id"],
+                            "invoiceNumber": record.get("invoiceNumber", ""), "vendor": record["vendor"],
+                            "currency": record.get("currency", "USD"),
+                            "detectedAt": datetime.now().isoformat(), "status": "open", **a}
+                    new_anomalies.append(anom)
+                    db["anomalies"].append(anom)
+
+                if vc:
+                    contract_anoms = detect_contract_compliance_anomalies(record, vc, db)
+                    for a in contract_anoms:
+                        anom = {"id": str(uuid.uuid4())[:8].upper(), "invoiceId": record["id"],
+                                "invoiceNumber": record.get("invoiceNumber", ""), "vendor": record["vendor"],
+                                "currency": record.get("currency", "USD"),
+                                "detectedAt": datetime.now().isoformat(), "status": "open", **a}
+                        new_anomalies.append(anom)
+                        db["anomalies"].append(anom)
+
+                matched_entry = next((m for m in db["matches"] if m.get("invoiceId") == record["id"]), None)
+                if matched_entry and mpo:
+                    grn_info = {k: matched_entry.get(k) for k in
+                                ("matchType", "grnStatus", "grnIds", "grnNumbers", "totalReceived", "grnLineItems")}
+                    grn_anoms = detect_grn_anomalies(record, mpo, grn_info, db)
+                    for a in grn_anoms:
+                        anom = {"id": str(uuid.uuid4())[:8].upper(), "invoiceId": record["id"],
+                                "invoiceNumber": record.get("invoiceNumber", ""), "vendor": record["vendor"],
+                                "currency": record.get("currency", "USD"),
+                                "detectedAt": datetime.now().isoformat(), "status": "open", **a}
+                        new_anomalies.append(anom)
+                        db["anomalies"].append(anom)
+
+                update_vendor_profile(record["vendor"], db)
+
+                triage_result = triage_invoice(record, db.get("anomalies", []), db, performed_by=_by)
+                store_triage_decision(record["id"], triage_result, db)
+                apply_triage_action(record, triage_result, db, performed_by=_by)
+
+                new_cases = auto_create_cases_from_triage(
+                    record, db.get("anomalies", []), triage_result, db, created_by=_by)
+                if new_cases:
+                    db.setdefault("cases", []).extend(new_cases)
+                    result.cases_created.extend(new_cases)
+
+            # ── PO pipeline: contract compliance checks ──
+            if doc_type == "purchase_order":
+                vc = find_vendor_contract(record["vendor"], db.get("contracts", []))
+                if vc:
+                    sym = currency_symbol(record.get("currency", "USD"))
+                    po_amt = record.get("amount", 0)
+                    po_num = record.get("poNumber", record["id"])
+                    ct = vc.get("contractTerms") or {}
+
+                    cap = ct.get("liability_cap")
+                    if cap and po_amt > cap:
+                        diff = po_amt - cap
+                        anom = {"id": str(uuid.uuid4())[:8].upper(), "invoiceId": record["id"],
+                                "invoiceNumber": po_num, "vendor": record["vendor"],
+                                "currency": record.get("currency", "USD"),
+                                "detectedAt": datetime.now().isoformat(), "status": "open",
+                                "type": "AMOUNT_DISCREPANCY", "severity": "high",
+                                "description": f"PO amount {sym}{po_amt:,.2f} exceeds contract liability cap {sym}{cap:,.2f}.",
+                                "amount_at_risk": round(diff, 2),
+                                "recommendation": "PO exceeds contractual limits."}
+                        new_anomalies.append(anom); db["anomalies"].append(anom)
+
+                    expiry = ct.get("expiry_date")
+                    if expiry:
+                        try:
+                            exp_date = datetime.fromisoformat(expiry)
+                            po_date = datetime.fromisoformat(record.get("issueDate", "")) if record.get("issueDate") else datetime.now()
+                            if po_date > exp_date:
+                                anom = {"id": str(uuid.uuid4())[:8].upper(), "invoiceId": record["id"],
+                                        "invoiceNumber": po_num, "vendor": record["vendor"],
+                                        "currency": record.get("currency", "USD"),
+                                        "detectedAt": datetime.now().isoformat(), "status": "open",
+                                        "type": "TERMS_VIOLATION", "severity": "high",
+                                        "description": f"PO issued after contract expired on {expiry}.",
+                                        "amount_at_risk": po_amt,
+                                        "recommendation": "Renew contract before issuing new POs."}
+                                new_anomalies.append(anom); db["anomalies"].append(anom)
+                        except: pass
+
+                    po_terms = (record.get("paymentTerms") or "").lower().strip()
+                    c_terms = (vc.get("paymentTerms") or "").lower().strip()
+                    if po_terms and c_terms and po_terms != c_terms:
+                        anom = {"id": str(uuid.uuid4())[:8].upper(), "invoiceId": record["id"],
+                                "invoiceNumber": po_num, "vendor": record["vendor"],
+                                "currency": record.get("currency", "USD"),
+                                "detectedAt": datetime.now().isoformat(), "status": "open",
+                                "type": "TERMS_VIOLATION", "severity": "medium",
+                                "description": f"PO terms '{record.get('paymentTerms')}' differ from contract.",
+                                "amount_at_risk": 0,
+                                "recommendation": "Align PO terms with contract."}
+                        new_anomalies.append(anom); db["anomalies"].append(anom)
+
+            # ── CONTRACT pipeline: clause analysis ──
+            if doc_type == "contract":
+                try:
+                    clause_analysis = analyze_contract_clauses(record)
+                    record["clauseAnalysis"] = clause_analysis
+                    health = compute_contract_health(record, db)
+                    record["healthScore"] = health.get("score")
+                    record["healthLevel"] = health.get("level")
+                except Exception as e:
+                    logger.warning("Batch contract clause analysis failed: %s", e)
+
+            # ── GRN pipeline: run grn matching + re-check anomalies for affected invoices ──
+            if doc_type == "goods_receipt":
+                grn_updated = run_grn_matching(db)
+                if grn_updated:
+                    for match in db["matches"]:
+                        if match.get("matchType") == "three_way":
+                            inv = next((i for i in db["invoices"] if i["id"] == match.get("invoiceId")), None)
+                            po = next((p for p in db["purchase_orders"] if p["id"] == match.get("poId")), None)
+                            if inv and po:
+                                grn_types = {"UNRECEIPTED_INVOICE", "OVERBILLED_VS_RECEIVED",
+                                             "QUANTITY_RECEIVED_MISMATCH", "SHORT_SHIPMENT"}
+                                db["anomalies"] = [a for a in db["anomalies"]
+                                    if not (a.get("invoiceId") == inv["id"] and a.get("type") in grn_types)]
+                                grn_info = {k: match.get(k) for k in
+                                    ("matchType", "grnStatus", "grnIds", "grnNumbers", "totalReceived", "grnLineItems")}
+                                grn_anoms = detect_grn_anomalies(inv, po, grn_info, db)
+                                for a in grn_anoms:
+                                    anom = {"id": str(uuid.uuid4())[:8].upper(), "invoiceId": inv["id"],
+                                            "invoiceNumber": inv.get("invoiceNumber", ""), "vendor": inv["vendor"],
+                                            "currency": inv.get("currency", "USD"),
+                                            "detectedAt": datetime.now().isoformat(), "status": "open", **a}
+                                    new_anomalies.append(anom)
+                                    db["anomalies"].append(anom)
+
+            # ── CREDIT/DEBIT NOTE pipeline: validate against original invoice ──
+            if doc_type in ("credit_note", "debit_note"):
+                orig_ref = record.get("originalInvoiceRef")
+                cn_amount = record.get("amount", 0)
+                sym = currency_symbol(record.get("currency", "USD"))
+                dt_label = "Credit note" if doc_type == "credit_note" else "Debit note"
+                doc_num = record.get("documentNumber", record["id"])
+
+                if not orig_ref:
+                    anom = {"id": str(uuid.uuid4())[:8].upper(), "invoiceId": record["id"],
+                            "invoiceNumber": doc_num, "vendor": record["vendor"],
+                            "currency": record.get("currency", "USD"),
+                            "detectedAt": datetime.now().isoformat(), "status": "open",
+                            "type": "MISSING_PO", "severity": "medium",
+                            "description": f"{dt_label} {doc_num} has no original invoice reference.",
+                            "amount_at_risk": cn_amount, "contract_clause": None,
+                            "recommendation": "Verify which invoice this note applies to."}
+                    new_anomalies.append(anom); db["anomalies"].append(anom)
+                else:
+                    orig = next((i for i in db["invoices"]
+                        if i.get("invoiceNumber", "").strip().lower() == orig_ref.strip().lower()), None)
+                    if orig and cn_amount > orig.get("amount", 0):
+                        diff = cn_amount - orig["amount"]
+                        anom = {"id": str(uuid.uuid4())[:8].upper(), "invoiceId": record["id"],
+                                "invoiceNumber": doc_num, "vendor": record["vendor"],
+                                "currency": record.get("currency", "USD"),
+                                "detectedAt": datetime.now().isoformat(), "status": "open",
+                                "type": "AMOUNT_DISCREPANCY", "severity": "high",
+                                "description": f"{dt_label} amount {sym}{cn_amount:,.2f} exceeds original invoice {orig_ref} amount {sym}{orig['amount']:,.2f} by {sym}{diff:,.2f}.",
+                                "amount_at_risk": round(diff, 2), "contract_clause": None,
+                                "recommendation": f"Do not process. {dt_label} cannot exceed original invoice."}
+                        new_anomalies.append(anom); db["anomalies"].append(anom)
+
+                # Triage credit/debit notes (same as upload pipeline)
+                triage_result = triage_invoice(record, db.get("anomalies", []), db, performed_by=_by)
+                store_triage_decision(record["id"], triage_result, db)
+                apply_triage_action(record, triage_result, db, performed_by=_by)
+                new_cases = auto_create_cases_from_triage(
+                    record, db.get("anomalies", []), triage_result, db, created_by=_by)
+                if new_cases:
+                    db.setdefault("cases", []).extend(new_cases)
+                    result.cases_created.extend(new_cases)
+
+            result.created.append({
+                "index": idx, "id": record["id"],
+                "documentNumber": item["documentNumber"],
+                "type": doc_type,
+                "action": "created",
+                "anomalies": len(new_anomalies),
+            })
+            result.anomalies_detected.extend(new_anomalies)
+            result.matches_created.extend(new_matches)
+
+        except Exception as e:
+            result.errors.append({
+                "index": idx,
+                "documentNumber": item.get("documentNumber"),
+                "error": f"Processing error: {str(e)}",
+            })
+            logger.error("Batch item %d (%s) failed: %s", idx, item.get("documentNumber"), e, exc_info=True)
+
+    # ── Save all changes ──
+    db["activity_log"].append({
+        "id": str(uuid.uuid4())[:8], "action": "batch_import",
+        "count": len(documents), "source": source_label,
+        "created": len(result.created), "updated": len(result.updated),
+        "errors": len(result.errors), "anomalies": len(result.anomalies_detected),
+        "timestamp": datetime.now().isoformat(), "performedBy": _by})
+    save_db(db)
+
+    # ── Dispatch webhook ──
+    try:
+        await dispatch_webhook_event(db, "batch.completed", {
+            "source": source_label,
+            "total": len(documents),
+            "created": len(result.created),
+            "updated": len(result.updated),
+            "errors": len(result.errors),
+            "anomalies_detected": len(result.anomalies_detected),
+        })
+    except Exception:
+        pass  # Webhooks are non-critical
+
+    processing_ms = round((_time.time() - _t0) * 1000)
+    response = result.to_dict()
+    response["processing_ms"] = processing_ms
+    response["summary"]["processing_ms"] = processing_ms
+
+    return response
 
 
 def _seed_demo_data():
