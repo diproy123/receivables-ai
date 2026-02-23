@@ -5,7 +5,7 @@ const Ctx = createContext();
 const init = {
   user: null, token: null,
   dash: {}, docs: [], matches: [], anomalies: [], vendors: [], triageData: {}, casesData: [],
-  policy: {}, policyHistory: [], ps: {},
+  policy: {}, policyHistory: [], ps: {}, intel: {},
   tab: 'dashboard', sel: null, proc: null, toast: null, loading: true,
   ft: { status: null, loading: false },
 };
@@ -51,6 +51,7 @@ export function Store({ children }) {
       dash: da || {}, docs: dc?.documents || [], matches: m?.matches || [], anomalies: an?.anomalies || [],
       vendors: vn?.vendors || [], triageData: tr || {}, policy: po?.policy || {},
       casesData: ca?.cases || [], policyHistory: ph?.history || [],
+      intel: da?.intelligence || {},
       ps: { v: hl?.version || '', rc: hs.anomaly_rule_count || 0, rules: hs.anomaly_rules || [],
         opp: hs.opportunity_flags || [], lc: hs.language_count || 0, sla: hs.sla_targets || {},
         auth: hs.authority_tiers || [], mp: hs.models?.primary || '', ms: hs.models?.secondary || '',

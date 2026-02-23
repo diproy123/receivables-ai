@@ -107,6 +107,11 @@ function Sidebar() {
   const rm = (s.matches || []).filter(m => m.status === 'pending_review').length;
   const tri = s.dash?.triage || {};
 
+  const intelBadges = {
+    expiring: (s.intel || {}).expiring_count || 0,
+    critical: (s.intel || {}).critical_contracts || 0,
+    highRiskClauses: (s.intel || {}).high_risk_clauses || 0,
+  };
   const nav = [
     { section: 'Inbox', items: [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -120,7 +125,7 @@ function Sidebar() {
     ]},
     { section: 'Master Data', items: [
       { id: 'vendors', label: 'Vendors', icon: Building2, badge: s.dash?.vendor_risk?.high_risk, bc: 'err' },
-      { id: 'contracts', label: 'Contracts', icon: FileCheck },
+      { id: 'contracts', label: 'Contracts', icon: FileCheck, badge: intelBadges.expiring || intelBadges.critical || null, bc: intelBadges.critical ? 'err' : 'warn' },
     ]},
     ...(lvl >= 1 ? [{ section: 'Configure', items: [
       { id: 'settings', label: 'AP Policy', icon: Settings },
@@ -276,6 +281,25 @@ function Dashboard() {
         <StatCard icon={Brain} label="AI Pipeline" value={num(d.correction_patterns || 0)} sub={d.correction_patterns ? 'learned patterns' : 'Ensemble + RAG'} color="#7c3aed" />
       </div>
 
+      {/* ── Phase 2-4: Intelligence Stat Cards ── */}
+      {(() => {
+        const il = s.intel || {};
+        const ch = il.contract_health || [];
+        const hasAnyIntel = ch.length > 0 || il.grn_count > 0;
+        if (!hasAnyIntel) return null;
+        const healthy = ch.filter(c => c.health_level === 'good').length;
+        const warning = ch.filter(c => c.health_level === 'warning').length;
+        const critical = ch.filter(c => c.health_level === 'critical').length;
+        return (
+          <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+            <StatCard icon={FileCheck} label="Contract Health" value={`${healthy}/${ch.length}`} sub={critical > 0 ? `${critical} critical` : warning > 0 ? `${warning} warning` : 'All healthy'} color={critical > 0 ? '#ef4444' : warning > 0 ? '#f59e0b' : '#10b981'} />
+            <StatCard icon={Shield} label="Clause Risks" value={num(il.high_risk_clauses || 0)} sub="High-risk clauses" color={il.high_risk_clauses > 0 ? '#dc2626' : '#10b981'} />
+            <StatCard icon={Clock} label="Expiring Contracts" value={num(il.expiring_count || 0)} sub={il.expiring_count > 0 ? `within 90 days` : 'None expiring'} color={il.expiring_count > 0 ? '#f59e0b' : '#10b981'} />
+            <StatCard icon={TrendingUp} label="GRN Analytics" value={num(il.grn_count || 0)} sub={il.grn_open_anomalies > 0 ? `${il.grn_open_anomalies} open alerts` : 'Deliveries tracked'} color={il.grn_open_anomalies > 0 ? '#ef4444' : '#3b82f6'} />
+          </div>
+        );
+      })()}
+
       {/* ── Charts Row ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="card p-6">
@@ -331,6 +355,101 @@ function Dashboard() {
           ))}</div>
         </div>
       )}
+
+      {/* ── Phase 2-4: AI Intelligence Insights ── */}
+      {(() => {
+        const intel = s.intel || {};
+        const exp = intel.expiring_contracts || [];
+        const ch = intel.contract_health || [];
+        const criticalContracts = ch.filter(c => c.health_level === 'critical');
+        const warningContracts = ch.filter(c => c.health_level === 'warning');
+        const hasIntel = exp.length > 0 || criticalContracts.length > 0 || intel.grn_open_anomalies > 0;
+        if (!hasIntel) return null;
+        return (
+          <div className="space-y-4">
+            <h3 className="text-[11px] font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+              <Brain className="w-4 h-4 text-indigo-500" /> AI Intelligence Insights
+            </h3>
+
+            {/* Expiring Contracts Alert */}
+            {exp.length > 0 && (
+              <div className="rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 p-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center"><FileCheck className="w-4 h-4 text-amber-600" /></div>
+                  <div>
+                    <div className="text-sm font-bold text-amber-900">{exp.length} Contract{exp.length > 1 ? 's' : ''} Expiring Soon</div>
+                    <div className="text-xs text-amber-600">{exp.filter(e => e.urgency === 'critical').length} need immediate action</div>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {exp.slice(0, 3).map(e => (
+                    <div key={e.id} className="flex items-center justify-between p-2.5 bg-white/60 rounded-xl border border-amber-100">
+                      <div>
+                        <div className="text-sm font-semibold text-slate-800">{e.vendor}</div>
+                        <div className="text-xs text-slate-500">{e.number} · {$(e.amount)}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className={cn('text-sm font-bold', e.days_left <= 30 ? 'text-red-600' : 'text-amber-600')}>{e.days_left}d left</div>
+                        {e.notice_overdue && <div className="text-[10px] text-red-500 font-bold">⚠ OPT-OUT OVERDUE</div>}
+                        {e.auto_renewal && !e.notice_overdue && <div className="text-[10px] text-amber-500">Auto-renews</div>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Contract Health + GRN stats row */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              {/* Contract Health Summary */}
+              {ch.length > 0 && (
+                <div className="card p-5">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3">Contract Health</div>
+                  <div className="flex items-center gap-4 mb-3">
+                    <div className="text-center"><div className="text-2xl font-extrabold text-emerald-600">{ch.filter(c => c.health_level === 'good').length}</div><div className="text-[10px] text-slate-400">Good</div></div>
+                    <div className="text-center"><div className="text-2xl font-extrabold text-amber-500">{warningContracts.length}</div><div className="text-[10px] text-slate-400">Warning</div></div>
+                    <div className="text-center"><div className="text-2xl font-extrabold text-red-500">{criticalContracts.length}</div><div className="text-[10px] text-slate-400">Critical</div></div>
+                  </div>
+                  {criticalContracts.length > 0 && (
+                    <div className="space-y-1">
+                      {criticalContracts.slice(0, 2).map(c => (
+                        <div key={c.id} className="text-xs p-2 bg-red-50 rounded-lg border border-red-100 text-red-700">
+                          {c.vendor}: {c.high_risk_clauses} high-risk clause{c.high_risk_clauses !== 1 ? 's' : ''}
+                          {c.days_to_expiry != null && c.days_to_expiry < 0 && ` · Expired ${Math.abs(c.days_to_expiry)}d ago`}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* High Risk Clauses */}
+              {intel.high_risk_clauses > 0 && (
+                <div className="card p-5">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3">Clause Risk Analysis</div>
+                  <div className="text-3xl font-extrabold text-red-600 mb-1">{intel.high_risk_clauses}</div>
+                  <div className="text-xs text-slate-500">High-risk clauses across {ch.length} contracts</div>
+                  <div className="text-xs text-slate-400 mt-2">Missing liability caps, restrictive auto-renewal, no SLA terms</div>
+                </div>
+              )}
+
+              {/* GRN / Delivery */}
+              {intel.grn_count > 0 && (
+                <div className="card p-5">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3">Delivery Intelligence</div>
+                  <div className="flex items-center gap-4">
+                    <div><div className="text-2xl font-extrabold text-blue-600">{intel.grn_count}</div><div className="text-[10px] text-slate-400">GRNs Processed</div></div>
+                    {intel.grn_open_anomalies > 0 && <div><div className="text-2xl font-extrabold text-red-500">{intel.grn_open_anomalies}</div><div className="text-[10px] text-slate-400">Open Alerts</div></div>}
+                  </div>
+                  {intel.top_vendor_concentration > 25 && (
+                    <div className="text-xs text-amber-600 mt-2 p-2 bg-amber-50 rounded-lg">⚠ Top vendor = {pct(intel.top_vendor_concentration)} of spend</div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -370,9 +489,9 @@ function Documents() {
 function Anomalies() {
   const { s, toast, load } = useStore();
   const anoms = s.anomalies || [];
-  const [sel, setSel] = React.useState(null);
-  const [notes, setNotes] = React.useState('');
-  const [tab, setTab] = React.useState('open');
+  const [sel, setSel] = useState(null);
+  const [notes, setNotes] = useState('');
+  const [tab, setTab] = useState('open');
 
   const filtered = tab === 'all' ? anoms : anoms.filter(a => a.status === tab);
 
@@ -409,7 +528,17 @@ function Anomalies() {
               { label: 'Anomaly', render: r => <div><div className="font-semibold text-sm leading-snug">{r.description}</div><div className="text-xs text-slate-500 mt-0.5">{r.invoiceNumber} · {r.vendor}</div></div> },
               { label: 'Severity', render: r => <Badge c={sevColor(r.severity) === 'err' ? 'err' : sevColor(r.severity) === 'warn' ? 'warn' : 'ok'}>{r.severity}</Badge> },
               { label: 'Risk', right: true, mono: true, render: r => <span className={cn('font-semibold', r.amount_at_risk > 0 ? 'text-red-600' : 'text-slate-400')}>{$(Math.abs(r.amount_at_risk || 0))}</span> },
-              { label: 'Type', render: r => <span className="text-xs text-slate-500">{(r.type || '').replace(/_/g, ' ')}</span> },
+              { label: 'Type', render: r => {
+                const isContract = (r.type || '').startsWith('CONTRACT_');
+                const isDelivery = ['CHRONIC_SHORT_SHIPMENT','PO_FULFILLMENT_STALE','SHORT_SHIPMENT','OVERBILLED_VS_RECEIVED','QUANTITY_RECEIVED_MISMATCH'].includes(r.type);
+                return (
+                  <div className="flex items-center gap-1.5">
+                    {isContract && <span className="text-[9px] px-1.5 py-0.5 bg-indigo-100 text-indigo-600 font-bold rounded">CONTRACT</span>}
+                    {isDelivery && <span className="text-[9px] px-1.5 py-0.5 bg-blue-100 text-blue-600 font-bold rounded">GRN</span>}
+                    <span className="text-xs text-slate-500">{(r.type || '').replace(/_/g, ' ')}</span>
+                  </div>
+                );
+              }},
               { label: 'Status', render: r => <Badge c={r.status === 'open' ? 'warn' : r.status === 'resolved' ? 'ok' : 'muted'}>{r.status}</Badge> },
             ]}
             rows={filtered}
@@ -534,7 +663,7 @@ function Matching() {
    TRIAGE
    ═══════════════════════════════════════════════════ */
 function Triage() {
-  const { s } = useStore();
+  const { s, toast, load } = useStore();
   const tri = s.triageData || {};
   const lanes = ['AUTO_APPROVE', 'MANAGER_REVIEW', 'VP_REVIEW', 'CFO_REVIEW', 'BLOCK'];
   const laneIcons = { AUTO_APPROVE: CheckCircle2, BLOCK: XCircle, MANAGER_REVIEW: Eye, VP_REVIEW: Eye, CFO_REVIEW: Eye };
@@ -543,36 +672,133 @@ function Triage() {
   const icMap = { AUTO_APPROVE: 'text-emerald-600', BLOCK: 'text-red-600', MANAGER_REVIEW: 'text-amber-600', VP_REVIEW: 'text-amber-600', CFO_REVIEW: 'text-amber-600' };
   const txtMap = { AUTO_APPROVE: 'text-emerald-900', BLOCK: 'text-red-900', MANAGER_REVIEW: 'text-amber-900', VP_REVIEW: 'text-amber-900', CFO_REVIEW: 'text-amber-900' };
 
+  const [sel, setSel] = useState(null);
+  const allAnoms = s.anomalies || [];
+
+  // Find anomalies for selected invoice
+  const selAnoms = sel ? allAnoms.filter(a => a.invoiceId === sel.id || a.invoiceNumber === sel.invoiceNumber) : [];
+  // Find the triage reason for the selected invoice
+  const selLane = sel ? lanes.find(l => (tri[l] || []).some(i => i.id === sel.id)) : null;
+
+  async function overrideApprove(inv) {
+    const n = prompt('Override reason — why should this be approved despite being blocked?');
+    if (n?.trim()) {
+      const form = new FormData();
+      form.append('lane', 'AUTO_APPROVE');
+      form.append('reason', n.trim());
+      const resp = await fetch(`/api/invoices/${inv.id}/override-triage`, { method: 'POST', body: form, credentials: 'include' });
+      if (resp.ok) { await load(); setSel(null); toast('Invoice approved (override)', 'success'); }
+      else { toast('Override failed', 'error'); }
+    }
+  }
+  async function escalateCase(inv) {
+    await post('/api/cases', { title: `Triage review: ${inv.invoiceNumber || inv.id}`, description: `Invoice ${inv.invoiceNumber} from ${inv.vendor} (${$(inv.amount, inv.currency)}) was routed to ${selLane}. Requires investigation.`, type: 'triage_escalation', priority: 'high', invoiceId: inv.id });
+    await load(); toast('Case created for investigation', 'success');
+  }
+
   return (
     <div className="page-enter space-y-6">
       <PageHeader title="Triage" sub="Policy-driven invoice routing" />
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {lanes.map(lane => {
-          const items = tri[lane] || [];
-          if (items.length === 0 && lane !== 'AUTO_APPROVE' && lane !== 'BLOCK') return null;
-          const Ic = laneIcons[lane] || Eye;
-          return (
-            <div key={lane} className="card overflow-hidden">
-              <div className={cn('px-5 py-3.5 flex items-center gap-3', bgMap[lane])}>
-                <Ic className={cn('w-5 h-5', icMap[lane])} />
-                <div className="flex-1"><div className={cn('text-sm font-bold', txtMap[lane])}>{laneLabel(lane)}</div></div>
-                <span className={`badge badge-${laneColor(lane)}`}>{items.length}</span>
-              </div>
-              <div className="divide-y divide-slate-50 max-h-[320px] overflow-y-auto">
-                {items.length === 0 && <div className="p-6 text-center text-sm text-slate-500">No invoices</div>}
-                {items.map(inv => (
-                  <div key={inv.id} className="px-5 py-3 hover:bg-slate-50 transition-colors">
-                    <div className="flex items-center justify-between">
-                      <div className="font-semibold text-sm">{inv.invoiceNumber || inv.id}</div>
-                      <span className="text-sm font-bold font-mono">{$(inv.amount, inv.currency)}</span>
-                    </div>
-                    <div className="text-xs text-slate-500 mt-0.5">{inv.vendor} · {pct(inv.confidence)} conf</div>
+      <div className="flex gap-6">
+        <div className={cn('transition-all', sel ? 'w-1/2' : 'w-full')}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {lanes.map(lane => {
+              const items = tri[lane] || [];
+              if (items.length === 0 && lane !== 'AUTO_APPROVE' && lane !== 'BLOCK') return null;
+              const Ic = laneIcons[lane] || Eye;
+              return (
+                <div key={lane} className="card overflow-hidden">
+                  <div className={cn('px-5 py-3.5 flex items-center gap-3', bgMap[lane])}>
+                    <Ic className={cn('w-5 h-5', icMap[lane])} />
+                    <div className="flex-1"><div className={cn('text-sm font-bold', txtMap[lane])}>{laneLabel(lane)}</div></div>
+                    <span className={`badge badge-${laneColor(lane)}`}>{items.length}</span>
                   </div>
-                ))}
+                  <div className="divide-y divide-slate-50 max-h-[320px] overflow-y-auto">
+                    {items.length === 0 && <div className="p-6 text-center text-sm text-slate-500">No invoices</div>}
+                    {items.map(inv => (
+                      <div key={inv.id} onClick={() => setSel(inv)} className={cn('px-5 py-3 hover:bg-slate-50 transition-colors cursor-pointer', sel?.id === inv.id && 'bg-accent-50 ring-1 ring-accent-200')}>
+                        <div className="flex items-center justify-between">
+                          <div className="font-semibold text-sm">{inv.invoiceNumber || inv.id}</div>
+                          <span className="text-sm font-bold font-mono">{$(inv.amount, inv.currency)}</span>
+                        </div>
+                        <div className="text-xs text-slate-500 mt-0.5">{inv.vendor} · {pct(inv.confidence)} conf</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Detail Panel */}
+        {sel && (
+          <div className="w-1/2 bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sticky top-24 self-start max-h-[calc(100vh-8rem)] overflow-y-auto">
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">{sel.invoiceNumber || sel.id}</h3>
+                <div className="text-sm text-slate-500">{sel.vendor}</div>
+              </div>
+              <button onClick={() => setSel(null)} className="p-1 hover:bg-slate-100 rounded-lg"><X className="w-4 h-4" /></button>
+            </div>
+
+            {/* Invoice Summary */}
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="bg-slate-50 rounded-xl p-3">
+                <div className="text-xs text-slate-500">Amount</div>
+                <div className="text-lg font-bold">{$(sel.amount, sel.currency)}</div>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3">
+                <div className="text-xs text-slate-500">Confidence</div>
+                <div className="text-lg font-bold">{pct(sel.confidence)}</div>
               </div>
             </div>
-          );
-        })}
+
+            {/* Triage Decision */}
+            <div className="mb-4">
+              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Triage Decision</div>
+              <div className={cn('rounded-xl p-3 text-sm font-medium',
+                selLane === 'BLOCK' ? 'bg-red-50 text-red-800 border border-red-100' :
+                selLane === 'AUTO_APPROVE' ? 'bg-emerald-50 text-emerald-800 border border-emerald-100' :
+                'bg-amber-50 text-amber-800 border border-amber-100'
+              )}>
+                {laneLabel(selLane)}
+                {sel.triageReason && <div className="text-xs mt-1 opacity-75">{sel.triageReason}</div>}
+              </div>
+            </div>
+
+            {/* Linked Anomalies */}
+            {selAnoms.length > 0 && (
+              <div className="mb-4">
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Anomalies ({selAnoms.length})</div>
+                <div className="space-y-2">
+                  {selAnoms.map(a => (
+                    <div key={a.id} className="bg-slate-50 rounded-xl p-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Badge c={sevColor(a.severity) === 'err' ? 'err' : sevColor(a.severity) === 'warn' ? 'warn' : 'ok'}>{a.severity}</Badge>
+                        <span className="text-xs text-slate-500 font-mono">{(a.type || '').replace(/_/g, ' ')}</span>
+                        {a.amount_at_risk > 0 && <span className="text-xs font-bold text-red-600 ml-auto">{$(a.amount_at_risk)}</span>}
+                      </div>
+                      <div className="text-sm text-slate-700">{a.description}</div>
+                      {a.recommendation && <div className="text-xs text-amber-700 mt-1">→ {a.recommendation}</div>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Actions */}
+            {selLane !== 'AUTO_APPROVE' && (
+              <div className="mt-6 pt-4 border-t border-slate-200">
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Actions</div>
+                <div className="flex gap-2">
+                  <button onClick={() => overrideApprove(sel)} className="btn-p text-sm px-4 py-2 flex-1"><Check className="w-4 h-4" /> Override & Approve</button>
+                  <button onClick={() => escalateCase(sel)} className="btn-g text-sm px-4 py-2 flex-1"><ClipboardList className="w-4 h-4" /> Create Case</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -665,19 +891,208 @@ function Cases() {
 function Vendors() {
   const { s } = useStore();
   const vendors = s.vendors || [];
+  const [sel, setSel] = useState(null);
+  const [detail, setDetail] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  async function viewVendor(v) {
+    setSel(v);
+    setLoading(true);
+    try {
+      const vName = encodeURIComponent(v.vendor || v.vendorDisplay || v.name || '');
+      const r = await api(`/api/vendors/${vName}/extended-risk`);
+      setDetail(r && !r._err ? r : null);
+    } catch { setDetail(null); }
+    setLoading(false);
+  }
+
+  const RiskBar = ({ label, score, weight }) => {
+    const cl = score >= 60 ? '#ef4444' : score >= 30 ? '#f59e0b' : '#10b981';
+    return (
+      <div className="flex items-center gap-3 py-1.5">
+        <span className="text-xs text-slate-600 w-32 flex-shrink-0">{label}</span>
+        <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+          <div className="h-full rounded-full transition-all" style={{ width: Math.max(2, score) + '%', background: cl }} />
+        </div>
+        <span className="text-xs font-bold font-mono w-8 text-right" style={{ color: cl }}>{Math.round(score)}</span>
+        <span className="text-[10px] text-slate-400 w-10 text-right">{pct(weight * 100)}</span>
+      </div>
+    );
+  };
+
   return (
     <div className="page-enter">
       <PageHeader title="Vendors" sub={`${vendors.length} vendors tracked`} />
-      <Table
-        cols={[
-          { label: 'Vendor', render: r => <div className="font-semibold">{r.vendor || r.name || '—'}</div> },
-          { label: 'Risk', render: r => <Badge c={r.riskLevel === 'high' ? 'err' : r.riskLevel === 'medium' ? 'warn' : 'ok'}>{r.riskLevel} · {Math.round(r.riskScore || 0)}</Badge> },
-          { label: 'Invoices', render: r => <span className="font-mono">{r.invoiceCount || 0}</span> },
-          { label: 'Total', right: true, render: r => <span className="font-semibold font-mono">{$(r.totalSpend || r.totalAmount || 0)}</span> },
-          { label: 'Anomaly Rate', render: r => { const total = r.invoiceCount || 0; const anom = r.totalAnomalies || 0; const rate = total > 0 ? (anom / total * 100) : 0; return <span className={cn('font-mono text-sm', rate > 20 ? 'text-red-600' : 'text-slate-600')}>{total > 0 ? pct(rate) : '—'}</span>; }},
-        ]}
-        rows={vendors}
-      />
+
+      <div className="flex gap-6">
+        <div className={cn('transition-all', sel ? 'w-1/2' : 'w-full')}>
+          <Table
+            cols={[
+              { label: 'Vendor', render: r => <div className="font-semibold">{r.vendor || r.vendorDisplay || r.name || '—'}</div> },
+              { label: 'Risk', render: r => <Badge c={r.riskLevel === 'high' ? 'err' : r.riskLevel === 'medium' ? 'warn' : 'ok'}>{r.riskLevel} · {Math.round(r.riskScore || 0)}</Badge> },
+              { label: 'Invoices', render: r => <span className="font-mono">{r.invoiceCount || 0}</span> },
+              { label: 'Total', right: true, render: r => <span className="font-semibold font-mono">{$(r.totalSpend || r.totalAmount || 0)}</span> },
+              { label: 'Anomaly Rate', render: r => { const total = r.invoiceCount || 0; const anom = r.totalAnomalies || 0; const rate = total > 0 ? (anom / total * 100) : 0; return <span className={cn('font-mono text-sm', rate > 20 ? 'text-red-600' : 'text-slate-600')}>{total > 0 ? pct(rate) : '—'}</span>; }},
+              { label: 'Trend', render: r => <span className={cn('text-xs font-semibold', r.trend === 'worsening' ? 'text-red-500' : r.trend === 'improving' ? 'text-emerald-500' : 'text-slate-400')}>{r.trend === 'worsening' ? '↗ Worsening' : r.trend === 'improving' ? '↘ Improving' : '→ Stable'}</span> },
+            ]}
+            rows={vendors}
+            onRow={viewVendor}
+          />
+        </div>
+
+        {/* Vendor Detail Panel */}
+        {sel && (
+          <div className="w-1/2 bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sticky top-24 self-start max-h-[calc(100vh-8rem)] overflow-y-auto">
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">{sel.vendor || sel.vendorDisplay || sel.name}</h3>
+                <div className="flex items-center gap-2 mt-1">
+                  <Badge c={sel.riskLevel === 'high' ? 'err' : sel.riskLevel === 'medium' ? 'warn' : 'ok'}>Risk: {Math.round(sel.riskScore || 0)}/100</Badge>
+                  <span className="text-xs text-slate-500">{sel.invoiceCount || 0} invoices · {$(sel.totalSpend || 0)}</span>
+                </div>
+              </div>
+              <button onClick={() => { setSel(null); setDetail(null); }} className="p-1 hover:bg-slate-100 rounded-lg"><X className="w-4 h-4" /></button>
+            </div>
+
+            {loading && (
+              <div className="text-center py-8">
+                <div className="w-8 h-8 rounded-full border-3 border-indigo-200 border-t-indigo-600 animate-spin mx-auto mb-3" />
+                <div className="text-sm text-slate-500">Loading risk analysis...</div>
+              </div>
+            )}
+
+            {detail && detail.risk && (
+              <>
+                {/* 9-Factor Risk Breakdown */}
+                <div className="mb-5">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Brain className="w-4 h-4 text-indigo-500" />
+                    <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">{detail.risk.factor_count || 9}-Factor Risk Profile</span>
+                    {detail.risk.extended && <span className="text-[9px] px-1.5 py-0.5 bg-indigo-100 text-indigo-600 font-bold rounded">EXTENDED</span>}
+                  </div>
+                  <div className="p-4 bg-slate-50 rounded-xl space-y-0.5">
+                    {Object.entries(detail.risk.factors || {}).map(([k, f]) => (
+                      <RiskBar key={k} label={k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} score={f.score || 0} weight={f.weight || 0} />
+                    ))}
+                  </div>
+                  {detail.risk.factors && Object.entries(detail.risk.factors).some(([,f]) => f.detail) && (
+                    <div className="mt-2 space-y-1">
+                      {Object.entries(detail.risk.factors).filter(([,f]) => f.detail && f.score > 20).map(([k, f]) => (
+                        <div key={k} className={cn('text-xs p-2 rounded-lg', f.score >= 50 ? 'bg-red-50 text-red-700 border border-red-100' : 'bg-amber-50 text-amber-700 border border-amber-100')}>
+                          <span className="font-semibold">{k.replace(/_/g, ' ')}:</span> {f.detail}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* KYC Status */}
+                {detail.kyc && (
+                  <div className="mb-5">
+                    <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">KYC / Compliance Status</div>
+                    <div className={cn('p-3 rounded-xl border', detail.kyc.status === 'compliant' ? 'bg-emerald-50 border-emerald-200' : detail.kyc.status === 'expired' ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200')}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className={cn('text-sm font-bold', detail.kyc.status === 'compliant' ? 'text-emerald-700' : detail.kyc.status === 'expired' ? 'text-red-700' : 'text-amber-700')}>
+                          {detail.kyc.status === 'compliant' ? '✓ Compliant' : detail.kyc.status === 'expired' ? '✗ Expired' : '⚠ Unverified'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="flex items-center gap-1.5">
+                          <span className={detail.kyc.has_contract ? 'text-emerald-600' : 'text-red-500'}>{detail.kyc.has_contract ? '✓' : '✗'}</span>
+                          <span className="text-slate-600">Contract on file</span>
+                        </div>
+                        {detail.kyc.contract_expiry != null && (
+                          <div className="flex items-center gap-1.5">
+                            <span className={detail.kyc.contract_expiry > 30 ? 'text-emerald-600' : 'text-amber-500'}>⏱</span>
+                            <span className="text-slate-600">{detail.kyc.contract_expiry}d to expiry</span>
+                          </div>
+                        )}
+                        {detail.kyc.risk_flags > 0 && (
+                          <div className="flex items-center gap-1.5 text-red-600">
+                            <span>⚠</span>
+                            <span className="font-semibold">{detail.kyc.risk_flags} risk flag{detail.kyc.risk_flags > 1 ? 's' : ''}</span>
+                          </div>
+                        )}
+                      </div>
+                      {detail.kyc.documents?.length > 0 && (
+                        <div className="mt-2 pt-2 border-t border-current/10 space-y-1">
+                          {detail.kyc.documents.map((doc, i) => (
+                            <div key={i} className="flex items-center justify-between text-xs">
+                              <span className="text-slate-600">{doc.type?.replace(/_/g, ' ')}</span>
+                              <span className={cn('font-semibold', doc.status === 'valid' ? 'text-emerald-600' : doc.status === 'expired' ? 'text-red-600' : 'text-amber-600')}>{doc.status}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Delivery Performance */}
+                {detail.risk.delivery && detail.risk.delivery.total_grns > 0 && (
+                  <div className="mb-5">
+                    <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Delivery Performance</div>
+                    <div className="grid grid-cols-3 gap-3 text-center">
+                      <div className="p-3 bg-slate-50 rounded-xl">
+                        <div className="text-lg font-bold" style={{ color: detail.risk.delivery.on_time_rate >= 0.9 ? '#10b981' : detail.risk.delivery.on_time_rate >= 0.75 ? '#f59e0b' : '#ef4444' }}>
+                          {pct(detail.risk.delivery.on_time_rate * 100)}
+                        </div>
+                        <div className="text-[10px] text-slate-400">On-Time</div>
+                      </div>
+                      <div className="p-3 bg-slate-50 rounded-xl">
+                        <div className="text-lg font-bold" style={{ color: detail.risk.delivery.short_shipment_rate <= 0.1 ? '#10b981' : '#ef4444' }}>
+                          {pct(detail.risk.delivery.short_shipment_rate * 100)}
+                        </div>
+                        <div className="text-[10px] text-slate-400">Short Ship</div>
+                      </div>
+                      <div className="p-3 bg-slate-50 rounded-xl">
+                        <div className="text-lg font-bold text-blue-600">{detail.risk.delivery.total_grns}</div>
+                        <div className="text-[10px] text-slate-400">GRNs</div>
+                      </div>
+                    </div>
+                    {detail.risk.delivery.trend && detail.risk.delivery.trend !== 'no_data' && (
+                      <div className={cn('text-xs mt-2 p-2 rounded-lg text-center font-semibold',
+                        detail.risk.delivery.trend === 'deteriorating' ? 'bg-red-50 text-red-600' :
+                        detail.risk.delivery.trend === 'good' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500')}>
+                        Trend: {detail.risk.delivery.trend}
+                      </div>
+                    )}
+                    {detail.risk.delivery.open_pos?.length > 0 && (
+                      <div className="mt-2">
+                        <div className="text-[10px] font-semibold text-slate-500 mb-1">Open POs</div>
+                        {detail.risk.delivery.open_pos.slice(0, 3).map((po, i) => (
+                          <div key={i} className="text-xs flex justify-between p-1.5 bg-amber-50 rounded-lg mb-1 border border-amber-100">
+                            <span className="text-slate-600">{po.po_number}</span>
+                            <span className="text-amber-600 font-semibold">{po.fulfilled_pct}% fulfilled · {po.days_open}d open</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Concentration */}
+                {detail.risk.concentration_pct > 0 && (
+                  <div className="mb-5">
+                    <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Spend Concentration</div>
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full" style={{ width: Math.min(100, detail.risk.concentration_pct) + '%', background: detail.risk.concentration_pct > 30 ? '#ef4444' : detail.risk.concentration_pct > 15 ? '#f59e0b' : '#10b981' }} />
+                      </div>
+                      <span className={cn('text-sm font-bold', detail.risk.concentration_pct > 30 ? 'text-red-600' : 'text-slate-600')}>
+                        {pct(detail.risk.concentration_pct)}
+                      </span>
+                    </div>
+                    {detail.risk.concentration_pct > 30 && (
+                      <div className="text-xs text-red-600 mt-1">⚠ High concentration — consider diversifying suppliers</div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -690,24 +1105,35 @@ function Contracts() {
   const contracts = (s.docs || []).filter(x => x.type === 'contract');
   const invoices = (s.docs || []).filter(x => x.type === 'invoice');
   const [sel, setSel] = useState(null);
+  const [analysis, setAnalysis] = useState(null);
+  const [loadingAnalysis, setLoadingAnalysis] = useState(false);
+  const healthData = (s.intel || {}).contract_health || [];
 
-  // Auto-select if navigated from Documents page with contractId
   useEffect(() => {
     if (s.contractId && !sel) {
       const target = contracts.find(c => c.id === s.contractId);
       if (target) setSel(target);
-      d({ type: 'TAB', tab: 'contracts' }); // clear contractId
+      d({ type: 'TAB', tab: 'contracts' });
     }
   }, [s.contractId]);
-  const c = sel; // selected contract
 
-  // Invoices linked to this contract's vendor
+  // Fetch analysis when contract selected
+  useEffect(() => {
+    if (sel) {
+      setLoadingAnalysis(true);
+      api(`/api/contracts/${sel.id}/analysis`).then(r => {
+        setAnalysis(r && !r._err ? r : null);
+        setLoadingAnalysis(false);
+      }).catch(() => { setAnalysis(null); setLoadingAnalysis(false); });
+    } else { setAnalysis(null); }
+  }, [sel?.id]);
+
+  const c = sel;
   const linkedInvoices = c ? invoices.filter(inv =>
     inv.vendor && c.vendor && inv.vendor.toLowerCase().includes(c.vendor.toLowerCase().split(' ')[0])
   ) : [];
   const totalInvoiced = linkedInvoices.reduce((s, i) => s + (i.amount || 0), 0);
 
-  // Contract status
   const getStatus = (ctr) => {
     const startStr = ctr.effectiveDate || ctr.issueDate;
     if (!startStr) return { label: 'Unknown', color: 'muted' };
@@ -723,10 +1149,32 @@ function Contracts() {
     return { label: 'Active', color: 'ok' };
   };
 
+  // Health score ring
+  const HealthRing = ({ score, size = 48 }) => {
+    const r = (size - 5) / 2, circ = 2 * Math.PI * r, off = circ * (1 - score / 100);
+    const cl = score >= 70 ? '#10b981' : score >= 40 ? '#f59e0b' : '#ef4444';
+    return (
+      <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#e2e8f0" strokeWidth="4" />
+        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={cl} strokeWidth="4" strokeDasharray={circ} strokeDashoffset={off} strokeLinecap="round" />
+        <text x={size/2} y={size/2} textAnchor="middle" dominantBaseline="central" fill={cl} fontSize="12" fontWeight="800" style={{ transform: 'rotate(90deg)', transformOrigin: 'center' }}>{score}</text>
+      </svg>
+    );
+  };
+
+  const riskBadge = (risk) => {
+    const colors = { high: 'bg-red-100 text-red-700 border-red-200', medium: 'bg-amber-100 text-amber-700 border-amber-200', low: 'bg-emerald-100 text-emerald-700 border-emerald-200' };
+    return <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full border', colors[risk] || colors.low)}>{risk}</span>;
+  };
+
   if (c) {
     const status = getStatus(c);
-    const parties = c.parties ? (Array.isArray(c.parties) ? c.parties : [c.parties]) : [];
+    const an = analysis?.analysis || {};
+    const hl = analysis?.health || {};
+    const clauses = an.clauses || [];
+    const obligations = an.obligations || [];
     const utilization = c.amount > 0 ? (totalInvoiced / c.amount * 100) : 0;
+
     return (
       <div className="page-enter">
         <PageHeader title="Contracts" sub={c.contractNumber || c.id}>
@@ -734,17 +1182,77 @@ function Contracts() {
           <button onClick={() => { d({ type: 'SEL', doc: c }); }} className="btn-o text-xs"><Eye className="w-3 h-3" /> View Document</button>
         </PageHeader>
 
-        {/* Contract Summary Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        {/* Health + Summary Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+          <div className="card p-4 flex items-center gap-3">
+            {hl.health_score != null ? <HealthRing score={hl.health_score} /> : <div className="w-12 h-12 bg-slate-100 rounded-full animate-pulse" />}
+            <div><div className="text-[10px] font-bold text-slate-500 uppercase">Health</div><div className="text-sm font-bold">{hl.health_level || '...'}</div></div>
+          </div>
           <div className="card p-4"><div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Status</div><Badge c={status.color}>{status.label}</Badge></div>
           <div className="card p-4"><div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Contract Value</div><div className="text-lg font-bold text-slate-900">{$(c.amount, c.currency)}</div></div>
-          <div className="card p-4"><div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Invoiced to Date</div><div className="text-lg font-bold text-emerald-600">{$(totalInvoiced, c.currency)}</div></div>
-          <div className="card p-4"><div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Utilization</div><div className="text-lg font-bold" style={{ color: utilization > 90 ? '#dc2626' : utilization > 70 ? '#d97706' : '#059669' }}>{pct(utilization)}</div></div>
+          <div className="card p-4"><div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Invoiced</div><div className="text-lg font-bold text-emerald-600">{$(totalInvoiced, c.currency)}</div></div>
+          <div className="card p-4"><div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Utilization</div><div className="text-lg font-bold" style={{ color: utilization > 100 ? '#dc2626' : utilization > 90 ? '#d97706' : '#059669' }}>{pct(utilization)}</div></div>
         </div>
 
-        {/* Two column layout */}
+        {/* AI Clause Risk Analysis */}
+        {clauses.length > 0 && (
+          <div className="mb-6">
+            <div className="flex items-center gap-2 mb-3">
+              <Brain className="w-4 h-4 text-indigo-500" />
+              <h3 className="text-[11px] font-bold text-slate-900 uppercase tracking-wider">AI Clause Risk Analysis</h3>
+              {an.risk_score != null && <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full', an.risk_level === 'high' ? 'bg-red-100 text-red-700' : an.risk_level === 'medium' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700')}>Risk Score: {an.risk_score}/100</span>}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {clauses.map((cl, i) => (
+                <div key={i} className={cn('card p-4 border-l-4', cl.risk === 'high' ? 'border-red-500' : cl.risk === 'medium' ? 'border-amber-400' : 'border-emerald-400')}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">{(cl.type || '').replace(/_/g, ' ')}</span>
+                    {riskBadge(cl.risk)}
+                  </div>
+                  <div className="text-sm text-slate-800 font-medium mb-2">{cl.summary}</div>
+                  <div className="text-xs text-slate-500 mb-1"><span className="font-semibold">Benchmark:</span> {cl.benchmark}</div>
+                  <div className="text-xs text-indigo-600 font-medium">→ {cl.recommendation}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {loadingAnalysis && (
+          <div className="card p-8 text-center mb-6">
+            <div className="w-8 h-8 rounded-full border-3 border-indigo-200 border-t-indigo-600 animate-spin mx-auto mb-3" />
+            <div className="text-sm text-slate-500">Analyzing contract clauses...</div>
+          </div>
+        )}
+
+        {/* Obligations Tracker */}
+        {obligations.length > 0 && (
+          <div className="card p-5 mb-6">
+            <div className="flex items-center gap-2 mb-3">
+              <Clock className="w-4 h-4 text-amber-500" />
+              <h3 className="text-[11px] font-bold text-slate-900 uppercase tracking-wider">Obligations Tracker</h3>
+              <span className="badge badge-warn">{obligations.length}</span>
+            </div>
+            <div className="space-y-2">
+              {obligations.map((ob, i) => (
+                <div key={i} className={cn('flex items-center justify-between p-3 rounded-xl border', ob.urgency === 'high' ? 'bg-red-50 border-red-200' : ob.urgency === 'medium' ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200')}>
+                  <div>
+                    <div className="text-sm font-medium text-slate-800">{ob.obligation}</div>
+                    <div className="text-xs text-slate-500">{ob.party === 'buyer' ? '📋 Your obligation' : '📦 Vendor obligation'} · {ob.frequency || ob.type?.replace(/_/g, ' ')}</div>
+                  </div>
+                  {ob.days_left != null && (
+                    <div className={cn('text-sm font-bold', ob.days_left <= 14 ? 'text-red-600' : ob.days_left <= 45 ? 'text-amber-600' : 'text-slate-500')}>
+                      {ob.days_left}d
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Two column: Contract Details + Linked Invoices */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Left: Contract Details */}
           <div className="card p-5 space-y-4">
             <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Contract Details</div>
             <div className="grid grid-cols-2 gap-3">
@@ -753,39 +1261,23 @@ function Contracts() {
               <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Effective Date</div><div className="text-sm">{date(c.effectiveDate || c.issueDate)}</div></div>
               <div><div className="text-[10px] font-semibold text-slate-500 uppercase">End Date</div><div className="text-sm">{date(c.endDate) || '—'}</div></div>
               {c.termMonths && <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Term</div><div className="text-sm">{c.termMonths} months</div></div>}
-              {c.signingDate && <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Signing Date</div><div className="text-sm">{date(c.signingDate)}</div></div>}
-              <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Contract Value</div><div className="text-sm font-semibold">{$(c.amount, c.currency)}</div></div>
-              <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Currency</div><div className="text-sm">{c.currency || 'USD'}</div></div>
               <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Payment Terms</div><div className="text-sm">{c.paymentTerms || '—'}</div></div>
               {c.governingLaw && <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Governing Law</div><div className="text-sm">{c.governingLaw}</div></div>}
               {c.autoRenewal != null && <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Auto-Renewal</div><div className="text-sm">{c.autoRenewal ? `Yes${c.renewalNoticeDays ? ` (${c.renewalNoticeDays}d notice)` : ''}` : 'No'}</div></div>}
-              {c.terminationNoticeDays && <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Termination Notice</div><div className="text-sm">{c.terminationNoticeDays} days</div></div>}
-              {parties.length > 0 && <div className="col-span-2"><div className="text-[10px] font-semibold text-slate-500 uppercase">Parties</div><div className="text-sm">{parties.join(' & ')}</div></div>}
             </div>
-            {/* Key Clauses */}
-            {(c.liabilityCapDescription || c.warrantyMonths || c.penaltyClauses || c.slaSummary || c.insuranceRequirements || c.terminationForConvenience) && (
+            {(c.liabilityCapDescription || c.slaSummary || c.penaltyClauses) && (
               <div>
                 <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-2 mb-2">Key Clauses</div>
                 <div className="space-y-2 text-sm">
                   {(c.liabilityCap || c.liabilityCapDescription) && <div className="p-2 bg-slate-50 rounded-lg"><span className="font-semibold text-slate-600">Liability Cap:</span> {c.liabilityCapDescription || $f(c.liabilityCap, c.currency)}</div>}
-                  {c.warrantyMonths && <div className="p-2 bg-slate-50 rounded-lg"><span className="font-semibold text-slate-600">Warranty:</span> {c.warrantyMonths} months</div>}
                   {c.slaSummary && <div className="p-2 bg-slate-50 rounded-lg"><span className="font-semibold text-slate-600">SLA:</span> {c.slaSummary}</div>}
                   {c.penaltyClauses && <div className="p-2 bg-slate-50 rounded-lg"><span className="font-semibold text-slate-600">Penalties:</span> {c.penaltyClauses}</div>}
-                  {c.insuranceRequirements && <div className="p-2 bg-slate-50 rounded-lg"><span className="font-semibold text-slate-600">Insurance:</span> {c.insuranceRequirements}</div>}
-                  {c.terminationForConvenience && <div className="p-2 bg-slate-50 rounded-lg"><span className="font-semibold text-slate-600">Termination:</span> {c.terminationForConvenience}</div>}
-                  {c.ipOwnership && <div className="p-2 bg-slate-50 rounded-lg"><span className="font-semibold text-slate-600">IP:</span> {c.ipOwnership}</div>}
-                  {c.confidentialityYears && <div className="p-2 bg-slate-50 rounded-lg"><span className="font-semibold text-slate-600">Confidentiality:</span> {c.confidentialityYears} years post-termination</div>}
                   {c.forceMajeureDays && <div className="p-2 bg-slate-50 rounded-lg"><span className="font-semibold text-slate-600">Force Majeure:</span> {c.forceMajeureDays} days threshold</div>}
                 </div>
               </div>
             )}
-            <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-100">
-              <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Confidence</div><div className="text-sm font-semibold">{pct(c.confidence)}</div></div>
-              <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Uploaded By</div><div className="text-sm">{c.uploadedBy || '—'}</div></div>
-            </div>
           </div>
 
-          {/* Right: Linked Invoices */}
           <div className="card p-5">
             <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Invoices Against This Contract <Badge c="muted">{linkedInvoices.length}</Badge></div>
             {linkedInvoices.length === 0 ? (
@@ -818,18 +1310,41 @@ function Contracts() {
     );
   }
 
+  // Contract List with Health Scores
+  const getHealth = (cid) => healthData.find(h => h.id === cid);
+
   return (
     <div className="page-enter">
       <PageHeader title="Contracts" sub={`${contracts.length} vendor contracts`}>
         <button onClick={() => d({ type: 'TAB', tab: 'upload' })} className="btn-p"><Upload className="w-4 h-4" /> Upload Contract</button>
       </PageHeader>
+
+      {/* Intelligence Summary Bar */}
+      {healthData.length > 0 && (
+        <div className="flex gap-4 mb-4 flex-wrap">
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 rounded-xl border border-emerald-100">
+            <div className="w-2 h-2 rounded-full bg-emerald-500" />
+            <span className="text-xs font-semibold text-emerald-700">{healthData.filter(h => h.health_level === 'good').length} Healthy</span>
+          </div>
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 rounded-xl border border-amber-100">
+            <div className="w-2 h-2 rounded-full bg-amber-500" />
+            <span className="text-xs font-semibold text-amber-700">{healthData.filter(h => h.health_level === 'warning').length} Warning</span>
+          </div>
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-red-50 rounded-xl border border-red-100">
+            <div className="w-2 h-2 rounded-full bg-red-500" />
+            <span className="text-xs font-semibold text-red-700">{healthData.filter(h => h.health_level === 'critical').length} Critical</span>
+          </div>
+        </div>
+      )}
+
       <Table
         cols={[
           { label: 'Contract', render: r => <div><div className="font-semibold">{r.contractNumber || r.invoiceNumber || r.id}</div><div className="text-xs text-slate-500">{r.vendor}</div></div> },
+          { label: 'Health', render: r => { const h = getHealth(r.id); if (!h) return <span className="text-slate-400">—</span>; return <HealthRing score={h.health_score} size={36} />; }},
           { label: 'Status', render: r => { const st = getStatus(r); return <Badge c={st.color}>{st.label}</Badge>; }},
           { label: 'Value', right: true, render: r => <span className="font-semibold font-mono">{$(r.amount, r.currency)}</span> },
-          { label: 'Effective', render: r => <span className="text-slate-600">{date(r.effectiveDate || r.issueDate)}</span> },
-          { label: 'End', render: r => <span className="text-slate-600">{date(r.endDate) || '—'}</span> },
+          { label: 'Risk', render: r => { const h = getHealth(r.id); return h ? <span className={cn('text-xs font-bold', h.clause_risk >= 60 ? 'text-red-600' : h.clause_risk >= 30 ? 'text-amber-600' : 'text-emerald-600')}>{h.clause_risk}/100</span> : '—'; }},
+          { label: 'Expiry', render: r => { const h = getHealth(r.id); if (!h?.days_to_expiry) return '—'; return <span className={cn('text-xs font-bold', h.days_to_expiry <= 30 ? 'text-red-600' : h.days_to_expiry <= 90 ? 'text-amber-600' : 'text-slate-500')}>{h.days_to_expiry}d</span>; }},
           { label: 'Confidence', render: r => <ConfidenceRing score={r.confidence || 0} /> },
         ]}
         rows={contracts}
@@ -1771,10 +2286,11 @@ function LandingPage({ onGo }) {
     { icon: Brain, title: 'Agentic Dispute Resolution', desc: 'When models disagree, a third AI re-examines with vendor context and PO data.', tag: 'AI', color: '#4f46e5' },
     { icon: Shield, title: 'RAG Anomaly Detection', desc: `${rc} rule-based checks plus AI cross-referencing past anomalies and contract clauses.`, tag: 'AI+RULES', color: '#d97706' },
     { icon: Link2, title: '3-Way Smart Matching', desc: 'Deterministic PO-GRN-Invoice matching with AI reasoning across all POs by vendor.', tag: 'ALGO+AI', color: '#059669' },
+    { icon: FileCheck, title: 'Contract Intelligence', desc: '8-clause risk analysis with health scores, obligation tracking, and price drift detection.', tag: 'PHASE 2', color: '#7c3aed' },
+    { icon: Building2, title: '9-Factor Vendor Risk', desc: 'Extended KYC/compliance scoring: payment behavior, concentration, delivery performance.', tag: 'PHASE 3', color: '#7c3aed' },
+    { icon: TrendingUp, title: 'GRN Deep Analytics', desc: 'Delivery performance tracking: on-time rates, short shipments, PO fulfillment gaps.', tag: 'PHASE 4', color: '#7c3aed' },
     { icon: FileText, title: 'Investigation Briefs', desc: 'Auto-generated narratives citing exact amounts, contract clauses, and vendor history.', tag: 'AI', color: '#4f46e5' },
     { icon: CheckCircle2, title: 'Plain English Anomalies', desc: 'Technical flags translated into one-sentence explanations with post-validated amounts.', tag: 'AI', color: '#4f46e5' },
-    { icon: Building2, title: 'Vendor Dispute Drafts', desc: 'AI drafts dispute letters referencing your contract terms and dollar amounts.', tag: 'AI·HUMAN', color: '#0369a1' },
-    { icon: TrendingUp, title: 'Payment Prioritization', desc: 'Optimize payment runs: capture early discounts, hold disputed invoices.', tag: 'AI', color: '#4f46e5' },
     { icon: Eye, title: 'Pattern Insights', desc: 'Statistical analysis identifies recurring vendor issues meeting significance thresholds.', tag: 'AI+STATS', color: '#d97706' },
     { icon: ClipboardList, title: 'Smart Case Routing', desc: 'Score team by expertise, workload, and authority. AI explains assignments.', tag: 'ALGO+AI', color: '#059669' },
     { icon: Settings, title: 'NL Policy Config', desc: 'Configure AP rules in plain English. AI translates to parameters you preview.', tag: 'AI·HUMAN', color: '#0369a1' },
@@ -1831,7 +2347,7 @@ function LandingPage({ onGo }) {
             Audit every invoice<br /><span style={{ color: '#2563eb' }}>before you pay.</span>
           </h1>
           <p className="text-base text-slate-600 max-w-xl mx-auto mb-8 leading-relaxed">
-            AI extracts, matches, and flags anomalies in under 8 seconds. Your team investigates only what matters.
+            AI extracts, matches, and flags anomalies in under 8 seconds. Contract intelligence, 9-factor vendor risk, and delivery analytics — before you pay.
           </p>
           <div className="flex gap-3 justify-center mb-4">
             <button onClick={onGo} className="px-7 py-3 text-sm font-semibold text-white bg-slate-900 rounded-xl hover:bg-slate-800 transition-all shadow-sm">Start Auditing →</button>
@@ -1847,9 +2363,9 @@ function LandingPage({ onGo }) {
           {[
             { v: '450+', l: 'invoices/hr', c: '#059669' },
             { v: `${rc}`, l: 'anomaly rules', c: '#2563eb' },
-            { v: `${lc}`, l: 'languages', c: '#7c3aed' },
-            { v: '<8s', l: 'per invoice', c: '#d97706' },
-            { v: '100%', l: 'audit coverage', c: '#dc2626' },
+            { v: '9', l: 'risk factors', c: '#7c3aed' },
+            { v: '8', l: 'clause checks', c: '#d97706' },
+            { v: '<8s', l: 'per invoice', c: '#dc2626' },
           ].map(st => (
             <div key={st.l} className="text-center">
               <div className="text-3xl font-extrabold tracking-tight" style={{ color: st.c }}>{st.v}</div>
@@ -1872,6 +2388,7 @@ function LandingPage({ onGo }) {
                 { icon: Zap, label: 'AI Extraction', sub: 'Ensemble models extract every field in parallel with self-correcting dispute resolution', color: '#4f46e5' },
                 { icon: Link2, label: '3-Way Matching', sub: 'Automatically match to POs and goods receipts — AI resolves fuzzy references', color: '#059669' },
                 { icon: Shield, label: 'Anomaly Detection', sub: `${rc} rules + AI auditor cross-references contracts, vendor history, and past corrections`, color: '#d97706' },
+                { icon: FileCheck, label: 'Contract & Vendor Intelligence', sub: 'Clause risk analysis, 9-factor vendor scoring, KYC compliance, delivery performance tracking', color: '#7c3aed' },
                 { icon: ClipboardList, label: 'Smart Triage', sub: 'Auto-approve clean invoices, route exceptions to the right person with SLA tracking', color: '#dc2626' },
                 { icon: FileText, label: 'Investigation Brief', sub: 'AI-generated case narrative citing exact amounts, clauses, and recommended actions', color: '#0369a1' },
               ].map(st => (
@@ -1926,6 +2443,12 @@ function LandingPage({ onGo }) {
                 {ruleNames.map(r => <span key={r} className="text-[10px] px-2 py-0.5 rounded bg-red-50 text-red-600 font-medium border border-red-100">{r}</span>)}
               </div>
             )}
+            {/* Phase 2-4 Intelligence Rules */}
+            <div className="flex flex-wrap gap-1 mb-3">
+              {['CONTRACT PRICE DRIFT','CONTRACT EXPIRY WARNING','CHRONIC SHORT SHIPMENT','PO FULFILLMENT STALE'].map(r => (
+                <span key={r} className="text-[10px] px-2 py-0.5 rounded bg-indigo-50 text-indigo-600 font-medium border border-indigo-100">🔍 {r}</span>
+              ))}
+            </div>
             {oppNames.length > 0 && (
               <div className="flex flex-wrap gap-1 mb-3">
                 {oppNames.map(r => <span key={r} className="text-[10px] px-2 py-0.5 rounded bg-amber-50 text-amber-700 font-medium border border-amber-100">💡 {r}</span>)}
@@ -2195,6 +2718,32 @@ function AppShell() {
 }
 
 /* ═══════════════════════════════════════════════════
+   ERROR BOUNDARY — catches React crashes, shows recovery UI
+   ═══════════════════════════════════════════════════ */
+import React from 'react';
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { hasError: false, error: null }; }
+  static getDerivedStateFromError(error) { return { hasError: true, error }; }
+  componentDidCatch(error, info) { console.error('AuditLens UI Error:', error, info); }
+  render() {
+    if (this.state.hasError) return (
+      <div className="flex items-center justify-center min-h-screen bg-slate-50">
+        <div className="text-center max-w-md">
+          <div className="text-4xl mb-4">⚠️</div>
+          <h2 className="text-lg font-bold text-slate-900 mb-2">Something went wrong</h2>
+          <p className="text-sm text-slate-500 mb-4">{this.state.error?.message || 'An unexpected error occurred.'}</p>
+          <button onClick={() => { this.setState({ hasError: false }); window.location.reload(); }}
+            className="px-4 py-2 bg-accent-600 text-white rounded-lg text-sm font-semibold hover:bg-accent-700">
+            Reload AuditLens
+          </button>
+        </div>
+      </div>
+    );
+    return this.props.children;
+  }
+}
+
+/* ═══════════════════════════════════════════════════
    ROOT
    ═══════════════════════════════════════════════════ */
 export default function App() {
@@ -2216,5 +2765,5 @@ export default function App() {
 
   if (view === 'landing') return <LandingPage onGo={() => setView('login')} />;
   if (view === 'login' && !s.user) return <LoginScreen />;
-  return <AppShell />;
+  return <ErrorBoundary><AppShell /></ErrorBoundary>;
 }

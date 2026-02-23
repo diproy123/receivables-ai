@@ -101,7 +101,7 @@ async def detect_anomalies_with_claude(invoice, po, contract, history, tolerance
 
     import anthropic
 
-    client = anthropic.AsyncAnthropic()
+    client = anthropic.AsyncAnthropic(timeout=120.0)
     def clean(d):
         if not d: return "Not available"
         skip = {"rawExtraction", "extractionSource", "extractedAt", "billTo", "shipTo"}

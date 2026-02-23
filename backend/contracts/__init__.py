@@ -1,0 +1,711 @@
+"""
+AuditLens — Contract Intelligence, Vendor KYC/Risk, GRN Deep Analytics
+Phase 2-4 Intelligence Engine (v3.0)
+
+All three phases in a single additive module:
+  Phase 2: Contract clause risk scoring, compliance monitoring, expiry alerting
+  Phase 3: Extended vendor risk (5→9 factors), KYC tracking, behavioral analysis
+  Phase 4: GRN delivery performance analytics, fulfillment tracking
+
+DESIGN PRINCIPLES:
+  - Pure additive — no modifications to existing modules
+  - Zero LLM calls — all deterministic rule-based intelligence
+  - Uses only data already in db[] — no new document types needed
+  - All functions receive db dict, return new data — side-effect free
+"""
+
+import math
+from datetime import datetime, timedelta
+from backend.vendor import vendor_similarity, normalize_vendor, currency_symbol
+from backend.db import _n
+from backend.policy import get_policy
+
+
+# ============================================================
+# PHASE 2: CONTRACT INTELLIGENCE
+# ============================================================
+
+CLAUSE_TYPES = [
+    "liability_cap", "termination_notice", "auto_renewal", "sla_terms",
+    "penalty_clauses", "force_majeure", "confidentiality", "ip_ownership",
+]
+
+def analyze_contract_clauses(contract: dict) -> dict:
+    """Analyze contract terms and produce clause-level risk scores.
+    Returns { risk_score, risk_level, clauses[], obligations[], pricing_rules[] }
+    """
+    ct = contract.get("contractTerms") or {}
+    clauses, obligations, pricing_rules = [], [], []
+    risk_points, max_points = 0, 0
+    sym = currency_symbol(contract.get("currency", "USD"))
+    cval = _n(contract.get("amount"))
+
+    # ── Liability Cap ──
+    max_points += 20
+    cap_desc = ct.get("liability_cap_description") or contract.get("liabilityCapDescription") or ""
+    cap_val = _n(ct.get("liability_cap") or contract.get("liabilityCap"))
+    if not cap_desc and not cap_val:
+        clauses.append({"type": "liability_cap", "risk": "high", "score": 20,
+            "summary": "No liability cap defined",
+            "benchmark": "Industry standard: 150–200% of annual value",
+            "recommendation": "Negotiate liability cap at renewal"})
+        risk_points += 20
+    elif cap_val and cval and cap_val < cval:
+        r = 12
+        clauses.append({"type": "liability_cap", "risk": "medium", "score": r,
+            "summary": f"Cap at {sym}{cap_val:,.0f} ({cap_val/cval*100:.0f}% of value)" if cval > 0 else (cap_desc or f"{sym}{cap_val:,.0f}"),
+            "benchmark": "Standard: 150–200% of contract value",
+            "recommendation": "Negotiate higher cap"})
+        risk_points += r
+    else:
+        clauses.append({"type": "liability_cap", "risk": "low", "score": 3,
+            "summary": cap_desc or (f"Cap: {sym}{cap_val:,.0f}" if cap_val else "Defined"),
+            "benchmark": "Adequate", "recommendation": "Retain at renewal"})
+        risk_points += 3
+
+    # ── Termination Notice ──
+    max_points += 15
+    td = _n(ct.get("termination_notice_days") or contract.get("terminationNoticeDays"))
+    if not td:
+        clauses.append({"type": "termination_notice", "risk": "high", "score": 15,
+            "summary": "No termination notice defined",
+            "benchmark": "Standard: 30–90 days", "recommendation": "Add termination clause"})
+        risk_points += 15
+    elif td > 90:
+        clauses.append({"type": "termination_notice", "risk": "medium", "score": 10,
+            "summary": f"{int(td)}-day notice required",
+            "benchmark": f"Standard: 30–60 days; {int(td)}-day is restrictive",
+            "recommendation": "Negotiate shorter notice"})
+        risk_points += 10
+    else:
+        clauses.append({"type": "termination_notice", "risk": "low", "score": 2,
+            "summary": f"{int(td)}-day notice", "benchmark": "Within range", "recommendation": "Acceptable"})
+        risk_points += 2
+
+    # ── Auto-Renewal ──
+    max_points += 15
+    ar = ct.get("auto_renewal") or contract.get("autoRenewal")
+    rnd = _n(ct.get("renewal_notice_days") or contract.get("renewalNoticeDays"))
+    if ar:
+        if rnd and rnd > 60:
+            clauses.append({"type": "auto_renewal", "risk": "high", "score": 15,
+                "summary": f"Auto-renews; {int(rnd)}-day opt-out notice",
+                "benchmark": "Standard opt-out: 30–60 days",
+                "recommendation": "Set calendar alert for opt-out deadline"})
+            risk_points += 15
+        elif rnd:
+            clauses.append({"type": "auto_renewal", "risk": "medium", "score": 8,
+                "summary": f"Auto-renews; {int(rnd)}-day opt-out",
+                "benchmark": "Requires tracking", "recommendation": "Set renewal reminder"})
+            risk_points += 8
+        else:
+            clauses.append({"type": "auto_renewal", "risk": "medium", "score": 10,
+                "summary": "Auto-renews — no opt-out period specified",
+                "benchmark": "Ambiguous terms", "recommendation": "Clarify opt-out terms"})
+            risk_points += 10
+    else:
+        clauses.append({"type": "auto_renewal", "risk": "low", "score": 0,
+            "summary": "No auto-renewal", "benchmark": "Full control", "recommendation": "Track expiry proactively"})
+
+    # ── SLA ──
+    max_points += 15
+    sla = ct.get("sla_summary") or contract.get("slaSummary")
+    if sla:
+        clauses.append({"type": "sla_terms", "risk": "low", "score": 3,
+            "summary": sla[:200], "benchmark": "SLA defined — enables monitoring",
+            "recommendation": "Track vendor delivery against SLA"})
+        risk_points += 3
+        obligations.append({"party": "vendor", "type": "sla_compliance",
+            "obligation": f"SLA: {sla[:100]}", "frequency": "ongoing"})
+    else:
+        clauses.append({"type": "sla_terms", "risk": "medium", "score": 10,
+            "summary": "No SLA defined", "benchmark": "SLA protects buyer",
+            "recommendation": "Negotiate measurable SLA at renewal"})
+        risk_points += 10
+
+    # ── Penalty Clauses ──
+    max_points += 10
+    pen = ct.get("penalty_clauses") or contract.get("penaltyClauses")
+    if pen:
+        clauses.append({"type": "penalty_clauses", "risk": "low", "score": 2,
+            "summary": pen[:200], "benchmark": "Enforcement leverage exists",
+            "recommendation": "Enforce when warranted"})
+        risk_points += 2
+    else:
+        clauses.append({"type": "penalty_clauses", "risk": "medium", "score": 7,
+            "summary": "No penalty clauses", "benchmark": "Penalties incentivize compliance",
+            "recommendation": "Add liquidated damages at renewal"})
+        risk_points += 7
+
+    # ── Force Majeure ──
+    max_points += 10
+    fm = _n(ct.get("force_majeure_days") or contract.get("forceMajeureDays"))
+    if fm:
+        r = 2 if fm <= 120 else 6
+        clauses.append({"type": "force_majeure", "risk": "low" if fm <= 120 else "medium", "score": r,
+            "summary": f"{int(fm)}-day threshold", "benchmark": "Standard: 90–120 days",
+            "recommendation": "Acceptable" if fm <= 120 else "Negotiate lower"})
+        risk_points += r
+    else:
+        clauses.append({"type": "force_majeure", "risk": "medium", "score": 5,
+            "summary": "No force majeure clause", "benchmark": "Post-COVID: include FM",
+            "recommendation": "Add FM protection"})
+        risk_points += 5
+
+    # ── Confidentiality ──
+    max_points += 8
+    cy = _n(ct.get("confidentiality_years") or contract.get("confidentialityYears"))
+    if cy:
+        clauses.append({"type": "confidentiality", "risk": "low", "score": 1,
+            "summary": f"{int(cy)}-year post-termination", "benchmark": "Standard: 2–5 years",
+            "recommendation": "Adequate"})
+        risk_points += 1
+    else:
+        clauses.append({"type": "confidentiality", "risk": "medium", "score": 4,
+            "summary": "No confidentiality clause", "benchmark": "Standard: 2–5 years post-termination",
+            "recommendation": "Add NDA or confidentiality terms"})
+        risk_points += 4
+
+    # ── IP Ownership ──
+    max_points += 7
+    ip = ct.get("ip_ownership") or contract.get("ipOwnership")
+    if ip:
+        clauses.append({"type": "ip_ownership", "risk": "low", "score": 2,
+            "summary": ip[:200], "benchmark": "IP terms defined", "recommendation": "Verify alignment"})
+        risk_points += 2
+    else:
+        clauses.append({"type": "ip_ownership", "risk": "low", "score": 3,
+            "summary": "No IP clause — may not be applicable",
+            "benchmark": "Define IP ownership for work-product contracts",
+            "recommendation": "Add if deliverables involve IP"})
+        risk_points += 3
+
+    # ── Composite ──
+    risk_score = round(risk_points / max(max_points, 1) * 100) if max_points > 0 else 50
+    risk_score = max(0, min(100, risk_score))
+    risk_level = "high" if risk_score >= 60 else "medium" if risk_score >= 30 else "low"
+
+    # ── Expiry obligations ──
+    expiry = ct.get("expiry_date") or contract.get("endDate")
+    if expiry:
+        try:
+            exp_dt = datetime.fromisoformat(str(expiry)[:10])
+            dl = (exp_dt - datetime.now()).days
+            if dl > 0:
+                obligations.append({"party": "buyer", "type": "renewal_decision",
+                    "obligation": f"Contract expires {expiry}", "deadline": expiry,
+                    "days_left": dl, "urgency": "high" if dl <= 30 else "medium" if dl <= 90 else "low"})
+                if ar and rnd:
+                    nd = (exp_dt - timedelta(days=int(rnd))).strftime("%Y-%m-%d")
+                    ndl = (exp_dt - timedelta(days=int(rnd)) - datetime.now()).days
+                    if ndl > 0:
+                        obligations.append({"party": "buyer", "type": "opt_out_deadline",
+                            "obligation": f"Opt-out by {nd} ({int(rnd)}-day notice)",
+                            "deadline": nd, "days_left": ndl,
+                            "urgency": "high" if ndl <= 14 else "medium" if ndl <= 45 else "low"})
+        except (ValueError, TypeError):
+            pass
+
+    # ── Pricing rules ──
+    pricing = contract.get("pricingTerms")
+    if isinstance(pricing, dict):
+        for k, v in pricing.items():
+            if v and k not in ("discount", "description"):
+                pricing_rules.append({"term": k, "value": str(v)})
+    elif isinstance(pricing, str) and pricing.strip():
+        pricing_rules.append({"term": "pricing", "value": pricing[:300]})
+
+    return {"risk_score": risk_score, "risk_level": risk_level, "clauses": clauses,
+            "obligations": obligations, "pricing_rules": pricing_rules,
+            "analyzed_at": datetime.now().isoformat()}
+
+
+def detect_contract_compliance_anomalies(invoice: dict, contract: dict, db: dict) -> list:
+    """Phase 2 anomaly rules: CONTRACT_PRICE_DRIFT, CONTRACT_EXPIRY_WARNING"""
+    anomalies = []
+    if not contract:
+        return anomalies
+    sym = currency_symbol(invoice.get("currency", "USD"))
+    ct = contract.get("contractTerms") or {}
+
+    # ── CONTRACT_PRICE_DRIFT ──
+    cp = contract.get("pricingTerms")
+    if cp and isinstance(cp, dict):
+        for li in invoice.get("lineItems", []):
+            desc = (li.get("description") or "").lower().strip()
+            up = _n(li.get("unitPrice"))
+            if not up or not desc:
+                continue
+            for tk, tv in cp.items():
+                tp = _n(tv)
+                if not tp:
+                    continue
+                if tk.lower() in desc or desc in tk.lower():
+                    drift = ((up - tp) / tp * 100) if tp > 0 else 0
+                    # Use contract-specific tolerance (broader than line-item matching)
+                    tol = get_policy().get("contract_price_drift_pct",
+                          max(get_policy().get("price_tolerance_pct", 10), 5))
+                    if drift > tol:
+                        risk = (up - tp) * _n(li.get("quantity") or 1)
+                        anomalies.append({"type": "CONTRACT_PRICE_DRIFT",
+                            "severity": "high" if drift > 20 else "medium",
+                            "description": f"'{li.get('description')}': {sym}{up:,.2f}/unit vs contracted {sym}{tp:,.2f} (+{drift:.1f}%)",
+                            "amount_at_risk": round(risk, 2),
+                            "contract_clause": f"Contracted rate: {sym}{tp:,.2f}",
+                            "recommendation": f"Challenge vendor — contract specifies {sym}{tp:,.2f}"})
+
+    # ── CONTRACT_EXPIRY_WARNING ──
+    expiry = ct.get("expiry_date") or contract.get("endDate")
+    if expiry:
+        try:
+            exp_dt = datetime.fromisoformat(str(expiry)[:10])
+            dl = (exp_dt - datetime.now()).days
+            if dl < 0:
+                anomalies.append({"type": "CONTRACT_EXPIRY_WARNING", "severity": "high",
+                    "description": f"Invoice against expired contract (expired {abs(dl)} days ago, {expiry})",
+                    "amount_at_risk": _n(invoice.get("subtotal") or invoice.get("amount")),
+                    "contract_clause": f"Expired: {expiry}",
+                    "recommendation": "Renew contract before approving further invoices"})
+            elif dl <= 30:
+                anomalies.append({"type": "CONTRACT_EXPIRY_WARNING", "severity": "medium",
+                    "description": f"Contract expires in {dl} days ({expiry})",
+                    "amount_at_risk": 0, "contract_clause": f"End: {expiry}",
+                    "recommendation": f"Initiate renewal — {dl} days remaining"})
+        except (ValueError, TypeError):
+            pass
+
+    return anomalies
+
+
+def compute_contract_health(contract: dict, db: dict) -> dict:
+    """Quick health score for contract list display."""
+    analysis = analyze_contract_clauses(contract)
+    cr = analysis["risk_score"]
+
+    # Expiry risk
+    ct = contract.get("contractTerms") or {}
+    expiry = ct.get("expiry_date") or contract.get("endDate")
+    er, dl = 0, None
+    if expiry:
+        try:
+            exp_dt = datetime.fromisoformat(str(expiry)[:10])
+            dl = (exp_dt - datetime.now()).days
+            er = 100 if dl < 0 else 80 if dl <= 30 else 40 if dl <= 90 else 0
+        except (ValueError, TypeError):
+            pass
+
+    # Utilization
+    vn = contract.get("vendor", "")
+    cv = _n(contract.get("amount"))
+    ti = sum(_n(i.get("subtotal") or i.get("amount")) for i in db.get("invoices", [])
+             if vendor_similarity(i.get("vendor", ""), vn) >= 0.7)
+    util = (ti / cv * 100) if cv > 0 else 0
+    ur = min(100, (util - 100) * 5) if util > 100 else (30 if util > 90 else 0)
+
+    comp = round(cr * 0.5 + er * 0.3 + ur * 0.2)
+    health = max(0, min(100, 100 - comp))
+
+    return {"health_score": health,
+            "health_level": "good" if health >= 70 else "warning" if health >= 40 else "critical",
+            "clause_risk": cr, "expiry_risk": er, "utilization_pct": round(util, 1),
+            "days_to_expiry": dl, "total_invoiced": round(ti, 2),
+            "obligations_count": len(analysis.get("obligations", [])),
+            "high_risk_clauses": sum(1 for c in analysis.get("clauses", []) if c.get("risk") == "high"),
+            "analysis": analysis}
+
+
+def get_expiring_contracts(db: dict, days: int = 90) -> list:
+    """Contracts expiring within N days, sorted by urgency."""
+    results = []
+    now = datetime.now()
+    for c in db.get("contracts", []):
+        ct = c.get("contractTerms") or {}
+        expiry = ct.get("expiry_date") or c.get("endDate")
+        if not expiry:
+            continue
+        try:
+            exp_dt = datetime.fromisoformat(str(expiry)[:10])
+            dl = (exp_dt - now).days
+            if 0 < dl <= days:
+                ar = ct.get("auto_renewal") or c.get("autoRenewal")
+                rnd = _n(ct.get("renewal_notice_days") or c.get("renewalNoticeDays"))
+                nd, no = None, False
+                if ar and rnd:
+                    ndt = exp_dt - timedelta(days=int(rnd))
+                    nd = ndt.strftime("%Y-%m-%d")
+                    no = ndt < now
+                results.append({"id": c.get("id"), "number": c.get("contractNumber") or c.get("id"),
+                    "vendor": c.get("vendor", "Unknown"), "expiry": expiry, "days_left": dl,
+                    "amount": _n(c.get("amount")), "auto_renewal": bool(ar),
+                    "notice_deadline": nd, "notice_overdue": no,
+                    "urgency": "critical" if dl <= 30 or no else "warning" if dl <= 60 else "info"})
+        except (ValueError, TypeError):
+            continue
+    return sorted(results, key=lambda x: x["days_left"])
+
+
+# ============================================================
+# PHASE 3: VENDOR KYC / EXTENDED RISK
+# ============================================================
+
+def compute_extended_vendor_risk(vendor_name: str, db: dict) -> dict:
+    """Enhanced 9-factor vendor risk (extends existing 5-factor).
+    New factors: kyc_status, payment_behavior, concentration_risk, delivery_performance.
+    Returns the original 5-factor result PLUS 4 new factors merged in.
+    """
+    from backend.vendor import compute_vendor_risk_score
+    base = compute_vendor_risk_score(vendor_name, db)
+    factors = dict(base.get("factors", {}))
+    vn = normalize_vendor(vendor_name)
+
+    # ── Factor 6: KYC/Compliance ──
+    # Check if vendor has active contract (proxy for onboarded/verified)
+    vendor_contracts = [c for c in db.get("contracts", [])
+                        if vendor_similarity(c.get("vendor", ""), vendor_name) >= 0.7]
+    kyc_score = 0
+    kyc_detail = ""
+    if not vendor_contracts:
+        kyc_score = 55
+        kyc_detail = "No contract on file — vendor not formally onboarded"
+    else:
+        best = vendor_contracts[0]
+        ct = best.get("contractTerms") or {}
+        expiry = ct.get("expiry_date") or best.get("endDate")
+        if expiry:
+            try:
+                dl = (datetime.fromisoformat(str(expiry)[:10]) - datetime.now()).days
+                if dl < 0:
+                    kyc_score = 70
+                    kyc_detail = f"Contract expired {abs(dl)} days ago"
+                elif dl <= 30:
+                    kyc_score = 40
+                    kyc_detail = f"Contract expiring in {dl} days"
+                else:
+                    kyc_score = 10
+                    kyc_detail = f"Active contract, {dl} days remaining"
+            except Exception:
+                kyc_score = 30
+                kyc_detail = "Contract date unclear"
+        else:
+            kyc_score = 20
+            kyc_detail = "Contract active, no expiry date"
+    factors["kyc_compliance"] = {"score": round(kyc_score, 1), "weight": 0.12, "detail": kyc_detail}
+
+    # ── Factor 7: Payment Behavior ──
+    vendor_invoices = [i for i in db.get("invoices", [])
+                       if vendor_similarity(i.get("vendor", ""), vendor_name) >= 0.7]
+    pb_score = 0
+    pb_detail = "Normal patterns"
+    if len(vendor_invoices) >= 3:
+        # Check for round-number pattern (indicator of estimated/fabricated invoices)
+        amounts = [_n(i.get("amount")) for i in vendor_invoices if _n(i.get("amount")) > 0]
+        round_count = sum(1 for a in amounts if a == round(a, -2) and a >= 1000)
+        if amounts and round_count / len(amounts) > 0.5:
+            pb_score += 25
+            pb_detail = f"{round_count}/{len(amounts)} invoices are round numbers"
+
+        # Check invoice velocity (sudden spike)
+        sorted_inv = sorted(vendor_invoices, key=lambda x: x.get("extractedAt", ""))
+        if len(sorted_inv) >= 4:
+            recent_3 = sorted_inv[-3:]
+            older = sorted_inv[:-3]
+            if older:
+                recent_dates = [i.get("extractedAt", "") for i in recent_3 if i.get("extractedAt")]
+                if len(recent_dates) >= 2:
+                    try:
+                        rd = [datetime.fromisoformat(d[:19]) for d in recent_dates]
+                        avg_gap = sum((rd[i+1] - rd[i]).days for i in range(len(rd)-1)) / max(len(rd)-1, 1)
+                        if avg_gap < 3:  # invoices coming faster than every 3 days
+                            pb_score += 20
+                            pb_detail += "; high-frequency submissions"
+                    except Exception:
+                        pass
+        pb_score = min(100, pb_score)
+    factors["payment_behavior"] = {"score": round(pb_score, 1), "weight": 0.08, "detail": pb_detail}
+
+    # ── Factor 8: Concentration Risk ──
+    total_spend = sum(_n(i.get("amount")) for i in db.get("invoices", []))
+    vendor_spend = base.get("totalSpend", 0)
+    conc_pct = (vendor_spend / total_spend * 100) if total_spend > 0 else 0
+    conc_score = min(100, max(0, (conc_pct - 15) * 3))  # Risk starts above 15% share
+    conc_detail = f"{conc_pct:.1f}% of total spend" if total_spend > 0 else "Insufficient data"
+    if conc_pct > 30:
+        conc_detail += " — high concentration risk"
+    factors["concentration_risk"] = {"score": round(conc_score, 1), "weight": 0.08, "detail": conc_detail}
+
+    # ── Factor 9: Delivery Performance (from GRN data) ──
+    dp = compute_delivery_performance(vendor_name, db)
+    dp_score = 0
+    dp_detail = "No delivery data"
+    if dp.get("total_grns", 0) > 0:
+        ot = dp.get("on_time_rate", 1.0)
+        ss = dp.get("short_shipment_rate", 0)
+        dp_score = round((1 - ot) * 60 + ss * 40)
+        dp_score = max(0, min(100, dp_score))
+        dp_detail = f"{round(ot*100)}% on-time, {round(ss*100)}% short shipments ({dp['total_grns']} GRNs)"
+    factors["delivery_performance"] = {"score": round(dp_score, 1), "weight": 0.07, "detail": dp_detail}
+
+    # ── Recompute weighted score with all 9 factors ──
+    # Rebalance original weights to accommodate new factors (total must = 1.0)
+    # Original: anomaly=0.30, correction=0.15, contract=0.20, duplicate=0.15, volume=0.20
+    # New allocation: anomaly=0.22, correction=0.10, contract=0.15, duplicate=0.11, volume=0.07
+    #   + kyc=0.12, payment=0.08, concentration=0.08, delivery=0.07 = 1.00
+    weight_map = {
+        "anomaly_rate": 0.22, "correction_freq": 0.10, "contract_compliance": 0.15,
+        "duplicate_history": 0.11, "volume_consistency": 0.07,
+        "kyc_compliance": 0.12, "payment_behavior": 0.08,
+        "concentration_risk": 0.08, "delivery_performance": 0.07,
+    }
+    raw = sum(factors.get(k, {}).get("score", 0) * w for k, w in weight_map.items())
+    final = max(0, min(100, round(raw, 1)))
+    level = "high" if final >= 60 else "medium" if final >= 30 else "low"
+
+    # Update weights in factors for UI display
+    for k, w in weight_map.items():
+        if k in factors:
+            factors[k]["weight"] = w
+
+    return {**base, "score": final, "level": level, "factors": factors,
+            "factor_count": 9, "extended": True,
+            "concentration_pct": round(conc_pct, 1),
+            "delivery": dp if dp.get("total_grns", 0) > 0 else None}
+
+
+def get_vendor_kyc_status(vendor_name: str, db: dict) -> dict:
+    """KYC/compliance summary for a vendor."""
+    contracts = [c for c in db.get("contracts", [])
+                 if vendor_similarity(c.get("vendor", ""), vendor_name) >= 0.7]
+
+    has_contract = len(contracts) > 0
+    active_contract = None
+    expired = False
+    days_left = None
+
+    if contracts:
+        for c in contracts:
+            ct = c.get("contractTerms") or {}
+            expiry = ct.get("expiry_date") or c.get("endDate")
+            if expiry:
+                try:
+                    dl = (datetime.fromisoformat(str(expiry)[:10]) - datetime.now()).days
+                    if dl > 0:
+                        active_contract = c
+                        days_left = dl
+                        break
+                    else:
+                        expired = True
+                except Exception:
+                    pass
+            else:
+                active_contract = c
+
+    status = "compliant" if active_contract else "expired" if expired else "unverified"
+
+    # Check for bank detail anomalies (proxy for BEC risk)
+    anomalies = [a for a in db.get("anomalies", [])
+                 if vendor_similarity(a.get("vendor", ""), vendor_name) >= 0.7]
+    bank_flags = [a for a in anomalies if a.get("type") in ("DUPLICATE_INVOICE", "ROUND_NUMBER_INVOICE")
+                  and a.get("status") == "open"]
+
+    return {
+        "status": status,
+        "has_contract": has_contract,
+        "active_contract_id": active_contract.get("id") if active_contract else None,
+        "contract_expiry": days_left,
+        "risk_flags": len(bank_flags),
+        "risk_flag_types": list(set(a.get("type") for a in bank_flags)),
+        "documents": [
+            {"type": "contract", "status": "valid" if active_contract else ("expired" if expired else "missing")},
+            {"type": "pricing_terms", "status": "valid" if (active_contract and active_contract.get("pricingTerms")) else "missing"},
+        ]
+    }
+
+
+# ============================================================
+# PHASE 4: GRN DELIVERY ANALYTICS
+# ============================================================
+
+def compute_delivery_performance(vendor_name: str, db: dict) -> dict:
+    """Aggregate GRN data per vendor: on-time rate, short shipments, fulfillment."""
+    grns = db.get("goods_receipts", [])
+    pos = db.get("purchase_orders", [])
+    matches = db.get("matches", [])
+    anomalies = db.get("anomalies", [])
+
+    # Find GRNs linked to this vendor's POs
+    vendor_pos = [p for p in pos if vendor_similarity(p.get("vendor", ""), vendor_name) >= 0.7]
+    vendor_po_ids = {p["id"] for p in vendor_pos}
+
+    # GRNs linked via matches
+    vendor_grn_ids = set()
+    for m in matches:
+        if m.get("poId") in vendor_po_ids and m.get("grnIds"):
+            for gid in m["grnIds"]:
+                vendor_grn_ids.add(gid)
+
+    # Also direct vendor match on GRNs
+    vendor_grns = [g for g in grns if g.get("id") in vendor_grn_ids or
+                   vendor_similarity(g.get("vendor", ""), vendor_name) >= 0.7]
+    total_grns = len(vendor_grns)
+
+    if total_grns == 0:
+        return {"total_grns": 0, "on_time_rate": 0, "short_shipment_rate": 0,
+                "avg_fulfillment_pct": 0, "trend": "no_data", "monthly_stats": []}
+
+    # Short shipment analysis from anomalies
+    vendor_anomalies = [a for a in anomalies
+                        if vendor_similarity(a.get("vendor", ""), vendor_name) >= 0.7]
+    short_count = sum(1 for a in vendor_anomalies if a.get("type") == "SHORT_SHIPMENT")
+    overbill_count = sum(1 for a in vendor_anomalies if a.get("type") in ("OVERBILLED_VS_RECEIVED", "QUANTITY_RECEIVED_MISMATCH"))
+
+    # On-time: approximate from GRN received dates vs PO dates
+    on_time = 0
+    for g in vendor_grns:
+        rd = g.get("receivedDate") or g.get("issueDate")
+        po_ref = g.get("poReference")
+        if rd and po_ref:
+            po = next((p for p in vendor_pos if p.get("poNumber") == po_ref or p.get("id") == po_ref), None)
+            if po:
+                pd = po.get("dueDate") or po.get("deliveryDate")
+                if pd and rd:
+                    try:
+                        if datetime.fromisoformat(str(rd)[:10]) <= datetime.fromisoformat(str(pd)[:10]) + timedelta(days=3):
+                            on_time += 1
+                    except Exception:
+                        on_time += 1  # Assume on-time if can't parse
+                else:
+                    on_time += 1
+            else:
+                on_time += 1
+        else:
+            on_time += 1
+
+    otr = on_time / total_grns if total_grns > 0 else 0
+    ssr = short_count / max(total_grns, 1)
+
+    # PO Fulfillment tracking
+    open_pos = []
+    for po in vendor_pos:
+        po_id = po["id"]
+        po_amt = _n(po.get("amount"))
+        if po_amt <= 0:
+            continue
+        # Sum all invoices matched to this PO
+        inv_ids = [m["invoiceId"] for m in matches if m.get("poId") == po_id]
+        invoiced = sum(_n(i.get("subtotal") or i.get("amount"))
+                       for i in db.get("invoices", []) if i["id"] in inv_ids)
+        fulfilled_pct = (invoiced / po_amt * 100) if po_amt > 0 else 0
+        if fulfilled_pct < 90:
+            # Check age
+            po_date = po.get("issueDate") or po.get("extractedAt")
+            days_open = 0
+            if po_date:
+                try:
+                    days_open = (datetime.now() - datetime.fromisoformat(str(po_date)[:10])).days
+                except Exception:
+                    pass
+            open_pos.append({"po_number": po.get("poNumber") or po["id"],
+                "days_open": days_open, "fulfilled_pct": round(fulfilled_pct, 1),
+                "outstanding": round(po_amt - invoiced, 2)})
+
+    # Trend (simple: compare short shipment rate of recent vs older)
+    trend = "stable"
+    if total_grns >= 4 and short_count >= 2:
+        trend = "deteriorating"
+    elif total_grns >= 4 and short_count == 0:
+        trend = "good"
+
+    return {
+        "total_grns": total_grns,
+        "on_time_rate": round(otr, 3),
+        "short_shipment_rate": round(ssr, 3),
+        "overbill_count": overbill_count,
+        "short_count": short_count,
+        "trend": trend,
+        "open_pos": sorted(open_pos, key=lambda x: x["days_open"], reverse=True)[:5],
+        "avg_fulfillment_pct": round(sum(p["fulfilled_pct"] for p in open_pos) / max(len(open_pos), 1), 1) if open_pos else 100,
+    }
+
+
+def detect_delivery_anomalies(vendor_name: str, db: dict) -> list:
+    """Phase 4 anomaly rules: CHRONIC_SHORT_SHIPMENT, DELIVERY_DETERIORATION, PO_STALE"""
+    anomalies = []
+    dp = compute_delivery_performance(vendor_name, db)
+
+    if dp["total_grns"] < 3:
+        return anomalies
+
+    sym = currency_symbol("USD")  # Use default; vendor-level metric
+
+    # ── CHRONIC_SHORT_SHIPMENT ──
+    if dp["short_shipment_rate"] > 0.20:
+        anomalies.append({"type": "CHRONIC_SHORT_SHIPMENT", "severity": "medium",
+            "description": f"Vendor has {round(dp['short_shipment_rate']*100)}% short shipment rate across {dp['total_grns']} deliveries",
+            "amount_at_risk": 0,
+            "contract_clause": "Delivery compliance — pattern detected",
+            "recommendation": "Review vendor delivery performance and consider SLA enforcement"})
+
+    # ── PO_FULFILLMENT_STALE ──
+    for po in dp.get("open_pos", []):
+        if po["days_open"] > 60 and po["fulfilled_pct"] < 50:
+            anomalies.append({"type": "PO_FULFILLMENT_STALE", "severity": "low",
+                "description": f"PO {po['po_number']}: {po['fulfilled_pct']}% fulfilled after {po['days_open']} days ({sym}{po['outstanding']:,.0f} outstanding)",
+                "amount_at_risk": 0,
+                "contract_clause": "PO fulfillment tracking",
+                "recommendation": f"Follow up on outstanding delivery — PO open {po['days_open']} days"})
+
+    return anomalies
+
+
+# ============================================================
+# DASHBOARD INTELLIGENCE (feeds into /api/dashboard)
+# ============================================================
+
+def get_intelligence_summary(db: dict) -> dict:
+    """Compute Phase 2-4 intelligence metrics for the dashboard."""
+    contracts = db.get("contracts", [])
+    expiring = get_expiring_contracts(db, 90)
+
+    # Contract health
+    contract_health = []
+    for c in contracts:
+        h = compute_contract_health(c, db)
+        # Strip full analysis from summary to keep payload lean
+        h_summary = {k: v for k, v in h.items() if k != "analysis"}
+        contract_health.append({
+            "id": c.get("id"), "vendor": c.get("vendor"),
+            "number": c.get("contractNumber") or c.get("id"),
+            **h_summary
+        })
+
+    critical_contracts = [h for h in contract_health if h["health_level"] == "critical"]
+    high_risk_clauses = sum(h["high_risk_clauses"] for h in contract_health)
+    pending_obligations = sum(h["obligations_count"] for h in contract_health)
+
+    # Vendor concentration
+    total_spend = sum(_n(i.get("amount")) for i in db.get("invoices", []))
+    profiles = db.get("vendor_profiles", [])
+    top_concentration = 0
+    if profiles and total_spend > 0:
+        top_concentration = max(
+            (_n(p.get("totalSpend")) / total_spend * 100) for p in profiles
+        ) if profiles else 0
+
+    # GRN stats
+    grns = db.get("goods_receipts", [])
+    grn_anomalies = [a for a in db.get("anomalies", [])
+                     if a.get("type") in ("SHORT_SHIPMENT", "OVERBILLED_VS_RECEIVED", "QUANTITY_RECEIVED_MISMATCH",
+                                          "UNRECEIPTED_INVOICE")
+                     and a.get("status") == "open"]
+
+    return {
+        "expiring_contracts": expiring[:5],
+        "expiring_count": len(expiring),
+        "critical_contracts": len(critical_contracts),
+        "high_risk_clauses": high_risk_clauses,
+        "pending_obligations": pending_obligations,
+        "contract_health": contract_health,
+        "top_vendor_concentration": round(top_concentration, 1),
+        "grn_count": len(grns),
+        "grn_open_anomalies": len(grn_anomalies),
+    }

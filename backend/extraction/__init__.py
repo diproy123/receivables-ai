@@ -994,7 +994,7 @@ async def extract_with_claude(file_path: str, file_name: str, media_type: str,
                 "total_amount": 0, "extraction_confidence": 0,
                 "_error": "ANTHROPIC_API_KEY not configured. Use Manual Entry to index this document."}
 
-    client = anthropic.AsyncAnthropic()
+    client = anthropic.AsyncAnthropic(timeout=120.0)  # 120s timeout — prevents hung requests
     with open(file_path, "rb") as f:
         b64_data = base64.standard_b64encode(f.read()).decode("utf-8")
 

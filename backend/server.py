@@ -109,6 +109,15 @@ from backend.cases import (
     CASE_STATUSES, CASE_PRIORITIES, CASE_TYPES, ALLOWED_TRANSITIONS,
 )
 
+# Phase 2-4: Contract Intelligence, Vendor KYC/Risk, GRN Analytics
+from backend.contracts import (
+    analyze_contract_clauses, detect_contract_compliance_anomalies,
+    compute_contract_health, get_expiring_contracts,
+    compute_extended_vendor_risk, get_vendor_kyc_status,
+    compute_delivery_performance, detect_delivery_anomalies,
+    get_intelligence_summary,
+)
+
 # RAG Engine
 try:
     from backend.rag_engine import (on_document_uploaded, on_anomaly_detected, on_document_edited,
@@ -143,6 +152,16 @@ async def extract_with_claude(file_path, file_name, media_type, vendor_hint="", 
 app = FastAPI(title="AuditLens", version=VERSION)
 _allowed_origins = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
 app.add_middleware(CORSMiddleware, allow_origins=_allowed_origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
+# Global exception handler — catches unhandled errors, returns structured JSON instead of raw 500
+from starlette.responses import JSONResponse as StarletteJSONResponse
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    import traceback
+    traceback.print_exc()
+    return StarletteJSONResponse(status_code=500, content={
+        "success": False, "error": "Internal server error", "detail": str(exc)[:200]
+    })
 
 # Request ID middleware for log correlation
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -318,6 +337,9 @@ async def health():
             "multilingual_extraction": True,
             "case_management": True,
             "ai_intelligence": AI_INTELLIGENCE_ENABLED,
+            "contract_intelligence": True,
+            "vendor_kyc_risk": True,
+            "grn_analytics": True,
             "supported_locales": list(LOCALE_PROFILES.keys()),
             "supported_languages": SUPPORTED_LANGUAGES},
         "stats": {
@@ -717,6 +739,18 @@ async def upload_document(request: Request, file: UploadFile = File(...), docume
 
         # F5: Three-way match anomalies (GRN checks)
         matched_entry = next((m for m in db["matches"] if m.get("invoiceId") == record["id"]), None)
+
+        # Phase 2: Contract compliance anomalies (price drift, expiry warning)
+        if vc:
+            contract_anoms = detect_contract_compliance_anomalies(record, vc, db)
+            for a in contract_anoms:
+                anom = {"id": str(uuid.uuid4())[:8].upper(), "invoiceId": record["id"],
+                    "invoiceNumber": record.get("invoiceNumber", ""), "vendor": record["vendor"],
+                    "currency": record.get("currency", "USD"),
+                    "detectedAt": datetime.now().isoformat(), "status": "open", **a}
+                new_anomalies.append(anom)
+                db["anomalies"].append(anom)
+
         if matched_entry and mpo:
             grn_info = {k: matched_entry.get(k) for k in
                 ("matchType", "grnStatus", "grnIds", "grnNumbers", "totalReceived", "grnLineItems")}
@@ -1042,6 +1076,62 @@ async def get_grns():
 async def get_contracts():
     return {"contracts": get_db().get("contracts", [])}
 
+# ============================================================
+# PHASE 2-4: CONTRACT INTELLIGENCE, VENDOR KYC, GRN ANALYTICS
+# ============================================================
+
+@app.get("/api/contracts/{contract_id}/analysis")
+async def get_contract_analysis(contract_id: str):
+    """Phase 2: Clause-level risk analysis for a contract."""
+    db = get_db()
+    contract = next((c for c in db.get("contracts", []) if c["id"] == contract_id), None)
+    if not contract:
+        raise HTTPException(404, "Contract not found")
+    analysis = analyze_contract_clauses(contract)
+    health = compute_contract_health(contract, db)
+    return {"contract_id": contract_id, "analysis": analysis, "health": health}
+
+@app.get("/api/contracts/health")
+async def get_all_contract_health():
+    """Phase 2: Health scores for all contracts."""
+    db = get_db()
+    results = []
+    for c in db.get("contracts", []):
+        h = compute_contract_health(c, db)
+        results.append({
+            "id": c.get("id"), "vendor": c.get("vendor"),
+            "number": c.get("contractNumber") or c.get("id"),
+            "amount": c.get("amount"), "currency": c.get("currency", "USD"),
+            **h
+        })
+    return {"contracts": sorted(results, key=lambda x: x.get("health_score", 100))}
+
+@app.get("/api/contracts/expiring")
+async def get_expiring_contracts_endpoint(days: int = 90):
+    """Phase 2: Contracts expiring within N days."""
+    db = get_db()
+    return {"expiring": get_expiring_contracts(db, days)}
+
+@app.get("/api/vendors/{vendor_name}/extended-risk")
+async def get_vendor_extended_risk(vendor_name: str):
+    """Phase 3: Extended 9-factor vendor risk profile."""
+    db = get_db()
+    risk = compute_extended_vendor_risk(vendor_name, db)
+    kyc = get_vendor_kyc_status(vendor_name, db)
+    return {"vendor": vendor_name, "risk": risk, "kyc": kyc}
+
+@app.get("/api/vendors/{vendor_name}/delivery")
+async def get_vendor_delivery(vendor_name: str):
+    """Phase 4: GRN delivery performance analytics."""
+    db = get_db()
+    return {"vendor": vendor_name, "delivery": compute_delivery_performance(vendor_name, db)}
+
+@app.get("/api/intelligence/summary")
+async def get_intelligence_summary_endpoint():
+    """Phase 2-4: Dashboard intelligence metrics."""
+    db = get_db()
+    return get_intelligence_summary(db)
+
 @app.get("/api/matches")
 async def get_matches():
     db = get_db()
@@ -1076,7 +1166,11 @@ async def resolve_anomaly(aid: str, request: Request):
     db = get_db()
     for a in db.get("anomalies", []):
         if a["id"] == aid:
+            if a.get("status") != "open":
+                return {"success": False, "error": f"Anomaly already {a.get('status')} — cannot resolve again"}
+            body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
             a["status"] = "resolved"
+            a["resolution"] = body.get("resolution", "")
             a["resolvedAt"] = datetime.now().isoformat()
             a["resolvedBy"] = user_display
             # C3 FIX: Cascade — update vendor risk + re-triage affected invoice
@@ -1106,7 +1200,11 @@ async def dismiss_anomaly(aid: str, request: Request):
     db = get_db()
     for a in db.get("anomalies", []):
         if a["id"] == aid:
+            if a.get("status") != "open":
+                return {"success": False, "error": f"Anomaly already {a.get('status')} — cannot dismiss again"}
+            body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
             a["status"] = "dismissed"
+            a["dismissReason"] = body.get("reason", "")
             a["dismissedAt"] = datetime.now().isoformat()
             a["dismissedBy"] = user_display
             # C3 FIX: Cascade — update vendor risk + re-triage affected invoice
@@ -1892,6 +1990,8 @@ async def get_dashboard():
         "db_backend": "postgres" if DATABASE_URL else "file",
         # Legacy total_invoices at top level
         "total_invoices": _total_invoices,
+        # ── Phase 2-4: Intelligence metrics ──
+        "intelligence": get_intelligence_summary(db),
     }
 
 @app.get("/api/correction-patterns")
