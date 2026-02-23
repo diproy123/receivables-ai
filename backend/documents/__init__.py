@@ -157,6 +157,12 @@ def transform_extracted_to_record(extracted, file_name, file_id):
             "insuranceRequirements": ct.get("insurance_requirements"),
             "forceMajeureDays": ct.get("force_majeure_days"),
             "terminationForConvenience": ct.get("termination_for_convenience"),
+            # Extended clause fields
+            "indemnification": ct.get("indemnification"),
+            "dataProtection": ct.get("data_protection"),
+            "auditRights": ct.get("audit_rights"),
+            "subcontracting": ct.get("subcontracting"),
+            "minimumVolume": ct.get("minimum_volume"),
         })
     elif dt in ("credit_note", "debit_note"):
         base.update({"status": "pending",

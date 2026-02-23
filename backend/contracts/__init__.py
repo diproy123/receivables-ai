@@ -28,6 +28,8 @@ from backend.policy import get_policy
 CLAUSE_TYPES = [
     "liability_cap", "termination_notice", "auto_renewal", "sla_terms",
     "penalty_clauses", "force_majeure", "confidentiality", "ip_ownership",
+    "insurance", "warranty", "indemnification", "data_protection",
+    "audit_rights", "subcontracting",
 ]
 
 def analyze_contract_clauses(contract: dict) -> dict:
@@ -53,9 +55,16 @@ def analyze_contract_clauses(contract: dict) -> dict:
     elif cap_val and cval and cap_val < cval:
         r = 12
         clauses.append({"type": "liability_cap", "risk": "medium", "score": r,
-            "summary": f"Cap at {sym}{cap_val:,.0f} ({cap_val/cval*100:.0f}% of value)" if cval > 0 else (cap_desc or f"{sym}{cap_val:,.0f}"),
+            "summary": f"Cap at {sym}{cap_val:,.0f} ({cap_val/cval*100:.0f}% of value) — below contract value" if cval > 0 else (cap_desc or f"{sym}{cap_val:,.0f}"),
             "benchmark": "Standard: 150–200% of contract value",
-            "recommendation": "Negotiate higher cap"})
+            "recommendation": "Negotiate higher cap — buyer underprotected"})
+        risk_points += r
+    elif cap_val and cval and cap_val < cval * 1.5:
+        r = 7
+        clauses.append({"type": "liability_cap", "risk": "medium", "score": r,
+            "summary": f"Cap at {sym}{cap_val:,.0f} ({cap_val/cval*100:.0f}% of value)" if cval > 0 else (cap_desc or f"{sym}{cap_val:,.0f}"),
+            "benchmark": "Standard: 150–200% of contract value; current cap is adequate but tight",
+            "recommendation": "Consider increasing cap at renewal"})
         risk_points += r
     else:
         clauses.append({"type": "liability_cap", "risk": "low", "score": 3,
@@ -180,6 +189,68 @@ def analyze_contract_clauses(contract: dict) -> dict:
             "recommendation": "Add if deliverables involve IP"})
         risk_points += 3
 
+    # ── Insurance Requirements ──
+    ins = ct.get("insurance_requirements") or contract.get("insuranceRequirements")
+    if ins:
+        clauses.append({"type": "insurance", "risk": "low", "score": 1,
+            "summary": ins[:200], "benchmark": "Insurance requirements defined",
+            "recommendation": "Verify vendor certificates are current"})
+        obligations.append({"party": "vendor", "type": "insurance_compliance",
+            "obligation": f"Maintain insurance: {ins[:100]}", "frequency": "annual"})
+
+    # ── Warranty ──
+    war = _n(ct.get("warranty_months") or contract.get("warrantyMonths"))
+    if war:
+        clauses.append({"type": "warranty", "risk": "low" if war >= 12 else "medium", "score": 1 if war >= 12 else 4,
+            "summary": f"{int(war)}-month warranty",
+            "benchmark": "Standard: 12–24 months",
+            "recommendation": "Adequate" if war >= 12 else "Negotiate longer warranty period"})
+
+    # ── Indemnification ──
+    indem = ct.get("indemnification") or contract.get("indemnification")
+    if indem:
+        clauses.append({"type": "indemnification", "risk": "low", "score": 1,
+            "summary": indem[:200], "benchmark": "Indemnification terms defined",
+            "recommendation": "Review scope and carve-outs at renewal"})
+    else:
+        # Only flag as risk for service/IT contracts where indemnity matters
+        if cval and cval >= 50000:
+            clauses.append({"type": "indemnification", "risk": "medium", "score": 5,
+                "summary": "No indemnification clause",
+                "benchmark": "Standard for services/IT: mutual indemnity for third-party claims",
+                "recommendation": "Add indemnification for IP infringement and data breaches"})
+
+    # ── Data Protection / GDPR ──
+    dp_clause = ct.get("data_protection") or contract.get("dataProtection")
+    if dp_clause:
+        clauses.append({"type": "data_protection", "risk": "low", "score": 1,
+            "summary": dp_clause[:200], "benchmark": "Data protection terms defined",
+            "recommendation": "Ensure DPA is signed and up to date"})
+        obligations.append({"party": "vendor", "type": "data_protection_compliance",
+            "obligation": f"Data protection: {dp_clause[:100]}", "frequency": "ongoing"})
+    # No penalty for missing — only relevant for data-handling contracts
+
+    # ── Audit Rights ──
+    audit_r = ct.get("audit_rights") or contract.get("auditRights")
+    if audit_r:
+        clauses.append({"type": "audit_rights", "risk": "low", "score": 0,
+            "summary": audit_r[:200], "benchmark": "Buyer audit rights established",
+            "recommendation": "Exercise periodically for high-value vendors"})
+    else:
+        if cval and cval >= 100000:
+            clauses.append({"type": "audit_rights", "risk": "medium", "score": 4,
+                "summary": "No audit rights clause",
+                "benchmark": "Standard for contracts >$100K: buyer right to audit vendor books",
+                "recommendation": "Add audit rights — essential for SOX/regulatory compliance"})
+
+    # ── Subcontracting Restrictions ──
+    subcon = ct.get("subcontracting") or contract.get("subcontracting")
+    if subcon:
+        clauses.append({"type": "subcontracting", "risk": "low", "score": 1,
+            "summary": subcon[:200], "benchmark": "Subcontracting terms defined",
+            "recommendation": "Monitor compliance"})
+    # No penalty for missing — not universally required
+
     # ── Composite ──
     risk_score = round(risk_points / max(max_points, 1) * 100) if max_points > 0 else 50
     risk_score = max(0, min(100, risk_score))
@@ -215,13 +286,33 @@ def analyze_contract_clauses(contract: dict) -> dict:
     elif isinstance(pricing, str) and pricing.strip():
         pricing_rules.append({"term": "pricing", "value": pricing[:300]})
 
+    # ── Payment terms obligation ──
+    pt = ct.get("payment_terms") or contract.get("paymentTerms")
+    if pt:
+        obligations.append({"party": "buyer", "type": "payment_terms",
+            "obligation": f"Payment terms: {pt}", "frequency": "per invoice"})
+        # Check for early payment discount
+        pt_lower = str(pt).lower()
+        if "discount" in pt_lower or "2/10" in pt_lower or "early" in pt_lower:
+            obligations.append({"party": "buyer", "type": "early_payment_discount",
+                "obligation": f"Early payment discount available: {pt}",
+                "frequency": "per invoice",
+                "urgency": "medium"})
+
     return {"risk_score": risk_score, "risk_level": risk_level, "clauses": clauses,
             "obligations": obligations, "pricing_rules": pricing_rules,
             "analyzed_at": datetime.now().isoformat()}
 
 
 def detect_contract_compliance_anomalies(invoice: dict, contract: dict, db: dict) -> list:
-    """Phase 2 anomaly rules: CONTRACT_PRICE_DRIFT, CONTRACT_EXPIRY_WARNING"""
+    """Contract compliance anomaly rules:
+    - CONTRACT_PRICE_DRIFT: invoice unit price above contracted rate
+    - CONTRACT_UNDERBILLING: invoice unit price significantly below contracted rate
+    - CURRENCY_MISMATCH: invoice/contract in different currencies, manual review needed
+    - CONTRACT_EXPIRY_WARNING: invoice against expired or near-expiry contract
+    - CONTRACT_OVER_UTILIZATION: cumulative invoicing exceeds contract value
+    - VOLUME_COMMITMENT_GAP: below minimum purchase commitment pace
+    """
     anomalies = []
     if not contract:
         return anomalies
@@ -230,7 +321,10 @@ def detect_contract_compliance_anomalies(invoice: dict, contract: dict, db: dict
 
     # ── CONTRACT_PRICE_DRIFT ──
     cp = contract.get("pricingTerms")
-    if cp and isinstance(cp, dict):
+    inv_currency = (invoice.get("currency") or "USD").upper()
+    ctr_currency = (contract.get("currency") or "USD").upper()
+    if cp and isinstance(cp, dict) and inv_currency == ctr_currency:
+        # Only compare when currencies match — cross-currency comparison needs FX rates
         for li in invoice.get("lineItems", []):
             desc = (li.get("description") or "").lower().strip()
             up = _n(li.get("unitPrice"))
@@ -245,14 +339,34 @@ def detect_contract_compliance_anomalies(invoice: dict, contract: dict, db: dict
                     # Use contract-specific tolerance (broader than line-item matching)
                     tol = get_policy().get("contract_price_drift_pct",
                           max(get_policy().get("price_tolerance_pct", 10), 5))
+                    qty = _n(li.get("quantity") or 1)
                     if drift > tol:
-                        risk = (up - tp) * _n(li.get("quantity") or 1)
+                        # Overbilling — vendor charging more than contracted
+                        risk = (up - tp) * qty
                         anomalies.append({"type": "CONTRACT_PRICE_DRIFT",
                             "severity": "high" if drift > 20 else "medium",
                             "description": f"'{li.get('description')}': {sym}{up:,.2f}/unit vs contracted {sym}{tp:,.2f} (+{drift:.1f}%)",
                             "amount_at_risk": round(risk, 2),
                             "contract_clause": f"Contracted rate: {sym}{tp:,.2f}",
                             "recommendation": f"Challenge vendor — contract specifies {sym}{tp:,.2f}"})
+                    elif drift < -tol and abs(drift) > 10:
+                        # Underbilling — vendor charging less than contracted (>10% below)
+                        # May indicate partial delivery, unapproved discounts, scope reduction
+                        shortfall = (tp - up) * qty
+                        anomalies.append({"type": "CONTRACT_UNDERBILLING",
+                            "severity": "low",
+                            "description": f"'{li.get('description')}': {sym}{up:,.2f}/unit vs contracted {sym}{tp:,.2f} ({drift:.1f}%) — below contracted rate",
+                            "amount_at_risk": 0,
+                            "contract_clause": f"Contracted rate: {sym}{tp:,.2f}; invoiced {sym}{shortfall:,.2f} below expected",
+                            "recommendation": "Verify: partial delivery? Unapproved discount? Scope change requiring amendment?"})
+    elif cp and isinstance(cp, dict) and inv_currency != ctr_currency:
+        # Currency mismatch — cannot validate prices, flag for manual review
+        anomalies.append({"type": "CURRENCY_MISMATCH",
+            "severity": "low",
+            "description": f"Invoice in {inv_currency} but contract priced in {ctr_currency} — price compliance cannot be verified automatically",
+            "amount_at_risk": 0,
+            "contract_clause": f"Contract currency: {ctr_currency}",
+            "recommendation": f"Manually verify pricing with FX conversion ({inv_currency} → {ctr_currency})"})
 
     # ── CONTRACT_EXPIRY_WARNING ──
     expiry = ct.get("expiry_date") or contract.get("endDate")
@@ -273,6 +387,74 @@ def detect_contract_compliance_anomalies(invoice: dict, contract: dict, db: dict
                     "recommendation": f"Initiate renewal — {dl} days remaining"})
         except (ValueError, TypeError):
             pass
+
+    # ── CONTRACT_OVER_UTILIZATION ──
+    cv = _n(contract.get("amount"))
+    if cv > 0:
+        vn = contract.get("vendor", "")
+        inv_id = invoice.get("id")
+        invoices = db.get("invoices", []) if db else []
+        # Exclude current invoice from DB sum to prevent double-counting during re-processing
+        total_invoiced = sum(_n(i.get("subtotal") or i.get("amount")) for i in invoices
+                            if i.get("vendor") and vn and
+                            vendor_similarity(i.get("vendor", ""), vn) >= 0.7
+                            and (not inv_id or i.get("id") != inv_id))
+        inv_amt = _n(invoice.get("subtotal") or invoice.get("amount"))
+        projected = total_invoiced + inv_amt
+        util_pct = projected / cv * 100
+        if util_pct > 100:
+            if util_pct > 150:
+                sev = "high"
+            elif util_pct > 110:
+                sev = "medium"
+            else:
+                sev = "low"
+            anomalies.append({"type": "CONTRACT_OVER_UTILIZATION", "severity": sev,
+                "description": f"Cumulative invoicing ({sym}{projected:,.0f}) exceeds contract value ({sym}{cv:,.0f}) by {util_pct - 100:.0f}%",
+                "amount_at_risk": round(projected - cv, 2),
+                "contract_clause": f"Contract value: {sym}{cv:,.0f}",
+                "recommendation": "Review scope — contract amendment or new PO may be required" if util_pct > 110
+                    else "Approaching contract ceiling — monitor remaining budget"})
+
+    # ── VOLUME_COMMITMENT_GAP ──
+    # Check if contract has a minimum volume commitment and whether the buyer is on track
+    min_vol = _n(ct.get("minimum_volume") or ct.get("minimum_commitment") or contract.get("minimumVolume"))
+    if min_vol and min_vol > 0 and cv > 0:
+        vn_vol = contract.get("vendor", "")
+        invoices_vol = db.get("invoices", []) if db else []
+        inv_id_vol = invoice.get("id")
+        total_invoiced_vol = sum(_n(i.get("subtotal") or i.get("amount")) for i in invoices_vol
+                            if i.get("vendor") and vn_vol and
+                            vendor_similarity(i.get("vendor", ""), vn_vol) >= 0.7
+                            and (not inv_id_vol or i.get("id") != inv_id_vol))
+        # Check time-based progress: if contract is >50% through its term but invoicing is <30% of commitment
+        expiry = ct.get("expiry_date") or contract.get("endDate")
+        effective = ct.get("effective_date") or contract.get("effectiveDate") or contract.get("signingDate")
+        if expiry and effective:
+            try:
+                exp_dt = datetime.fromisoformat(str(expiry)[:10])
+                eff_dt = datetime.fromisoformat(str(effective)[:10])
+                total_days = max((exp_dt - eff_dt).days, 1)
+                elapsed_days = max((datetime.now() - eff_dt).days, 0)
+                time_pct = elapsed_days / total_days * 100
+                vol_pct = total_invoiced_vol / min_vol * 100 if min_vol > 0 else 100
+                # Flag if we're >50% through term but <30% of commitment
+                if time_pct > 50 and vol_pct < 30:
+                    shortfall = min_vol - total_invoiced_vol
+                    anomalies.append({"type": "VOLUME_COMMITMENT_GAP", "severity": "medium",
+                        "description": f"Minimum commitment: {sym}{min_vol:,.0f}; invoiced {sym}{total_invoiced_vol:,.0f} ({vol_pct:.0f}%) with {100-time_pct:.0f}% of contract term remaining",
+                        "amount_at_risk": round(shortfall, 2),
+                        "contract_clause": f"Minimum volume: {sym}{min_vol:,.0f}",
+                        "recommendation": f"Shortfall risk: {sym}{shortfall:,.0f} — may trigger take-or-pay penalty"})
+                elif time_pct > 80 and vol_pct < 70:
+                    shortfall = min_vol - total_invoiced_vol
+                    anomalies.append({"type": "VOLUME_COMMITMENT_GAP", "severity": "high",
+                        "description": f"Critical: {sym}{total_invoiced_vol:,.0f} invoiced vs {sym}{min_vol:,.0f} commitment ({vol_pct:.0f}%) — contract {time_pct:.0f}% elapsed",
+                        "amount_at_risk": round(shortfall, 2),
+                        "contract_clause": f"Minimum volume: {sym}{min_vol:,.0f}",
+                        "recommendation": f"Imminent shortfall penalty risk — {sym}{shortfall:,.0f} below commitment"})
+            except (ValueError, TypeError):
+                pass
 
     return anomalies
 
@@ -560,6 +742,8 @@ def compute_delivery_performance(vendor_name: str, db: dict) -> dict:
 
     # On-time: approximate from GRN received dates vs PO dates
     on_time = 0
+    late = 0
+    unmeasurable = 0
     for g in vendor_grns:
         rd = g.get("receivedDate") or g.get("issueDate")
         po_ref = g.get("poReference")
@@ -569,18 +753,23 @@ def compute_delivery_performance(vendor_name: str, db: dict) -> dict:
                 pd = po.get("dueDate") or po.get("deliveryDate")
                 if pd and rd:
                     try:
-                        if datetime.fromisoformat(str(rd)[:10]) <= datetime.fromisoformat(str(pd)[:10]) + timedelta(days=3):
+                        rd_dt = datetime.fromisoformat(str(rd)[:10])
+                        pd_dt = datetime.fromisoformat(str(pd)[:10])
+                        if rd_dt <= pd_dt + timedelta(days=3):
                             on_time += 1
+                        else:
+                            late += 1
                     except Exception:
-                        on_time += 1  # Assume on-time if can't parse
+                        unmeasurable += 1  # Date parsing failed — cannot determine
                 else:
-                    on_time += 1
+                    unmeasurable += 1  # Missing due date — cannot measure
             else:
-                on_time += 1
+                unmeasurable += 1  # No matching PO found
         else:
-            on_time += 1
+            unmeasurable += 1  # Missing receive date or PO ref
 
-    otr = on_time / total_grns if total_grns > 0 else 0
+    measurable = on_time + late
+    otr = on_time / measurable if measurable > 0 else 0
     ssr = short_count / max(total_grns, 1)
 
     # PO Fulfillment tracking
@@ -618,6 +807,10 @@ def compute_delivery_performance(vendor_name: str, db: dict) -> dict:
     return {
         "total_grns": total_grns,
         "on_time_rate": round(otr, 3),
+        "on_time_count": on_time,
+        "late_count": late,
+        "unmeasurable_count": unmeasurable,
+        "measurable_count": measurable,
         "short_shipment_rate": round(ssr, 3),
         "overbill_count": overbill_count,
         "short_count": short_count,

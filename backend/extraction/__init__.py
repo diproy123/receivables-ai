@@ -93,7 +93,12 @@ Return ONLY valid JSON (no markdown, no explanation) with this exact structure:
     "sla_summary": "summary of key SLA terms or null",
     "penalty_clauses": "summary of penalty/liquidated damages clauses or null",
     "ip_ownership": "summary of IP ownership terms or null",
-    "force_majeure_days": 120
+    "force_majeure_days": 120,
+    "indemnification": "summary of indemnification/hold-harmless terms or null",
+    "data_protection": "summary of data protection/GDPR/privacy terms or null",
+    "audit_rights": "summary of buyer's right to audit vendor books/records or null",
+    "subcontracting": "summary of subcontracting restrictions or null",
+    "minimum_volume": "minimum purchase commitment amount (numeric) or null — look for 'minimum commitment', 'take-or-pay', 'minimum order'"
   },
   "parties": ["Party A", "Party B"],
   "notes": "any notes",

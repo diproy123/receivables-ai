@@ -273,7 +273,7 @@ function Dashboard() {
         <StatCard icon={Shield} label="Avg Confidence" value={pct(sb.avg_confidence)} color="#8b5cf6" />
       </div>
 
-      {/* ── Extended Stat Cards (from old app.js) ── */}
+      {/* ── Extended Stat Cards ── */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
         <StatCard icon={FileCheck} label="Total Outstanding" value={$(d.total_ap || 0)} sub={`${num(d.unpaid_count || 0)} unpaid`} color="#3b82f6" />
         <StatCard icon={Link2} label="Auto-Matched" value={num(d.auto_matched || 0)} sub={`${d.review_needed || 0} need review`} color="#10b981" />
@@ -281,7 +281,7 @@ function Dashboard() {
         <StatCard icon={Brain} label="AI Pipeline" value={num(d.correction_patterns || 0)} sub={d.correction_patterns ? 'learned patterns' : 'Ensemble + RAG'} color="#7c3aed" />
       </div>
 
-      {/* ── Phase 2-4: Intelligence Stat Cards ── */}
+      {/* ── Intelligence Stat Cards ── */}
       {(() => {
         const il = s.intel || {};
         const ch = il.contract_health || [];
@@ -295,7 +295,7 @@ function Dashboard() {
             <StatCard icon={FileCheck} label="Contract Health" value={`${healthy}/${ch.length}`} sub={critical > 0 ? `${critical} critical` : warning > 0 ? `${warning} warning` : 'All healthy'} color={critical > 0 ? '#ef4444' : warning > 0 ? '#f59e0b' : '#10b981'} />
             <StatCard icon={Shield} label="Clause Risks" value={num(il.high_risk_clauses || 0)} sub="High-risk clauses" color={il.high_risk_clauses > 0 ? '#dc2626' : '#10b981'} />
             <StatCard icon={Clock} label="Expiring Contracts" value={num(il.expiring_count || 0)} sub={il.expiring_count > 0 ? `within 90 days` : 'None expiring'} color={il.expiring_count > 0 ? '#f59e0b' : '#10b981'} />
-            <StatCard icon={TrendingUp} label="GRN Analytics" value={num(il.grn_count || 0)} sub={il.grn_open_anomalies > 0 ? `${il.grn_open_anomalies} open alerts` : 'Deliveries tracked'} color={il.grn_open_anomalies > 0 ? '#ef4444' : '#3b82f6'} />
+            <StatCard icon={TrendingUp} label="Delivery Tracking" value={num(il.grn_count || 0)} sub={il.grn_open_anomalies > 0 ? `${il.grn_open_anomalies} open alerts` : 'Deliveries tracked'} color={il.grn_open_anomalies > 0 ? '#ef4444' : '#3b82f6'} />
           </div>
         );
       })()}
@@ -356,7 +356,7 @@ function Dashboard() {
         </div>
       )}
 
-      {/* ── Phase 2-4: AI Intelligence Insights ── */}
+      {/* ── AI Intelligence Insights ── */}
       {(() => {
         const intel = s.intel || {};
         const exp = intel.expiring_contracts || [];
@@ -438,7 +438,7 @@ function Dashboard() {
                 <div className="card p-5">
                   <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3">Delivery Intelligence</div>
                   <div className="flex items-center gap-4">
-                    <div><div className="text-2xl font-extrabold text-blue-600">{intel.grn_count}</div><div className="text-[10px] text-slate-400">GRNs Processed</div></div>
+                    <div><div className="text-2xl font-extrabold text-blue-600">{intel.grn_count}</div><div className="text-[10px] text-slate-400">Deliveries Tracked</div></div>
                     {intel.grn_open_anomalies > 0 && <div><div className="text-2xl font-extrabold text-red-500">{intel.grn_open_anomalies}</div><div className="text-[10px] text-slate-400">Open Alerts</div></div>}
                   </div>
                   {intel.top_vendor_concentration > 25 && (
@@ -529,12 +529,12 @@ function Anomalies() {
               { label: 'Severity', render: r => <Badge c={sevColor(r.severity) === 'err' ? 'err' : sevColor(r.severity) === 'warn' ? 'warn' : 'ok'}>{r.severity}</Badge> },
               { label: 'Risk', right: true, mono: true, render: r => <span className={cn('font-semibold', r.amount_at_risk > 0 ? 'text-red-600' : 'text-slate-400')}>{$(Math.abs(r.amount_at_risk || 0))}</span> },
               { label: 'Type', render: r => {
-                const isContract = (r.type || '').startsWith('CONTRACT_');
+                const isContract = ['CONTRACT_PRICE_DRIFT','CONTRACT_EXPIRY_WARNING','CONTRACT_OVER_UTILIZATION','CONTRACT_UNDERBILLING','VOLUME_COMMITMENT_GAP','CURRENCY_MISMATCH'].includes(r.type);
                 const isDelivery = ['CHRONIC_SHORT_SHIPMENT','PO_FULFILLMENT_STALE','SHORT_SHIPMENT','OVERBILLED_VS_RECEIVED','QUANTITY_RECEIVED_MISMATCH'].includes(r.type);
                 return (
                   <div className="flex items-center gap-1.5">
                     {isContract && <span className="text-[9px] px-1.5 py-0.5 bg-indigo-100 text-indigo-600 font-bold rounded">CONTRACT</span>}
-                    {isDelivery && <span className="text-[9px] px-1.5 py-0.5 bg-blue-100 text-blue-600 font-bold rounded">GRN</span>}
+                    {isDelivery && <span className="text-[9px] px-1.5 py-0.5 bg-blue-100 text-blue-600 font-bold rounded">DELIVERY</span>}
                     <span className="text-xs text-slate-500">{(r.type || '').replace(/_/g, ' ')}</span>
                   </div>
                 );
@@ -906,6 +906,13 @@ function Vendors() {
     setLoading(false);
   }
 
+  const factorLabels = {
+    anomaly_rate: 'Anomaly Rate', correction_freq: 'Correction Frequency',
+    contract_compliance: 'Contract Compliance', duplicate_history: 'Duplicate History',
+    volume_consistency: 'Volume Consistency', kyc_compliance: 'Compliance Status',
+    payment_behavior: 'Payment Behavior', concentration_risk: 'Spend Concentration',
+    delivery_performance: 'Delivery Performance',
+  };
   const RiskBar = ({ label, score, weight }) => {
     const cl = score >= 60 ? '#ef4444' : score >= 30 ? '#f59e0b' : '#10b981';
     return (
@@ -947,7 +954,7 @@ function Vendors() {
               <div>
                 <h3 className="text-lg font-bold text-slate-900">{sel.vendor || sel.vendorDisplay || sel.name}</h3>
                 <div className="flex items-center gap-2 mt-1">
-                  <Badge c={sel.riskLevel === 'high' ? 'err' : sel.riskLevel === 'medium' ? 'warn' : 'ok'}>Risk: {Math.round(sel.riskScore || 0)}/100</Badge>
+                  <Badge c={sel.riskLevel === 'high' ? 'err' : sel.riskLevel === 'medium' ? 'warn' : 'ok'}>{sel.riskLevel === 'high' ? 'High' : sel.riskLevel === 'medium' ? 'Medium' : 'Low'} Risk</Badge>
                   <span className="text-xs text-slate-500">{sel.invoiceCount || 0} invoices · {$(sel.totalSpend || 0)}</span>
                 </div>
               </div>
@@ -968,18 +975,18 @@ function Vendors() {
                   <div className="flex items-center gap-2 mb-3">
                     <Brain className="w-4 h-4 text-indigo-500" />
                     <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">{detail.risk.factor_count || 9}-Factor Risk Profile</span>
-                    {detail.risk.extended && <span className="text-[9px] px-1.5 py-0.5 bg-indigo-100 text-indigo-600 font-bold rounded">EXTENDED</span>}
+                    {detail.risk.extended && <span className="text-[9px] px-1.5 py-0.5 bg-indigo-100 text-indigo-600 font-bold rounded">FULL PROFILE</span>}
                   </div>
                   <div className="p-4 bg-slate-50 rounded-xl space-y-0.5">
                     {Object.entries(detail.risk.factors || {}).map(([k, f]) => (
-                      <RiskBar key={k} label={k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} score={f.score || 0} weight={f.weight || 0} />
+                      <RiskBar key={k} label={factorLabels[k] || k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} score={f.score || 0} weight={f.weight || 0} />
                     ))}
                   </div>
                   {detail.risk.factors && Object.entries(detail.risk.factors).some(([,f]) => f.detail) && (
                     <div className="mt-2 space-y-1">
                       {Object.entries(detail.risk.factors).filter(([,f]) => f.detail && f.score > 20).map(([k, f]) => (
                         <div key={k} className={cn('text-xs p-2 rounded-lg', f.score >= 50 ? 'bg-red-50 text-red-700 border border-red-100' : 'bg-amber-50 text-amber-700 border border-amber-100')}>
-                          <span className="font-semibold">{k.replace(/_/g, ' ')}:</span> {f.detail}
+                          <span className="font-semibold">{factorLabels[k] || k.replace(/_/g, ' ')}:</span> {f.detail}
                         </div>
                       ))}
                     </div>
@@ -989,7 +996,7 @@ function Vendors() {
                 {/* KYC Status */}
                 {detail.kyc && (
                   <div className="mb-5">
-                    <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">KYC / Compliance Status</div>
+                    <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Vendor Compliance Status</div>
                     <div className={cn('p-3 rounded-xl border', detail.kyc.status === 'compliant' ? 'bg-emerald-50 border-emerald-200' : detail.kyc.status === 'expired' ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200')}>
                       <div className="flex items-center gap-2 mb-2">
                         <span className={cn('text-sm font-bold', detail.kyc.status === 'compliant' ? 'text-emerald-700' : detail.kyc.status === 'expired' ? 'text-red-700' : 'text-amber-700')}>
@@ -1032,12 +1039,18 @@ function Vendors() {
                 {detail.risk.delivery && detail.risk.delivery.total_grns > 0 && (
                   <div className="mb-5">
                     <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Delivery Performance</div>
-                    <div className="grid grid-cols-3 gap-3 text-center">
+                    <div className="grid grid-cols-4 gap-2 text-center">
                       <div className="p-3 bg-slate-50 rounded-xl">
                         <div className="text-lg font-bold" style={{ color: detail.risk.delivery.on_time_rate >= 0.9 ? '#10b981' : detail.risk.delivery.on_time_rate >= 0.75 ? '#f59e0b' : '#ef4444' }}>
                           {pct(detail.risk.delivery.on_time_rate * 100)}
                         </div>
                         <div className="text-[10px] text-slate-400">On-Time</div>
+                      </div>
+                      <div className="p-3 bg-slate-50 rounded-xl">
+                        <div className="text-lg font-bold" style={{ color: detail.risk.delivery.late_count > 0 ? '#ef4444' : '#10b981' }}>
+                          {detail.risk.delivery.late_count || 0}
+                        </div>
+                        <div className="text-[10px] text-slate-400">Late</div>
                       </div>
                       <div className="p-3 bg-slate-50 rounded-xl">
                         <div className="text-lg font-bold" style={{ color: detail.risk.delivery.short_shipment_rate <= 0.1 ? '#10b981' : '#ef4444' }}>
@@ -1047,9 +1060,14 @@ function Vendors() {
                       </div>
                       <div className="p-3 bg-slate-50 rounded-xl">
                         <div className="text-lg font-bold text-blue-600">{detail.risk.delivery.total_grns}</div>
-                        <div className="text-[10px] text-slate-400">GRNs</div>
+                        <div className="text-[10px] text-slate-400">Deliveries</div>
                       </div>
                     </div>
+                    {detail.risk.delivery.unmeasurable_count > 0 && (
+                      <div className="text-[10px] text-amber-600 mt-1.5 p-1.5 bg-amber-50 rounded-lg text-center">
+                        ⚠ {detail.risk.delivery.unmeasurable_count} of {detail.risk.delivery.total_grns} deliveries have incomplete date data — on-time rate based on {detail.risk.delivery.measurable_count || 0} measurable deliveries
+                      </div>
+                    )}
                     {detail.risk.delivery.trend && detail.risk.delivery.trend !== 'no_data' && (
                       <div className={cn('text-xs mt-2 p-2 rounded-lg text-center font-semibold',
                         detail.risk.delivery.trend === 'deteriorating' ? 'bg-red-50 text-red-600' :
@@ -1200,7 +1218,7 @@ function Contracts() {
             <div className="flex items-center gap-2 mb-3">
               <Brain className="w-4 h-4 text-indigo-500" />
               <h3 className="text-[11px] font-bold text-slate-900 uppercase tracking-wider">AI Clause Risk Analysis</h3>
-              {an.risk_score != null && <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full', an.risk_level === 'high' ? 'bg-red-100 text-red-700' : an.risk_level === 'medium' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700')}>Risk Score: {an.risk_score}/100</span>}
+              {an.risk_score != null && <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full', an.risk_level === 'high' ? 'bg-red-100 text-red-700' : an.risk_level === 'medium' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700')}>{an.risk_level === 'high' ? 'High Risk' : an.risk_level === 'medium' ? 'Medium Risk' : 'Low Risk'}</span>}
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {clauses.map((cl, i) => (
@@ -1343,7 +1361,7 @@ function Contracts() {
           { label: 'Health', render: r => { const h = getHealth(r.id); if (!h) return <span className="text-slate-400">—</span>; return <HealthRing score={h.health_score} size={36} />; }},
           { label: 'Status', render: r => { const st = getStatus(r); return <Badge c={st.color}>{st.label}</Badge>; }},
           { label: 'Value', right: true, render: r => <span className="font-semibold font-mono">{$(r.amount, r.currency)}</span> },
-          { label: 'Risk', render: r => { const h = getHealth(r.id); return h ? <span className={cn('text-xs font-bold', h.clause_risk >= 60 ? 'text-red-600' : h.clause_risk >= 30 ? 'text-amber-600' : 'text-emerald-600')}>{h.clause_risk}/100</span> : '—'; }},
+          { label: 'Clause Risk', render: r => { const h = getHealth(r.id); if (!h) return '—'; const cr = h.clause_risk; return <span className={cn('text-xs font-bold', cr >= 60 ? 'text-red-600' : cr >= 30 ? 'text-amber-600' : 'text-emerald-600')}>{cr >= 60 ? 'High' : cr >= 30 ? 'Medium' : 'Low'}</span>; }},
           { label: 'Expiry', render: r => { const h = getHealth(r.id); if (!h?.days_to_expiry) return '—'; return <span className={cn('text-xs font-bold', h.days_to_expiry <= 30 ? 'text-red-600' : h.days_to_expiry <= 90 ? 'text-amber-600' : 'text-slate-500')}>{h.days_to_expiry}d</span>; }},
           { label: 'Confidence', render: r => <ConfidenceRing score={r.confidence || 0} /> },
         ]}
@@ -2284,17 +2302,17 @@ function LandingPage({ onGo }) {
   const features = [
     { icon: Zap, title: 'Ensemble Extraction', desc: 'Two frontier models extract in parallel with consensus merging and field-level confidence.', tag: 'AI', color: '#4f46e5' },
     { icon: Brain, title: 'Agentic Dispute Resolution', desc: 'When models disagree, a third AI re-examines with vendor context and PO data.', tag: 'AI', color: '#4f46e5' },
-    { icon: Shield, title: 'RAG Anomaly Detection', desc: `${rc} rule-based checks plus AI cross-referencing past anomalies and contract clauses.`, tag: 'AI+RULES', color: '#d97706' },
-    { icon: Link2, title: '3-Way Smart Matching', desc: 'Deterministic PO-GRN-Invoice matching with AI reasoning across all POs by vendor.', tag: 'ALGO+AI', color: '#059669' },
-    { icon: FileCheck, title: 'Contract Intelligence', desc: '8-clause risk analysis with health scores, obligation tracking, and price drift detection.', tag: 'PHASE 2', color: '#7c3aed' },
-    { icon: Building2, title: '9-Factor Vendor Risk', desc: 'Extended KYC/compliance scoring: payment behavior, concentration, delivery performance.', tag: 'PHASE 3', color: '#7c3aed' },
-    { icon: TrendingUp, title: 'GRN Deep Analytics', desc: 'Delivery performance tracking: on-time rates, short shipments, PO fulfillment gaps.', tag: 'PHASE 4', color: '#7c3aed' },
+    { icon: Shield, title: 'RAG Anomaly Detection', desc: `${rc} rule-based checks plus AI cross-referencing past anomalies and contract clauses.`, tag: 'AI + RULES', color: '#d97706' },
+    { icon: Link2, title: '3-Way Smart Matching', desc: 'Automatically matches purchase orders, goods receipts, and invoices with AI-powered fuzzy resolution.', tag: 'SMART', color: '#059669' },
+    { icon: FileCheck, title: 'Contract Intelligence', desc: '8-clause risk analysis with health scores, obligation tracking, and price drift detection.', tag: 'NEW', color: '#7c3aed' },
+    { icon: Building2, title: '9-Factor Vendor Risk', desc: 'Comprehensive vendor scoring: compliance status, payment behavior, spend concentration, delivery performance.', tag: 'NEW', color: '#7c3aed' },
+    { icon: TrendingUp, title: 'Delivery Analytics', desc: 'Delivery performance tracking: on-time rates, short shipments, PO fulfillment gaps.', tag: 'NEW', color: '#7c3aed' },
     { icon: FileText, title: 'Investigation Briefs', desc: 'Auto-generated narratives citing exact amounts, contract clauses, and vendor history.', tag: 'AI', color: '#4f46e5' },
     { icon: CheckCircle2, title: 'Plain English Anomalies', desc: 'Technical flags translated into one-sentence explanations with post-validated amounts.', tag: 'AI', color: '#4f46e5' },
-    { icon: Eye, title: 'Pattern Insights', desc: 'Statistical analysis identifies recurring vendor issues meeting significance thresholds.', tag: 'AI+STATS', color: '#d97706' },
-    { icon: ClipboardList, title: 'Smart Case Routing', desc: 'Score team by expertise, workload, and authority. AI explains assignments.', tag: 'ALGO+AI', color: '#059669' },
-    { icon: Settings, title: 'NL Policy Config', desc: 'Configure AP rules in plain English. AI translates to parameters you preview.', tag: 'AI·HUMAN', color: '#0369a1' },
-    { icon: Brain, title: 'Custom Fine-Tuning', desc: 'Your corrections train LoRA adapters on vendor-specific layouts.', tag: 'LoRA', color: '#6d28d9' },
+    { icon: Eye, title: 'Pattern Insights', desc: 'Statistical analysis identifies recurring vendor issues meeting significance thresholds.', tag: 'AI + STATS', color: '#d97706' },
+    { icon: ClipboardList, title: 'Smart Case Routing', desc: 'Score team by expertise, workload, and authority. AI explains assignments.', tag: 'SMART', color: '#059669' },
+    { icon: Settings, title: 'Natural Language Policy', desc: 'Configure AP rules in plain English. AI translates to parameters you preview.', tag: 'AI + HUMAN', color: '#0369a1' },
+    { icon: Brain, title: 'Custom Fine-Tuning', desc: 'Your corrections train specialized adapters on vendor-specific layouts.', tag: 'ADAPTIVE', color: '#6d28d9' },
   ];
 
   const pipeline = [
@@ -2388,7 +2406,7 @@ function LandingPage({ onGo }) {
                 { icon: Zap, label: 'AI Extraction', sub: 'Ensemble models extract every field in parallel with self-correcting dispute resolution', color: '#4f46e5' },
                 { icon: Link2, label: '3-Way Matching', sub: 'Automatically match to POs and goods receipts — AI resolves fuzzy references', color: '#059669' },
                 { icon: Shield, label: 'Anomaly Detection', sub: `${rc} rules + AI auditor cross-references contracts, vendor history, and past corrections`, color: '#d97706' },
-                { icon: FileCheck, label: 'Contract & Vendor Intelligence', sub: 'Clause risk analysis, 9-factor vendor scoring, KYC compliance, delivery performance tracking', color: '#7c3aed' },
+                { icon: FileCheck, label: 'Contract & Vendor Intelligence', sub: 'Clause risk analysis, 9-factor vendor scoring, compliance checks, delivery performance tracking', color: '#7c3aed' },
                 { icon: ClipboardList, label: 'Smart Triage', sub: 'Auto-approve clean invoices, route exceptions to the right person with SLA tracking', color: '#dc2626' },
                 { icon: FileText, label: 'Investigation Brief', sub: 'AI-generated case narrative citing exact amounts, clauses, and recommended actions', color: '#0369a1' },
               ].map(st => (
@@ -2443,9 +2461,9 @@ function LandingPage({ onGo }) {
                 {ruleNames.map(r => <span key={r} className="text-[10px] px-2 py-0.5 rounded bg-red-50 text-red-600 font-medium border border-red-100">{r}</span>)}
               </div>
             )}
-            {/* Phase 2-4 Intelligence Rules */}
+            {/* Intelligence Anomaly Rules */}
             <div className="flex flex-wrap gap-1 mb-3">
-              {['CONTRACT PRICE DRIFT','CONTRACT EXPIRY WARNING','CHRONIC SHORT SHIPMENT','PO FULFILLMENT STALE'].map(r => (
+              {['CONTRACT PRICE DRIFT','CONTRACT EXPIRY WARNING','CONTRACT OVER-UTILIZATION','UNDERBILLING CHECK','VOLUME COMMITMENT GAP','CURRENCY MISMATCH','CHRONIC SHORT SHIPMENT','PO FULFILLMENT STALE'].map(r => (
                 <span key={r} className="text-[10px] px-2 py-0.5 rounded bg-indigo-50 text-indigo-600 font-medium border border-indigo-100">🔍 {r}</span>
               ))}
             </div>
