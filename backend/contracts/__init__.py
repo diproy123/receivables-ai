@@ -1,11 +1,11 @@
 """
-AuditLens — Contract Intelligence, Vendor KYC/Risk, GRN Deep Analytics
-Phase 2-4 Intelligence Engine (v3.0)
+AuditLens — Contract Intelligence, Vendor Risk, Delivery Analytics
+Intelligence Engine (v3.0)
 
-All three phases in a single additive module:
-  Phase 2: Contract clause risk scoring, compliance monitoring, expiry alerting
-  Phase 3: Extended vendor risk (5→9 factors), KYC tracking, behavioral analysis
-  Phase 4: GRN delivery performance analytics, fulfillment tracking
+Three intelligence modules in a single additive package:
+  - Contract clause risk scoring, compliance monitoring, expiry alerting
+  - Extended vendor risk (9 factors), compliance tracking, behavioral analysis
+  - Delivery performance analytics, fulfillment tracking
 
 DESIGN PRINCIPLES:
   - Pure additive — no modifications to existing modules
@@ -21,9 +21,9 @@ from backend.db import _n
 from backend.policy import get_policy
 
 
-# ============================================================
-# PHASE 2: CONTRACT INTELLIGENCE
-# ============================================================
+# ═══════════════════════════════════════════════════════════════
+# CONTRACT INTELLIGENCE
+# ═══════════════════════════════════════════════════════════════
 
 CLAUSE_TYPES = [
     "liability_cap", "termination_notice", "auto_renewal", "sla_terms",
@@ -308,7 +308,7 @@ def detect_contract_compliance_anomalies(invoice: dict, contract: dict, db: dict
     """Contract compliance anomaly rules:
     - CONTRACT_PRICE_DRIFT: invoice unit price above contracted rate
     - CONTRACT_UNDERBILLING: invoice unit price significantly below contracted rate
-    - CURRENCY_MISMATCH: invoice/contract in different currencies, manual review needed
+    - CONTRACT_CURRENCY_MISMATCH: invoice/contract in different currencies, manual review needed
     - CONTRACT_EXPIRY_WARNING: invoice against expired or near-expiry contract
     - CONTRACT_OVER_UTILIZATION: cumulative invoicing exceeds contract value
     - VOLUME_COMMITMENT_GAP: below minimum purchase commitment pace
@@ -361,7 +361,7 @@ def detect_contract_compliance_anomalies(invoice: dict, contract: dict, db: dict
                             "recommendation": "Verify: partial delivery? Unapproved discount? Scope change requiring amendment?"})
     elif cp and isinstance(cp, dict) and inv_currency != ctr_currency:
         # Currency mismatch — cannot validate prices, flag for manual review
-        anomalies.append({"type": "CURRENCY_MISMATCH",
+        anomalies.append({"type": "CONTRACT_CURRENCY_MISMATCH",
             "severity": "low",
             "description": f"Invoice in {inv_currency} but contract priced in {ctr_currency} — price compliance cannot be verified automatically",
             "amount_at_risk": 0,
@@ -526,9 +526,9 @@ def get_expiring_contracts(db: dict, days: int = 90) -> list:
     return sorted(results, key=lambda x: x["days_left"])
 
 
-# ============================================================
-# PHASE 3: VENDOR KYC / EXTENDED RISK
-# ============================================================
+# ═══════════════════════════════════════════════════════════════
+# VENDOR COMPLIANCE & EXTENDED RISK
+# ═══════════════════════════════════════════════════════════════
 
 def compute_extended_vendor_risk(vendor_name: str, db: dict) -> dict:
     """Enhanced 9-factor vendor risk (extends existing 5-factor).
@@ -703,9 +703,9 @@ def get_vendor_kyc_status(vendor_name: str, db: dict) -> dict:
     }
 
 
-# ============================================================
-# PHASE 4: GRN DELIVERY ANALYTICS
-# ============================================================
+# ═══════════════════════════════════════════════════════════════
+# DELIVERY ANALYTICS
+# ═══════════════════════════════════════════════════════════════
 
 def compute_delivery_performance(vendor_name: str, db: dict) -> dict:
     """Aggregate GRN data per vendor: on-time rate, short shipments, fulfillment."""
@@ -821,7 +821,7 @@ def compute_delivery_performance(vendor_name: str, db: dict) -> dict:
 
 
 def detect_delivery_anomalies(vendor_name: str, db: dict) -> list:
-    """Phase 4 anomaly rules: CHRONIC_SHORT_SHIPMENT, DELIVERY_DETERIORATION, PO_STALE"""
+    """Delivery anomaly rules: CHRONIC_SHORT_SHIPMENT, DELIVERY_DETERIORATION, PO_STALE"""
     anomalies = []
     dp = compute_delivery_performance(vendor_name, db)
 
@@ -850,12 +850,12 @@ def detect_delivery_anomalies(vendor_name: str, db: dict) -> list:
     return anomalies
 
 
-# ============================================================
+# ═══════════════════════════════════════════════════════════════
 # DASHBOARD INTELLIGENCE (feeds into /api/dashboard)
-# ============================================================
+# ═══════════════════════════════════════════════════════════════
 
 def get_intelligence_summary(db: dict) -> dict:
-    """Compute Phase 2-4 intelligence metrics for the dashboard."""
+    """Compute intelligence metrics for the dashboard."""
     contracts = db.get("contracts", [])
     expiring = get_expiring_contracts(db, 90)
 

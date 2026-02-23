@@ -529,7 +529,7 @@ function Anomalies() {
               { label: 'Severity', render: r => <Badge c={sevColor(r.severity) === 'err' ? 'err' : sevColor(r.severity) === 'warn' ? 'warn' : 'ok'}>{r.severity}</Badge> },
               { label: 'Risk', right: true, mono: true, render: r => <span className={cn('font-semibold', r.amount_at_risk > 0 ? 'text-red-600' : 'text-slate-400')}>{$(Math.abs(r.amount_at_risk || 0))}</span> },
               { label: 'Type', render: r => {
-                const isContract = ['CONTRACT_PRICE_DRIFT','CONTRACT_EXPIRY_WARNING','CONTRACT_OVER_UTILIZATION','CONTRACT_UNDERBILLING','VOLUME_COMMITMENT_GAP','CURRENCY_MISMATCH'].includes(r.type);
+                const isContract = ['CONTRACT_PRICE_DRIFT','CONTRACT_EXPIRY_WARNING','CONTRACT_OVER_UTILIZATION','CONTRACT_UNDERBILLING','VOLUME_COMMITMENT_GAP','CONTRACT_CURRENCY_MISMATCH'].includes(r.type);
                 const isDelivery = ['CHRONIC_SHORT_SHIPMENT','PO_FULFILLMENT_STALE','SHORT_SHIPMENT','OVERBILLED_VS_RECEIVED','QUANTITY_RECEIVED_MISMATCH'].includes(r.type);
                 return (
                   <div className="flex items-center gap-1.5">
@@ -2296,23 +2296,26 @@ function LandingPage({ onGo }) {
   const authTiers = ps.auth || [];
   const sla = ps.sla || {};
   const ver = ps.v || '';
+  const totalRules = rc + 8;  // base rules + contract/delivery intelligence rules
+  const rc14 = 14;  // clause types
+
   const ruleNames = (ps.rules || []).map(r => r.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()).replace('Po', 'PO').replace('Grn', 'GRN').replace('Qty', 'QTY'));
   const oppNames = (ps.opp || []).map(r => r.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()));
 
   const features = [
     { icon: Zap, title: 'Ensemble Extraction', desc: 'Two frontier models extract in parallel with consensus merging and field-level confidence.', tag: 'AI', color: '#4f46e5' },
     { icon: Brain, title: 'Agentic Dispute Resolution', desc: 'When models disagree, a third AI re-examines with vendor context and PO data.', tag: 'AI', color: '#4f46e5' },
-    { icon: Shield, title: 'RAG Anomaly Detection', desc: `${rc} rule-based checks plus AI cross-referencing past anomalies and contract clauses.`, tag: 'AI + RULES', color: '#d97706' },
-    { icon: Link2, title: '3-Way Smart Matching', desc: 'Automatically matches purchase orders, goods receipts, and invoices with AI-powered fuzzy resolution.', tag: 'SMART', color: '#059669' },
-    { icon: FileCheck, title: 'Contract Intelligence', desc: '8-clause risk analysis with health scores, obligation tracking, and price drift detection.', tag: 'NEW', color: '#7c3aed' },
-    { icon: Building2, title: '9-Factor Vendor Risk', desc: 'Comprehensive vendor scoring: compliance status, payment behavior, spend concentration, delivery performance.', tag: 'NEW', color: '#7c3aed' },
-    { icon: TrendingUp, title: 'Delivery Analytics', desc: 'Delivery performance tracking: on-time rates, short shipments, PO fulfillment gaps.', tag: 'NEW', color: '#7c3aed' },
+    { icon: Shield, title: 'RAG Anomaly Detection', desc: `${rc} rule-based checks plus AI cross-referencing past anomalies, contract clauses, and vendor behavior.`, tag: 'AI + RULES', color: '#d97706' },
+    { icon: Link2, title: '3-Way Smart Matching', desc: 'Automatically matches purchase orders, goods receipts, and invoices with AI-powered fuzzy resolution.', tag: 'AI + ALGO', color: '#059669' },
+    { icon: FileCheck, title: 'Contract Intelligence', desc: '14-clause risk analysis with health scores, obligation tracking, and price drift detection.', tag: 'AI', color: '#4f46e5' },
+    { icon: Building2, title: '9-Factor Vendor Risk', desc: 'Comprehensive vendor scoring: compliance status, payment behavior, spend concentration, delivery performance.', tag: 'AI + RULES', color: '#d97706' },
+    { icon: TrendingUp, title: 'Delivery Analytics', desc: 'Delivery performance tracking: on-time rates, short shipments, PO fulfillment gaps.', tag: 'AI + STATS', color: '#d97706' },
     { icon: FileText, title: 'Investigation Briefs', desc: 'Auto-generated narratives citing exact amounts, contract clauses, and vendor history.', tag: 'AI', color: '#4f46e5' },
     { icon: CheckCircle2, title: 'Plain English Anomalies', desc: 'Technical flags translated into one-sentence explanations with post-validated amounts.', tag: 'AI', color: '#4f46e5' },
     { icon: Eye, title: 'Pattern Insights', desc: 'Statistical analysis identifies recurring vendor issues meeting significance thresholds.', tag: 'AI + STATS', color: '#d97706' },
-    { icon: ClipboardList, title: 'Smart Case Routing', desc: 'Score team by expertise, workload, and authority. AI explains assignments.', tag: 'SMART', color: '#059669' },
+    { icon: ClipboardList, title: 'Smart Case Routing', desc: 'Score team by expertise, workload, and authority. AI explains assignments.', tag: 'AI + ALGO', color: '#059669' },
     { icon: Settings, title: 'Natural Language Policy', desc: 'Configure AP rules in plain English. AI translates to parameters you preview.', tag: 'AI + HUMAN', color: '#0369a1' },
-    { icon: Brain, title: 'Custom Fine-Tuning', desc: 'Your corrections train specialized adapters on vendor-specific layouts.', tag: 'ADAPTIVE', color: '#6d28d9' },
+    { icon: Brain, title: 'Custom Fine-Tuning', desc: 'Your corrections train specialized adapters on vendor-specific layouts.', tag: 'AI + LEARN', color: '#6d28d9' },
   ];
 
   const pipeline = [
@@ -2324,8 +2327,8 @@ function LandingPage({ onGo }) {
 
   const deployOptions = [
     { title: 'Managed Cloud', tag: 'DEFAULT', color: '#2563eb', checks: ['Zero Data Retention', 'SOC 2 Type II', '5-min setup'], prov: 'Anthropic Claude API' },
-    { title: 'Private VPC', tag: 'ENTERPRISE', color: '#059669', checks: ['Data stays in your VPC', 'AWS / GCP region choice', 'HIPAA / GDPR'], prov: 'Bedrock · Vertex AI' },
-    { title: 'Air-Gapped', tag: 'ON-PREM', color: '#7c3aed', checks: ['Zero external calls', 'Your hardware + models', 'Defense-grade'], prov: 'vLLM · Ollama · TGI' },
+    { title: 'Private VPC', tag: 'ENTERPRISE', color: '#059669', checks: ['Data stays in your VPC', 'AWS / GCP region choice', 'HIPAA / GDPR'], prov: 'AWS Bedrock · Google Vertex AI' },
+    { title: 'Air-Gapped', tag: 'ON-PREM', color: '#7c3aed', checks: ['Zero external calls', 'Your hardware + models', 'Defense-grade'], prov: 'Self-hosted AI runtime' },
   ];
 
   const defaultAuth = [
@@ -2337,7 +2340,7 @@ function LandingPage({ onGo }) {
 
   const langs = [['EN','#64748b'],['CN','#ef4444'],['JP','#f97316'],['KR','#3b82f6'],['HI','#eab308'],['DE','#22c55e'],['FR','#6366f1'],['ES','#a855f7'],['PT','#14b8a6'],['AR','#8b5cf6']];
   const taxSystems = ['VAT','GST','MwSt','TVA','IVA','增值税','消費税','ICMS'];
-  const trustBadges = ['RBAC', 'JWT Auth', 'SOX-Ready', 'Audit Trail', 'SLA Tracking', `${rc} Rules`];
+  const trustBadges = ['RBAC', 'JWT Auth', 'SOX-Ready', 'Audit Trail', 'SLA Tracking', `${totalRules} Rules`];
 
   return (
     <div className="min-h-screen" style={{ background: '#fafbfc' }}>
@@ -2380,9 +2383,9 @@ function LandingPage({ onGo }) {
         <div className="max-w-4xl mx-auto flex items-center justify-center gap-8 flex-wrap">
           {[
             { v: '450+', l: 'invoices/hr', c: '#059669' },
-            { v: `${rc}`, l: 'anomaly rules', c: '#2563eb' },
+            { v: `${totalRules}`, l: 'detection rules', c: '#2563eb' },
             { v: '9', l: 'risk factors', c: '#7c3aed' },
-            { v: '8', l: 'clause checks', c: '#d97706' },
+            { v: `${rc14}`, l: 'clause checks', c: '#d97706' },
             { v: '<8s', l: 'per invoice', c: '#dc2626' },
           ].map(st => (
             <div key={st.l} className="text-center">
@@ -2405,7 +2408,7 @@ function LandingPage({ onGo }) {
               {[
                 { icon: Zap, label: 'AI Extraction', sub: 'Ensemble models extract every field in parallel with self-correcting dispute resolution', color: '#4f46e5' },
                 { icon: Link2, label: '3-Way Matching', sub: 'Automatically match to POs and goods receipts — AI resolves fuzzy references', color: '#059669' },
-                { icon: Shield, label: 'Anomaly Detection', sub: `${rc} rules + AI auditor cross-references contracts, vendor history, and past corrections`, color: '#d97706' },
+                { icon: Shield, label: 'Anomaly Detection', sub: `${rc} base rules plus AI-powered contract compliance, vendor intelligence, and delivery tracking`, color: '#d97706' },
                 { icon: FileCheck, label: 'Contract & Vendor Intelligence', sub: 'Clause risk analysis, 9-factor vendor scoring, compliance checks, delivery performance tracking', color: '#7c3aed' },
                 { icon: ClipboardList, label: 'Smart Triage', sub: 'Auto-approve clean invoices, route exceptions to the right person with SLA tracking', color: '#dc2626' },
                 { icon: FileText, label: 'Investigation Brief', sub: 'AI-generated case narrative citing exact amounts, clauses, and recommended actions', color: '#0369a1' },
@@ -2455,21 +2458,55 @@ function LandingPage({ onGo }) {
               <AlertTriangle className="w-4 h-4 text-red-500" />
               <span className="text-sm font-bold text-slate-900 uppercase tracking-wider">What We Catch</span>
             </div>
-            <p className="text-[13px] text-slate-500 leading-relaxed mb-3">{rc} rules covering overcharges, duplicates, quantity mismatches, unauthorized items, contract violations, tax anomalies, and more.</p>
-            {ruleNames.length > 0 && (
-              <div className="flex flex-wrap gap-1 mb-3">
-                {ruleNames.map(r => <span key={r} className="text-[10px] px-2 py-0.5 rounded bg-red-50 text-red-600 font-medium border border-red-100">{r}</span>)}
-              </div>
-            )}
-            {/* Intelligence Anomaly Rules */}
-            <div className="flex flex-wrap gap-1 mb-3">
-              {['CONTRACT PRICE DRIFT','CONTRACT EXPIRY WARNING','CONTRACT OVER-UTILIZATION','UNDERBILLING CHECK','VOLUME COMMITMENT GAP','CURRENCY MISMATCH','CHRONIC SHORT SHIPMENT','PO FULFILLMENT STALE'].map(r => (
-                <span key={r} className="text-[10px] px-2 py-0.5 rounded bg-indigo-50 text-indigo-600 font-medium border border-indigo-100">🔍 {r}</span>
-              ))}
+            <p className="text-[13px] text-slate-500 leading-relaxed mb-4">Three layers of detection — from rule-based flags to AI-powered contract and vendor intelligence.</p>
+
+            {/* Layer 1: Standard rules */}
+            <div className="mb-3">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Rule-Based Audit · {rc} Checks</div>
+              {ruleNames.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {ruleNames.map(r => <span key={r} className="text-[10px] px-2 py-0.5 rounded bg-red-50 text-red-600 font-medium border border-red-100">{r}</span>)}
+                </div>
+              )}
             </div>
+
+            {/* Layer 2: AI contract intelligence */}
+            <div className="mb-3">
+              <div className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mb-1.5">AI Contract & Vendor Intelligence</div>
+              <div className="flex flex-wrap gap-1">
+                {[
+                  {n: 'Price Drift Detection', d: 'Invoiced vs contracted rates'},
+                  {n: 'Expiry Risk Alerts', d: 'Expired or near-expiry contracts'},
+                  {n: 'Over-Utilization', d: 'Spend exceeding contract ceiling'},
+                  {n: 'Underbilling Audit', d: 'Below-contract pricing anomalies'},
+                  {n: 'Volume Commitment', d: 'Minimum purchase shortfall risk'},
+                  {n: 'Currency Validation', d: 'Cross-currency invoice checks'},
+                ].map(r => (
+                  <span key={r.n} className="text-[10px] px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 font-medium border border-indigo-100" title={r.d}>{r.n}</span>
+                ))}
+              </div>
+            </div>
+
+            {/* Layer 3: AI delivery analytics */}
+            <div className="mb-3">
+              <div className="text-[10px] font-bold text-blue-500 uppercase tracking-widest mb-1.5">AI Delivery Analytics</div>
+              <div className="flex flex-wrap gap-1">
+                {[
+                  {n: 'Chronic Short Shipment', d: 'Repeated under-delivery patterns'},
+                  {n: 'Stale PO Fulfillment', d: 'Aged POs with low completion'},
+                ].map(r => (
+                  <span key={r.n} className="text-[10px] px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-medium border border-blue-100" title={r.d}>{r.n}</span>
+                ))}
+              </div>
+            </div>
+
+            {/* Opportunity detection */}
             {oppNames.length > 0 && (
-              <div className="flex flex-wrap gap-1 mb-3">
-                {oppNames.map(r => <span key={r} className="text-[10px] px-2 py-0.5 rounded bg-amber-50 text-amber-700 font-medium border border-amber-100">💡 {r}</span>)}
+              <div className="mb-3">
+                <div className="text-[10px] font-bold text-amber-500 uppercase tracking-widest mb-1.5">Savings Opportunities</div>
+                <div className="flex flex-wrap gap-1">
+                  {oppNames.map(r => <span key={r} className="text-[10px] px-2 py-0.5 rounded bg-amber-50 text-amber-700 font-medium border border-amber-100">💡 {r}</span>)}
+                </div>
               </div>
             )}
             <div className="pt-3 mt-3 border-t border-slate-100">
@@ -2613,6 +2650,62 @@ function LandingPage({ onGo }) {
               <span className="text-emerald-400">LLM_PROVIDER</span><span className="text-slate-500">=</span><span className="text-amber-300">bedrock</span>
             </div>
             <span className="text-xs text-slate-500">One config change. Same extraction, same anomaly detection, same audit trail.</span>
+          </div>
+        </div>
+      </section>
+
+      {/* ── ERP Integrations ── */}
+      <section className="px-6 pb-12">
+        <div className="max-w-5xl mx-auto text-center">
+          <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3">Connects to your existing systems</div>
+          <div className="flex flex-wrap justify-center gap-3 mb-2">
+            {['SAP S/4HANA', 'Oracle EBS', 'NetSuite', 'Microsoft Dynamics', 'QuickBooks', 'Sage', 'Workday', 'Xero'].map(e => (
+              <span key={e} className="px-4 py-2 rounded-xl bg-white border border-slate-200 text-sm font-semibold text-slate-700 shadow-sm">{e}</span>
+            ))}
+          </div>
+          <p className="text-xs text-slate-400 mt-2">REST API + file-based integration · Batch or real-time · No ERP modifications required</p>
+        </div>
+      </section>
+
+      {/* ── ROI & Compliance ── */}
+      <section className="px-6 pb-12">
+        <div className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {/* ROI */}
+          <div className="rounded-2xl bg-white border border-slate-200/60 p-6">
+            <div className="text-[11px] font-bold text-emerald-600 uppercase tracking-widest mb-3">Expected Impact</div>
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              {[
+                { v: '1–3%', l: 'Spend recovery', d: 'From overcharges, duplicates, contract drift' },
+                { v: '85%', l: 'Less manual review', d: 'AI auto-approves clean invoices' },
+                { v: '10×', l: 'Faster processing', d: '450+ inv/hr vs 2–3 manual' },
+                { v: '100%', l: 'Audit coverage', d: 'Every invoice, every line item' },
+              ].map(s => (
+                <div key={s.l} className="text-center">
+                  <div className="text-2xl font-extrabold text-emerald-600">{s.v}</div>
+                  <div className="text-xs font-bold text-slate-700">{s.l}</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">{s.d}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Compliance */}
+          <div className="rounded-2xl bg-white border border-slate-200/60 p-6">
+            <div className="text-[11px] font-bold text-blue-600 uppercase tracking-widest mb-3">Compliance & Security</div>
+            <div className="space-y-2">
+              {[
+                { badge: 'SOX 404', desc: 'Segregation of duties, approval workflows, complete audit trail' },
+                { badge: 'SOC 2 Type II', desc: 'Infrastructure and data handling security controls' },
+                { badge: 'GDPR / DPDP', desc: 'Data residency options, right to erasure, Zero Data Retention mode' },
+                { badge: 'RBAC', desc: '4-tier role-based access control with configurable authority limits' },
+                { badge: 'Audit Trail', desc: 'Every action, decision, and AI recommendation logged with timestamp' },
+              ].map(c => (
+                <div key={c.badge} className="flex gap-3 items-start">
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-100 whitespace-nowrap">{c.badge}</span>
+                  <span className="text-xs text-slate-600">{c.desc}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </section>
