@@ -1207,9 +1207,19 @@ function Contracts() {
             <div><div className="text-[10px] font-bold text-slate-500 uppercase">Health</div><div className="text-sm font-bold">{hl.health_level || '...'}</div></div>
           </div>
           <div className="card p-4"><div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Status</div><Badge c={status.color}>{status.label}</Badge></div>
-          <div className="card p-4"><div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Contract Value</div><div className="text-lg font-bold text-slate-900">{$(c.amount, c.currency)}</div></div>
+          <div className="card p-4"><div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Contract Value</div>
+            {c.amount > 0
+              ? <div className="text-lg font-bold text-slate-900">{$(c.amount, c.currency)}</div>
+              : <div className="text-sm font-bold text-blue-600">{c.isRateContract || (c.pricingTerms && (Array.isArray(c.pricingTerms) ? c.pricingTerms.length > 0 : Object.keys(c.pricingTerms).length > 0)) ? 'Rate Contract' : '—'}</div>
+            }
+          </div>
           <div className="card p-4"><div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Invoiced</div><div className="text-lg font-bold text-emerald-600">{$(totalInvoiced, c.currency)}</div></div>
-          <div className="card p-4"><div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Utilization</div><div className="text-lg font-bold" style={{ color: utilization > 100 ? '#dc2626' : utilization > 90 ? '#d97706' : '#059669' }}>{pct(utilization)}</div></div>
+          <div className="card p-4"><div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Utilization</div>
+            {c.amount > 0
+              ? <div className="text-lg font-bold" style={{ color: utilization > 100 ? '#dc2626' : utilization > 90 ? '#d97706' : '#059669' }}>{pct(utilization)}</div>
+              : <div className="text-sm font-bold text-slate-400">N/A</div>
+            }
+          </div>
         </div>
 
         {/* AI Clause Risk Analysis */}
@@ -2009,7 +2019,10 @@ function DocModal() {
               <Field label="Confidence" val={pct(doc.confidence)} />
 
               {/* Amount fields — not for GRN */}
-              {doc.type !== 'goods_receipt' && <Field label={doc.type === 'contract' ? 'Contract Value' : (doc.type === 'credit_note' || doc.type === 'debit_note') ? 'Adjustment Amount' : 'Amount'} val={$f(doc.amount, cur)} />}
+              {doc.type !== 'goods_receipt' && <Field label={doc.type === 'contract' ? 'Contract Value' : (doc.type === 'credit_note' || doc.type === 'debit_note') ? 'Adjustment Amount' : 'Amount'}
+                val={doc.type === 'contract' && !doc.amount && (doc.isRateContract || (doc.pricingTerms && (Array.isArray(doc.pricingTerms) ? doc.pricingTerms.length > 0 : Object.keys(doc.pricingTerms || {}).length > 0)))
+                  ? 'Rate Contract (per-unit pricing)'
+                  : $f(doc.amount, cur)} />}
               {doc.type !== 'goods_receipt' && <Field label="Subtotal" val={$f(doc.subtotal, cur)} k="subtotal" type="number" />}
 
               {/* Tax — only for invoice/PO/credit/debit */}
@@ -2432,23 +2445,66 @@ function LandingPage({ onGo }) {
       <section className="px-6 pb-12">
         <div className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-5">
           {/* AP Problem */}
-          <div className="rounded-2xl p-6 text-white" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)' }}>
-            <div className="text-[11px] font-bold text-red-400 uppercase tracking-widest mb-2">The AP Problem</div>
-            <h3 className="text-xl font-extrabold mb-3 leading-snug">AP teams lose 1–3% of spend to undetected errors.</h3>
-            <p className="text-[13px] text-slate-600 leading-relaxed mb-5">Manual review catches a fraction. AuditLens checks every invoice, every line item — before payment.</p>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { v: '2–3', u: 'inv/hr', sub: 'Manual', c: '#ef4444' },
-                { v: '450+', u: 'inv/hr', sub: 'AuditLens', c: '#22c55e' },
-                { v: '5–15%', u: 'flagged', sub: 'Exception rate', c: '#60a5fa' },
-                { v: '100%', u: 'coverage', sub: 'Zero gaps', c: '#a78bfa' },
-              ].map(st => (
-                <div key={st.sub} className="rounded-lg p-3 text-center" style={{ background: 'rgba(255,255,255,.06)' }}>
-                  <div className="text-lg font-extrabold" style={{ color: st.c }}>{st.v}</div>
-                  <div className="text-[10px] text-slate-400">{st.u}</div>
-                  <div className="text-[9px] text-slate-500 mt-0.5">{st.sub}</div>
+          <div className="rounded-2xl p-6 bg-white border border-slate-200/60">
+            <div className="text-[11px] font-bold text-red-500 uppercase tracking-widest mb-2">The AP Problem</div>
+            <h3 className="text-xl font-extrabold text-slate-900 mb-2 leading-snug">AP teams lose 1–3% of spend to undetected errors.</h3>
+            <p className="text-[13px] text-slate-500 leading-relaxed mb-5">Manual review catches a fraction. AuditLens checks every invoice, every line item — before payment.</p>
+
+            {/* Before / After comparison */}
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              {/* Manual column */}
+              <div className="rounded-xl p-4 bg-red-50/80 border border-red-100">
+                <div className="text-[10px] font-bold text-red-400 uppercase tracking-widest mb-3">Manual Process</div>
+                <div className="space-y-3">
+                  <div>
+                    <div className="text-2xl font-extrabold text-red-500">2–3</div>
+                    <div className="text-xs text-slate-500">invoices per hour</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-extrabold text-red-500">5–15%</div>
+                    <div className="text-xs text-slate-500">sample-based review</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-extrabold text-red-500">Days</div>
+                    <div className="text-xs text-slate-500">to catch exceptions</div>
+                  </div>
                 </div>
-              ))}
+              </div>
+
+              {/* AuditLens column */}
+              <div className="rounded-xl p-4 bg-emerald-50/80 border border-emerald-100">
+                <div className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-3">With AuditLens</div>
+                <div className="space-y-3">
+                  <div>
+                    <div className="text-2xl font-extrabold text-emerald-600">450+</div>
+                    <div className="text-xs text-slate-500">invoices per hour</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-extrabold text-emerald-600">100%</div>
+                    <div className="text-xs text-slate-500">every invoice, every line</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-extrabold text-emerald-600">&lt;8 sec</div>
+                    <div className="text-xs text-slate-500">per invoice, end-to-end</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom stat bar */}
+            <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                <span className="text-xs text-slate-600"><span className="font-bold text-slate-800">{totalRules}</span> detection rules</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-purple-500"></div>
+                <span className="text-xs text-slate-600"><span className="font-bold text-slate-800">9</span> vendor risk factors</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-amber-500"></div>
+                <span className="text-xs text-slate-600"><span className="font-bold text-slate-800">{rc14}</span> contract clause checks</span>
+              </div>
             </div>
           </div>
 

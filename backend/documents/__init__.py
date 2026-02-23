@@ -131,11 +131,28 @@ def transform_extracted_to_record(extracted, file_name, file_id):
         })
     elif dt == "contract":
         ct = extracted.get("contract_terms") or {}
+        pricing = extracted.get("pricing_terms") or []
+
+        # For rate/blanket contracts with no total_amount but with line items or pricing,
+        # estimate value from line items if possible, otherwise mark as rate contract
+        contract_amount = total
+        is_rate_contract = False
+        if contract_amount == 0 and (li or pricing):
+            # Try to compute from line items
+            li_total = sum(float(l.get("total") or 0) for l in li if l.get("total"))
+            if li_total > 0:
+                contract_amount = li_total
+            else:
+                is_rate_contract = True  # Has pricing terms but no aggregate value
+
         base.update({"status": "active",
             "contractNumber": extracted.get("document_number", f"AGR-{file_id}"),
-            "pricingTerms": extracted.get("pricing_terms") or [],
+            "pricingTerms": pricing,
             "contractTerms": ct,
             "parties": extracted.get("parties", []),
+            "isRateContract": is_rate_contract,
+            # Override amount with estimated value if we computed one
+            "amount": contract_amount,
             # Flatten contract dates to top-level for UI access
             "effectiveDate": ct.get("effective_date") or extracted.get("issue_date"),
             "endDate": ct.get("expiry_date"),
