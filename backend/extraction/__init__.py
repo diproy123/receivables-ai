@@ -119,7 +119,7 @@ CRITICAL RULES:
   - contract_terms.effective_date = when obligations BEGIN (may differ from signing date). Look for "Effective Date", "Commencement", "Start Date" in the header/key terms table.
   - contract_terms.expiry_date = when the contract ENDS. Look for "Expiration", "Term: ... through [date]", "End Date".
   - contract_terms.term_months = duration. Calculate from effective→expiry if not stated explicitly.
-  - total_amount = Total Contract Value (full value over entire term, not annual fee).
+  - total_amount = The contract value AS STATED in the document. Extract the exact number written. Do NOT multiply annual values by number of years. If the document says "$500,000 (annual commitment)" on a 2-year term, total_amount = 500000, NOT 1000000. If the document states a total contract value (e.g., "$1.2M total"), use that. The key principle: report what the document says, not what you calculate.
   - For service agreements: line_items should capture the pricing breakdown (annual fee components, not individual service visits).
   - parties = list ALL named parties. Use their full legal entity names.
   - contract_terms.governing_law = jurisdiction. Look for "Governing Law" or "Jurisdiction" clause.
