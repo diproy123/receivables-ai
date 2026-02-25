@@ -2092,9 +2092,10 @@ def _run_lifecycle_on_dashboard(db):
             return {"ran": False, "reason": "already_run_today"}
         results = run_lifecycle_checks(db)
         db["_lifecycle_meta"] = {"last_run": today, "last_results": results.get("summary", {})}
-        if results["cases_created"]:
+        if results["cases_created"] or results["alerts"]:
             save_db(db)
-        return {"ran": True, "cases_created": len(results.get("cases_created", []))}
+        return {"ran": True, "cases_created": len(results.get("cases_created", [])),
+                "alerts": len(results.get("alerts", []))}
     except Exception as e:
         return {"ran": False, "error": str(e)}
 
