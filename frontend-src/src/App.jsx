@@ -1125,6 +1125,7 @@ function Contracts() {
   const [sel, setSel] = useState(null);
   const [analysis, setAnalysis] = useState(null);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
+  const [showClauses, setShowClauses] = useState(false);
   const healthData = (s.intel || {}).contract_health || [];
 
   useEffect(() => {
@@ -1193,7 +1194,6 @@ function Contracts() {
     const obligations = an.obligations || [];
     const pricingRules = an.pricing_rules || [];
     const utilization = c.amount > 0 ? (totalInvoiced / c.amount * 100) : 0;
-    const [showClauses, setShowClauses] = useState(false);
     const ct = c.contractTerms || {};
 
     // Early payment discount detection
