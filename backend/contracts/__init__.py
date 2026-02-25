@@ -902,3 +902,428 @@ def get_intelligence_summary(db: dict) -> dict:
         "grn_count": len(grns),
         "grn_open_anomalies": len(grn_anomalies),
     }
+
+
+# ═══════════════════════════════════════════════════════════════
+# CONTRACT LIFECYCLE SCHEDULER
+# ═══════════════════════════════════════════════════════════════
+# Runs daily (or on-demand via API). Evaluates ALL active contracts
+# against clause obligations and time-based triggers.
+# Auto-creates cases with escalation chains and SLA timers.
+# Time-triggered (daily cron), not event-triggered.
+
+def run_lifecycle_checks(db: dict) -> dict:
+    """Run contract lifecycle checks across all contracts.
+
+    Architecture decision: Only over-utilization creates AP cases because
+    that's the only lifecycle event where the next action lands on AP's desk
+    (process an invoice that exceeds the contract ceiling, or hold it).
+
+    Everything else (expiry, renewal, SLA, commitments, penalties) generates
+    intelligence alerts — data packaged for CFO/Procurement, not investigation
+    tickets for AP analysts who can't act on them.
+
+    Returns { cases_created: [], alerts: [], summary: {} }
+    """
+    from backend.cases import create_case
+
+    contracts = db.get("contracts", [])
+    cases = db.get("cases", [])
+    now = datetime.now()
+    results = {"cases_created": [], "alerts": [], "checks_run": 0}
+
+    # De-dup for AP cases
+    existing_case_keys = set()
+    for case in cases:
+        if case.get("status") not in ("resolved", "closed"):
+            ckey = (case.get("type", ""), case.get("vendor", ""), case.get("lifecycleKey", ""))
+            existing_case_keys.add(ckey)
+
+    def _case_exists(case_type, vendor, lifecycle_key):
+        return (case_type, vendor, lifecycle_key) in existing_case_keys
+
+    # De-dup for alerts (stored in db["lifecycle_alerts"])
+    existing_alert_keys = set()
+    for alert in db.get("lifecycle_alerts", []):
+        if not alert.get("dismissed"):
+            existing_alert_keys.add(alert.get("key", ""))
+
+    for contract in contracts:
+        results["checks_run"] += 1
+        cid = contract.get("id", "")
+        vendor = contract.get("vendor", "Unknown")
+        ct = contract.get("contractTerms") or {}
+        currency = contract.get("currency", "USD")
+        sym = currency_symbol(currency)
+        cval = _n(contract.get("amount"))
+        cnum = contract.get("contractNumber") or cid
+        expiry_str = ct.get("expiry_date") or contract.get("endDate")
+
+        # ────────────────────────────────────────────────
+        # AP CASE: Over-Utilization (the ONE that belongs in AP)
+        # When invoices push past the contract ceiling, the next invoice
+        # lands on AP's desk. They need a case to decide: process or hold.
+        # ────────────────────────────────────────────────
+        if cval > 0:
+            vn = contract.get("vendor", "")
+            total_invoiced = sum(
+                _n(i.get("subtotal") or i.get("amount"))
+                for i in db.get("invoices", [])
+                if vendor_similarity(i.get("vendor", ""), vn) >= 0.7
+            )
+            util_pct = total_invoiced / cval * 100
+            if util_pct >= 85:
+                threshold_key = "over100" if util_pct >= 100 else "over85"
+                priority = "critical" if util_pct >= 100 else "high"
+                lk = f"utilization-{threshold_key}-{cid}"
+                if not _case_exists("over_utilization", vendor, lk):
+                    case = create_case(
+                        case_type="over_utilization",
+                        title=f"{'Contract exceeded' if util_pct >= 100 else 'Near ceiling'}: {cnum} ({vendor})",
+                        description=f"Contract {cnum} utilization at {util_pct:.0f}% "
+                            f"({sym}{total_invoiced:,.0f} of {sym}{cval:,.0f}). "
+                            f"{'Next invoice from this vendor exceeds contract value — hold for amendment or approve with override.' if util_pct >= 100 else 'Next few invoices will breach ceiling — flag for amendment before processing.'}",
+                        priority=priority,
+                        vendor=vendor,
+                        amount_at_risk=round(max(0, total_invoiced - cval), 2) if util_pct >= 100 else 0,
+                        currency=currency,
+                        created_by="lifecycle_scheduler",
+                    )
+                    case["lifecycleKey"] = lk
+                    case["contractId"] = cid
+                    results["cases_created"].append(case)
+                    existing_case_keys.add(("over_utilization", vendor, lk))
+
+        # ────────────────────────────────────────────────
+        # INTELLIGENCE ALERTS (for CFO/Procurement report, not AP cases)
+        # These surface data to the right audience without pretending
+        # to be investigation tickets AP analysts will work.
+        # ────────────────────────────────────────────────
+
+        # Alert: Auto-Renewal Deadline → Procurement
+        auto_renewal = ct.get("auto_renewal") or contract.get("autoRenewal")
+        notice_days = _n(ct.get("renewal_notice_days") or contract.get("renewalNoticeDays"))
+        if auto_renewal and notice_days and expiry_str:
+            try:
+                exp_dt = datetime.fromisoformat(str(expiry_str)[:10])
+                opt_out_dt = exp_dt - timedelta(days=int(notice_days))
+                days_to_optout = (opt_out_dt - now).days
+                if 0 < days_to_optout <= 120:
+                    ak = f"renewal-{cid}"
+                    if ak not in existing_alert_keys:
+                        urgency = "critical" if days_to_optout <= 30 else "high" if days_to_optout <= 60 else "medium"
+                        results["alerts"].append({
+                            "key": ak, "category": "renewal_deadline",
+                            "audience": "procurement",
+                            "urgency": urgency,
+                            "contractId": cid, "contractNumber": cnum,
+                            "vendor": vendor, "currency": currency,
+                            "headline": f"Auto-renewal opt-out in {days_to_optout} days",
+                            "detail": f"Contract {cnum} ({vendor}) auto-renews {exp_dt.strftime('%Y-%m-%d')}. "
+                                f"Written notice required by {opt_out_dt.strftime('%Y-%m-%d')}.",
+                            "amount": cval,
+                            "days_remaining": days_to_optout,
+                            "deadline": opt_out_dt.strftime("%Y-%m-%d"),
+                            "detectedAt": now.isoformat(),
+                        })
+                        existing_alert_keys.add(ak)
+            except (ValueError, TypeError):
+                pass
+
+        # Alert: Contract Expiry → Procurement
+        if expiry_str:
+            try:
+                exp_dt = datetime.fromisoformat(str(expiry_str)[:10])
+                days_left = (exp_dt - now).days
+                if 0 < days_left <= 90:
+                    ak = f"expiry-{cid}"
+                    if ak not in existing_alert_keys:
+                        urgency = "critical" if days_left <= 30 else "high" if days_left <= 60 else "medium"
+                        results["alerts"].append({
+                            "key": ak, "category": "contract_expiry",
+                            "audience": "procurement",
+                            "urgency": urgency,
+                            "contractId": cid, "contractNumber": cnum,
+                            "vendor": vendor, "currency": currency,
+                            "headline": f"Contract expires in {days_left} days",
+                            "detail": f"Contract {cnum} ({vendor}) expires {exp_dt.strftime('%Y-%m-%d')}. "
+                                f"Value: {sym}{cval:,.0f}." if cval else
+                                f"Contract {cnum} ({vendor}) expires in {days_left} days.",
+                            "amount": cval,
+                            "days_remaining": days_left,
+                            "deadline": exp_dt.strftime("%Y-%m-%d"),
+                            "detectedAt": now.isoformat(),
+                        })
+                        existing_alert_keys.add(ak)
+            except (ValueError, TypeError):
+                pass
+
+        # Alert: Spend Commitment Gap → Finance/Procurement
+        min_volume = _n(ct.get("minimum_volume") or ct.get("min_commitment"))
+        if min_volume and min_volume > 0 and cval > 0:
+            vn = contract.get("vendor", "")
+            total_invoiced = sum(
+                _n(i.get("subtotal") or i.get("amount"))
+                for i in db.get("invoices", [])
+                if vendor_similarity(i.get("vendor", ""), vn) >= 0.7
+            )
+            start_str = ct.get("effective_date") or contract.get("effectiveDate") or contract.get("issueDate")
+            if start_str and expiry_str:
+                try:
+                    start_dt = datetime.fromisoformat(str(start_str)[:10])
+                    exp_dt = datetime.fromisoformat(str(expiry_str)[:10])
+                    total_days = max((exp_dt - start_dt).days, 1)
+                    elapsed_days = max((now - start_dt).days, 0)
+                    elapsed_pct = elapsed_days / total_days
+                    expected_spend = min_volume * elapsed_pct
+                    if elapsed_pct > 0.5 and total_invoiced < expected_spend * 0.7:
+                        ak = f"commitment-{cid}"
+                        if ak not in existing_alert_keys:
+                            shortfall = expected_spend - total_invoiced
+                            results["alerts"].append({
+                                "key": ak, "category": "commitment_shortfall",
+                                "audience": "finance",
+                                "urgency": "high" if elapsed_pct > 0.75 else "medium",
+                                "contractId": cid, "contractNumber": cnum,
+                                "vendor": vendor, "currency": currency,
+                                "headline": f"Volume commitment gap: {sym}{shortfall:,.0f} behind",
+                                "detail": f"Contract {cnum} ({vendor}) minimum: {sym}{min_volume:,.0f}. "
+                                    f"Spent {sym}{total_invoiced:,.0f} ({total_invoiced/min_volume*100:.0f}%) "
+                                    f"with {elapsed_pct*100:.0f}% of term elapsed.",
+                                "amount": round(shortfall, 2),
+                                "detectedAt": now.isoformat(),
+                            })
+                            existing_alert_keys.add(ak)
+                except (ValueError, TypeError):
+                    pass
+
+        # Alert: SLA Breach → Procurement/Vendor Management
+        sla_pct = _n(ct.get("sla_on_time_pct"))
+        if sla_pct and sla_pct > 0:
+            vn = contract.get("vendor", "")
+            grns = [g for g in db.get("goods_receipts", [])
+                    if vendor_similarity(g.get("vendor", ""), vn) >= 0.7]
+            if len(grns) >= 3:
+                on_time = sum(1 for g in grns if not g.get("receivedLate", False))
+                actual_pct = (on_time / len(grns)) * 100
+                if actual_pct < sla_pct:
+                    ak = f"sla-{cid}"
+                    if ak not in existing_alert_keys:
+                        results["alerts"].append({
+                            "key": ak, "category": "sla_breach",
+                            "audience": "procurement",
+                            "urgency": "high" if (sla_pct - actual_pct) > 15 else "medium",
+                            "contractId": cid, "contractNumber": cnum,
+                            "vendor": vendor, "currency": currency,
+                            "headline": f"SLA breach: {actual_pct:.0f}% vs {sla_pct:.0f}% required",
+                            "detail": f"Contract {cnum} ({vendor}) SLA requires {sla_pct:.0f}% on-time. "
+                                f"Actual: {actual_pct:.0f}% ({on_time}/{len(grns)} on time).",
+                            "detectedAt": now.isoformat(),
+                        })
+                        existing_alert_keys.add(ak)
+
+        # Alert: Penalty Recovery → Legal/Procurement
+        penalty_str = ct.get("penalty_clauses") or contract.get("penaltyClauses") or ""
+        if penalty_str:
+            vn = contract.get("vendor", "")
+            late_grns = [g for g in db.get("goods_receipts", [])
+                        if vendor_similarity(g.get("vendor", ""), vn) >= 0.7
+                        and g.get("receivedLate", False)]
+            short_anomalies = [a for a in db.get("anomalies", [])
+                              if a.get("type") in ("SHORT_SHIPMENT", "QUANTITY_RECEIVED_MISMATCH")
+                              and a.get("status") == "open"
+                              and vendor_similarity(a.get("vendor", ""), vn) >= 0.6]
+            if late_grns or short_anomalies:
+                ak = f"penalty-{cid}"
+                if ak not in existing_alert_keys:
+                    issues = []
+                    if late_grns: issues.append(f"{len(late_grns)} late deliveries")
+                    if short_anomalies: issues.append(f"{len(short_anomalies)} short shipments")
+                    results["alerts"].append({
+                        "key": ak, "category": "penalty_recovery",
+                        "audience": "legal",
+                        "urgency": "medium",
+                        "contractId": cid, "contractNumber": cnum,
+                        "vendor": vendor, "currency": currency,
+                        "headline": f"Penalty recovery: {', '.join(issues)}",
+                        "detail": f"Contract {cnum} ({vendor}) has penalty clauses. "
+                            f"Detected: {', '.join(issues)}. Review for recoverable penalties.",
+                        "detectedAt": now.isoformat(),
+                    })
+                    existing_alert_keys.add(ak)
+
+    # Persist AP cases
+    if results["cases_created"]:
+        db.setdefault("cases", []).extend(results["cases_created"])
+
+    # Persist intelligence alerts (append new, keep existing)
+    if results["alerts"]:
+        existing = db.get("lifecycle_alerts", [])
+        existing.extend(results["alerts"])
+        db["lifecycle_alerts"] = existing
+
+    results["summary"] = {
+        "contracts_checked": results["checks_run"],
+        "cases_created": len(results["cases_created"]),
+        "alerts_generated": len(results["alerts"]),
+    }
+
+    return results
+
+
+def generate_contract_intelligence_report(db: dict) -> dict:
+    """Monthly Contract Intelligence Report for CFO/Procurement.
+
+    Packages lifecycle data for the right audience:
+    - Expiring contracts with renewal recommendations
+    - SLA performance across vendor portfolio
+    - Spend commitment tracking vs minimums
+    - Early payment discount capture rate
+    - Penalty recovery opportunities
+    - Portfolio risk summary from clause analysis
+
+    This is NOT an AP report. It's executive intelligence that happens
+    to be computed from AP data — contract terms, invoice volumes,
+    delivery records — because AP is where that data lives.
+    """
+    contracts = db.get("contracts", [])
+    invoices = db.get("invoices", [])
+    anomalies = db.get("anomalies", [])
+    grns = db.get("goods_receipts", [])
+    now = datetime.now()
+    sym_default = "$"
+
+    report = {
+        "generated_at": now.isoformat(),
+        "period": now.strftime("%B %Y"),
+        "sections": {},
+    }
+
+    # ── 1. Expiring Contracts ──
+    expiring = get_expiring_contracts(db, 90)
+    report["sections"]["expiring_contracts"] = {
+        "title": "Contracts Expiring Within 90 Days",
+        "audience": "Procurement",
+        "count": len(expiring),
+        "total_value": sum(_n(e.get("amount")) for e in expiring),
+        "items": expiring[:10],
+        "action": "Begin renewal negotiation or source alternatives",
+    }
+
+    # ── 2. Early Payment Discount Capture ──
+    epd_anomalies = [a for a in anomalies if a.get("type") == "EARLY_PAYMENT_DISCOUNT"]
+    epd_available = sum(_n(a.get("amount_at_risk")) for a in epd_anomalies)
+    # Estimate captured: invoices paid within discount window
+    epd_captured = 0
+    for a in epd_anomalies:
+        inv = next((i for i in invoices if i.get("id") == a.get("invoiceId")), None)
+        if inv and inv.get("status") in ("paid", "approved"):
+            epd_captured += _n(a.get("amount_at_risk"))
+    capture_rate = (epd_captured / epd_available * 100) if epd_available > 0 else 0
+
+    report["sections"]["early_payment_discounts"] = {
+        "title": "Early Payment Discount Performance",
+        "audience": "Finance / AP",
+        "available": round(epd_available, 2),
+        "captured": round(epd_captured, 2),
+        "missed": round(epd_available - epd_captured, 2),
+        "capture_rate_pct": round(capture_rate, 1),
+        "action": f"{'Improve discount capture — ' + str(round(epd_available - epd_captured, 2)) + ' in available discounts not yet captured' if capture_rate < 80 else 'Healthy capture rate'}",
+    }
+
+    # ── 3. Utilization Summary ──
+    utilization_items = []
+    for c in contracts:
+        cval = _n(c.get("amount"))
+        if cval <= 0:
+            continue
+        vn = c.get("vendor", "")
+        ti = sum(_n(i.get("subtotal") or i.get("amount")) for i in invoices
+                 if vendor_similarity(i.get("vendor", ""), vn) >= 0.7)
+        util_pct = ti / cval * 100
+        if util_pct >= 75:  # Only report notable utilization
+            ccy = c.get("currency", "USD")
+            utilization_items.append({
+                "contract": c.get("contractNumber") or c.get("id"),
+                "vendor": vn,
+                "value": cval,
+                "invoiced": round(ti, 2),
+                "utilization_pct": round(util_pct, 1),
+                "status": "exceeded" if util_pct >= 100 else "critical" if util_pct >= 90 else "warning",
+                "currency": ccy,
+            })
+    utilization_items.sort(key=lambda x: x["utilization_pct"], reverse=True)
+
+    report["sections"]["utilization"] = {
+        "title": "Contract Utilization",
+        "audience": "Finance / Procurement",
+        "exceeded_count": sum(1 for u in utilization_items if u["status"] == "exceeded"),
+        "critical_count": sum(1 for u in utilization_items if u["status"] == "critical"),
+        "items": utilization_items[:10],
+        "action": "Amend exceeded contracts; plan renewals for critical utilization",
+    }
+
+    # ── 4. Portfolio Risk Summary ──
+    health_data = []
+    for c in contracts:
+        h = compute_contract_health(c, db)
+        health_data.append({
+            "contract": c.get("contractNumber") or c.get("id"),
+            "vendor": c.get("vendor"),
+            "health_score": h["health_score"],
+            "health_level": h["health_level"],
+            "high_risk_clauses": h["high_risk_clauses"],
+        })
+
+    total_contracts = len(contracts)
+    critical_count = sum(1 for h in health_data if h["health_level"] == "critical")
+    warning_count = sum(1 for h in health_data if h["health_level"] == "warning")
+    high_risk_clause_total = sum(h["high_risk_clauses"] for h in health_data)
+
+    report["sections"]["portfolio_risk"] = {
+        "title": "Contract Portfolio Risk",
+        "audience": "CFO / Legal",
+        "total_contracts": total_contracts,
+        "healthy": total_contracts - critical_count - warning_count,
+        "warning": warning_count,
+        "critical": critical_count,
+        "high_risk_clauses_total": high_risk_clause_total,
+        "worst_contracts": sorted(health_data, key=lambda x: x["health_score"])[:5],
+        "action": f"{critical_count} contracts need immediate review; {high_risk_clause_total} high-risk clauses across portfolio" if critical_count > 0 else "Portfolio health acceptable",
+    }
+
+    # ── 5. Lifecycle Alerts Summary ──
+    alerts = db.get("lifecycle_alerts", [])
+    active_alerts = [a for a in alerts if not a.get("dismissed")]
+    by_category = {}
+    for a in active_alerts:
+        cat = a.get("category", "unknown")
+        by_category.setdefault(cat, []).append(a)
+
+    report["sections"]["lifecycle_alerts"] = {
+        "title": "Active Contract Lifecycle Alerts",
+        "audience": "Procurement / Legal",
+        "total_active": len(active_alerts),
+        "by_category": {k: len(v) for k, v in by_category.items()},
+        "critical_alerts": [a for a in active_alerts if a.get("urgency") == "critical"],
+        "items": active_alerts[:15],
+    }
+
+    # ── 6. Summary Line (the one-paragraph CFO briefing) ──
+    summary_parts = []
+    if expiring:
+        summary_parts.append(f"{len(expiring)} contract{'s' if len(expiring) != 1 else ''} expiring within 90 days")
+    exceeded = [u for u in utilization_items if u["status"] == "exceeded"]
+    if exceeded:
+        summary_parts.append(f"{len(exceeded)} contract{'s' if len(exceeded) != 1 else ''} exceeded ceiling")
+    if epd_available > 0:
+        summary_parts.append(f"EPD capture rate {capture_rate:.0f}% ({sym_default}{epd_captured:,.0f} of {sym_default}{epd_available:,.0f})")
+    critical_alerts = [a for a in active_alerts if a.get("urgency") == "critical"]
+    if critical_alerts:
+        summary_parts.append(f"{len(critical_alerts)} critical alert{'s' if len(critical_alerts) != 1 else ''} requiring attention")
+    if high_risk_clause_total:
+        summary_parts.append(f"{high_risk_clause_total} high-risk clauses across {total_contracts} contracts")
+
+    report["summary_line"] = ". ".join(summary_parts) + "." if summary_parts else "All contracts healthy, no action required."
+
+    return report

@@ -17,9 +17,41 @@ import uuid
 from datetime import datetime
 
 from backend.policy import get_policy, DEFAULT_POLICY
-from backend.vendor import compute_vendor_risk_score, currency_symbol
+from backend.vendor import compute_vendor_risk_score, currency_symbol, vendor_similarity
 from backend.auth import get_authority_limit, get_required_approver
 from backend.config import AUTHORITY_MATRIX, DEFAULT_ROLE, TRIAGE_ENABLED
+
+
+def _get_contract_risk_factor(vendor: str, db: dict) -> dict:
+    """Invisible contract health factor for triage scoring.
+    Returns { risk_adjustment: 0-15, reason: str | None, health_score: int | None }
+    Poor contract terms (missing indemnification, no liability cap, etc.)
+    correlate with vendors needing extra scrutiny — tighten thresholds."""
+    if not vendor:
+        return {"risk_adjustment": 0, "reason": None, "health_score": None}
+    try:
+        from backend.contracts import compute_contract_health
+        contracts = db.get("contracts", [])
+        best, best_score = None, 0
+        for c in contracts:
+            sc = vendor_similarity(vendor, c.get("vendor", ""))
+            if sc > best_score and sc >= 0.6:
+                best, best_score = c, sc
+        if not best:
+            return {"risk_adjustment": 0, "reason": None, "health_score": None}
+        health = compute_contract_health(best, db)
+        hs = health.get("health_score", 100)
+        high_clauses = health.get("high_risk_clauses", 0)
+        # Graduated adjustment: poor contract → tighter scrutiny
+        if hs < 40 or high_clauses >= 3:
+            return {"risk_adjustment": 12, "reason": f"Weak contract (health {hs}, {high_clauses} high-risk clauses)", "health_score": hs}
+        elif hs < 60 or high_clauses >= 2:
+            return {"risk_adjustment": 7, "reason": f"Contract concerns (health {hs})", "health_score": hs}
+        elif hs < 70:
+            return {"risk_adjustment": 3, "reason": f"Contract health below threshold ({hs})", "health_score": hs}
+        return {"risk_adjustment": 0, "reason": None, "health_score": hs}
+    except Exception:
+        return {"risk_adjustment": 0, "reason": None, "health_score": None}
 
 
 def triage_invoice(invoice: dict, anomalies: list, db: dict,
@@ -45,6 +77,11 @@ def triage_invoice(invoice: dict, anomalies: list, db: dict,
     vendor_risk = compute_vendor_risk_score(vendor, db)
     risk_score = vendor_risk["score"]
     risk_level = vendor_risk["level"]
+
+    # Contract health factor — invisible triage input
+    contract_factor = _get_contract_risk_factor(vendor, db)
+    # Boost effective vendor risk if contract poorly negotiated
+    effective_risk = min(100, risk_score + contract_factor["risk_adjustment"])
 
     # Filter anomalies for THIS invoice
     has_invoice_ids = any(a.get("invoiceId") for a in anomalies)
@@ -98,10 +135,10 @@ def triage_invoice(invoice: dict, anomalies: list, db: dict,
         block = True
         reasons.append(f"BLOCK: Potential duplicate invoice detected (confidence: {dup_anomalies[0].get('description', '').split('Confidence: ')[-1] if 'Confidence:' in (dup_anomalies[0].get('description', '')) else 'high'})")
 
-    # B4: High-risk vendor WITH anomalies
-    if risk_score >= TRIAGE_BLOCK_MIN_RISK_SCORE and inv_anomalies:
+    # B4: High-risk vendor WITH anomalies (includes contract health adjustment)
+    if effective_risk >= TRIAGE_BLOCK_MIN_RISK_SCORE and inv_anomalies:
         block = True
-        reasons.append(f"BLOCK: High-risk vendor (score: {risk_score:.0f}) with {len(inv_anomalies)} open anomal{'y' if len(inv_anomalies)==1 else 'ies'}")
+        reasons.append(f"BLOCK: High-risk vendor (score: {effective_risk:.0f}) with {len(inv_anomalies)} open anomal{'y' if len(inv_anomalies)==1 else 'ies'}")
 
     # B5: Very low extraction confidence
     if confidence < 60:
@@ -135,11 +172,12 @@ def triage_invoice(invoice: dict, anomalies: list, db: dict,
         else:
             approve_fails.append(f"Confidence below threshold ({confidence:.0f}% < {TRIAGE_AUTO_APPROVE_CONFIDENCE:.0f}%)")
 
-        # A3: Low vendor risk
-        if risk_score <= TRIAGE_AUTO_APPROVE_MAX_RISK:
-            approve_conditions.append(f"Trusted vendor (risk: {risk_score:.0f})")
+        # A3: Low vendor risk (includes contract health adjustment)
+        if effective_risk <= TRIAGE_AUTO_APPROVE_MAX_RISK:
+            approve_conditions.append(f"Trusted vendor (risk: {effective_risk:.0f})")
         else:
-            approve_fails.append(f"Vendor risk above threshold ({risk_score:.0f} > {TRIAGE_AUTO_APPROVE_MAX_RISK:.0f})")
+            ctr_note = f" — includes contract risk +{contract_factor['risk_adjustment']}" if contract_factor["risk_adjustment"] > 0 else ""
+            approve_fails.append(f"Vendor risk above threshold ({effective_risk:.0f} > {TRIAGE_AUTO_APPROVE_MAX_RISK:.0f}{ctr_note})")
 
         # A4: PO matched
         if invoice.get("poReference"):
@@ -202,6 +240,11 @@ def triage_invoice(invoice: dict, anomalies: list, db: dict,
             "score": vendor_risk["score"],
             "level": vendor_risk["level"],
             "trend": vendor_risk["trend"],
+        },
+        "contractRisk": {
+            "healthScore": contract_factor["health_score"],
+            "riskAdjustment": contract_factor["risk_adjustment"],
+            "effectiveVendorRisk": round(effective_risk),
         },
         "anomalySummary": {
             "total": len(inv_anomalies),

@@ -115,7 +115,8 @@ from backend.contracts import (
     compute_contract_health, get_expiring_contracts,
     compute_extended_vendor_risk, get_vendor_kyc_status,
     compute_delivery_performance, detect_delivery_anomalies,
-    get_intelligence_summary,
+    get_intelligence_summary, run_lifecycle_checks,
+    generate_contract_intelligence_report,
 )
 
 # ERP Integration: API keys, batch import, idempotent upsert, webhooks
@@ -1167,6 +1168,56 @@ async def get_intelligence_summary_endpoint():
     db = get_db()
     return get_intelligence_summary(db)
 
+
+@app.post("/api/contracts/lifecycle-check")
+async def run_lifecycle_check_endpoint(request: Request):
+    """Run contract lifecycle scheduler.
+    - Creates AP cases ONLY for over-utilization (the one event AP can act on)
+    - Generates intelligence alerts for CFO/Procurement (expiry, renewal, SLA, penalties)
+    Idempotent: won't create duplicates."""
+    user = await _user_from_request(request)
+    if not user:
+        raise HTTPException(401, "Unauthorized")
+    db = get_db()
+    results = run_lifecycle_checks(db)
+    if results["cases_created"] or results["alerts"]:
+        for case in results["cases_created"]:
+            db["activity_log"].append({
+                "id": str(uuid.uuid4())[:8],
+                "action": "lifecycle_case_created",
+                "documentId": case.get("contractId", ""),
+                "vendor": case.get("vendor", ""),
+                "caseId": case["id"],
+                "caseType": case.get("type", ""),
+                "priority": case.get("priority", ""),
+                "timestamp": datetime.now().isoformat(),
+                "performedBy": user.get("email", "system"),
+            })
+        save_db(db)
+    return {
+        "status": "completed",
+        "summary": results["summary"],
+        "cases_created": [{
+            "id": c["id"], "type": c.get("type"), "title": c.get("title"),
+            "priority": c.get("priority"), "vendor": c.get("vendor"),
+        } for c in results["cases_created"]],
+        "alerts_generated": [{
+            "category": a["category"], "headline": a["headline"],
+            "urgency": a["urgency"], "vendor": a["vendor"], "audience": a["audience"],
+        } for a in results["alerts"]],
+    }
+
+
+@app.get("/api/contracts/intelligence-report")
+async def get_intelligence_report(request: Request):
+    """Monthly Contract Intelligence Report for CFO/Procurement.
+    Packages lifecycle data for executive audience — not AP investigation tickets."""
+    user = await _user_from_request(request)
+    if not user:
+        raise HTTPException(401, "Unauthorized")
+    db = get_db()
+    return generate_contract_intelligence_report(db)
+
 @app.get("/api/matches")
 async def get_matches():
     db = get_db()
@@ -2027,7 +2078,25 @@ async def get_dashboard():
         "total_invoices": _total_invoices,
         # ── Phase 2-4: Intelligence metrics ──
         "intelligence": get_intelligence_summary(db),
+        # ── Lifecycle scheduler: auto-create cases for contract events ──
+        "lifecycle_last_run": _run_lifecycle_on_dashboard(db),
     }
+
+def _run_lifecycle_on_dashboard(db):
+    """Run lifecycle checks silently on dashboard load. Lightweight dedup prevents duplicates."""
+    try:
+        meta = db.get("_lifecycle_meta", {})
+        last_run = meta.get("last_run", "")
+        today = datetime.now().strftime("%Y-%m-%d")
+        if last_run == today:
+            return {"ran": False, "reason": "already_run_today"}
+        results = run_lifecycle_checks(db)
+        db["_lifecycle_meta"] = {"last_run": today, "last_results": results.get("summary", {})}
+        if results["cases_created"]:
+            save_db(db)
+        return {"ran": True, "cases_created": len(results.get("cases_created", []))}
+    except Exception as e:
+        return {"ran": False, "error": str(e)}
 
 @app.get("/api/correction-patterns")
 async def get_correction_patterns_endpoint():

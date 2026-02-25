@@ -61,6 +61,8 @@ CASE_TYPES = [
     "contract_violation",        # Auto-created for contract-related anomalies
     "authority_escalation",      # Auto-created when invoice exceeds authority
     "general_investigation",     # Manual: ad-hoc investigation
+    # ── Lifecycle scheduler ──
+    "over_utilization",          # AP case: spend approaching/exceeding contract ceiling
 ]
 
 

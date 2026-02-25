@@ -4,7 +4,7 @@ import { api, post, postForm } from './lib/api';
 import { $, $f, num, pct, date, dateTime, cn, sevColor, laneLabel, laneColor, docLabel, docColor, short } from './lib/fmt';
 import {
   LayoutDashboard, FileText, Zap, ClipboardList, AlertTriangle, Link2, Building2, FileCheck,
-  Settings, Brain, Upload, Database, Trash2, LogOut, Shield, ChevronRight, Search,
+  Settings, Brain, Upload, Database, Trash2, LogOut, Shield, ChevronRight, ChevronDown, Search,
   CheckCircle2, XCircle, Clock, TrendingUp, Eye, Edit3, X, UploadCloud, FileUp,
   ArrowUpRight, ArrowDownRight, RotateCcw, Check, Filter, RefreshCw, AlertCircle,
   CircleDot, ExternalLink
@@ -1191,7 +1191,35 @@ function Contracts() {
     const hl = analysis?.health || {};
     const clauses = an.clauses || [];
     const obligations = an.obligations || [];
+    const pricingRules = an.pricing_rules || [];
     const utilization = c.amount > 0 ? (totalInvoiced / c.amount * 100) : 0;
+    const [showClauses, setShowClauses] = useState(false);
+    const ct = c.contractTerms || {};
+
+    // Early payment discount detection
+    const epd = c.earlyPaymentDiscount || (c.paymentTerms && c.paymentTerms.includes('/') ? (() => {
+      const m = c.paymentTerms.match(/(\d+)\/(\d+)/);
+      return m ? { discount_pct: parseFloat(m[1]), days: parseInt(m[2]) } : null;
+    })() : null);
+
+    // Auto-renewal opt-out deadline
+    const optOutDate = c.autoRenewal && c.endDate && c.renewalNoticeDays ? (() => {
+      const end = new Date(c.endDate); end.setDate(end.getDate() - (c.renewalNoticeDays || 60)); return end;
+    })() : null;
+    const optOutDays = optOutDate ? Math.ceil((optOutDate - new Date()) / 86400000) : null;
+
+    // Pricing items from various sources
+    const pricingItems = Array.isArray(c.pricingTerms) ? c.pricingTerms
+      : (typeof c.pricingTerms === 'object' && c.pricingTerms ? Object.entries(c.pricingTerms).map(([k,v]) => ({ item: k, rate: v })) : []);
+
+    // Anomalies linked to this contract's invoices
+    const allAnomalies = s.anomalies || [];
+    const linkedInvIds = new Set(linkedInvoices.map(i => i.id));
+    const linkedAnomalies = allAnomalies.filter(a => linkedInvIds.has(a.invoiceId) && a.status === 'open');
+
+    // Active POs for this vendor
+    const allPOs = (s.docs || []).filter(x => x.type === 'purchase_order');
+    const linkedPOs = allPOs.filter(po => po.vendor && c.vendor && po.vendor.toLowerCase().includes(c.vendor.toLowerCase().split(' ')[0]));
 
     return (
       <div className="page-enter">
@@ -1200,46 +1228,188 @@ function Contracts() {
           <button onClick={() => { d({ type: 'SEL', doc: c }); }} className="btn-o text-xs"><Eye className="w-3 h-3" /> View Document</button>
         </PageHeader>
 
-        {/* Health + Summary Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-          <div className="card p-4 flex items-center gap-3">
-            {hl.health_score != null ? <HealthRing score={hl.health_score} /> : <div className="w-12 h-12 bg-slate-100 rounded-full animate-pulse" />}
-            <div><div className="text-[10px] font-bold text-slate-500 uppercase">Health</div><div className="text-sm font-bold">{hl.health_level || '...'}</div></div>
+        {/* ═══ TOP: AP Operations Summary Bar ═══ */}
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-5">
+          <div className="card p-3 flex items-center gap-2.5">
+            {hl.health_score != null ? <HealthRing score={hl.health_score} size={40} /> : <div className="w-10 h-10 bg-slate-100 rounded-full animate-pulse" />}
+            <div><div className="text-[9px] font-bold text-slate-400 uppercase">Health</div><div className="text-xs font-bold">{hl.health_level || '...'}</div></div>
           </div>
-          <div className="card p-4"><div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Status</div><Badge c={status.color}>{status.label}</Badge></div>
-          <div className="card p-4"><div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Contract Value</div>
+          <div className="card p-3"><div className="text-[9px] font-bold text-slate-400 uppercase">Status</div><Badge c={status.color}>{status.label}</Badge></div>
+          <div className="card p-3"><div className="text-[9px] font-bold text-slate-400 uppercase">Contract Value</div>
             {c.amount > 0
-              ? <div className="text-lg font-bold text-slate-900">{$(c.amount, c.currency)}</div>
-              : <div className="text-sm font-bold text-blue-600">{c.isRateContract || (c.pricingTerms && (Array.isArray(c.pricingTerms) ? c.pricingTerms.length > 0 : Object.keys(c.pricingTerms).length > 0)) ? 'Rate Contract' : '—'}</div>
-            }
+              ? <div className="text-base font-bold text-slate-900">{$(c.amount, c.currency)}</div>
+              : <div className="text-xs font-bold text-blue-600">{c.isRateContract || pricingItems.length > 0 ? 'Rate Contract' : '—'}</div>}
           </div>
-          <div className="card p-4"><div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Invoiced</div><div className="text-lg font-bold text-emerald-600">{$(totalInvoiced, c.currency)}</div></div>
-          <div className="card p-4"><div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Utilization</div>
+          <div className="card p-3"><div className="text-[9px] font-bold text-slate-400 uppercase">Invoiced</div><div className="text-base font-bold text-emerald-600">{$(totalInvoiced, c.currency)}</div></div>
+          <div className="card p-3"><div className="text-[9px] font-bold text-slate-400 uppercase">Utilization</div>
             {c.amount > 0
-              ? <div className="text-lg font-bold" style={{ color: utilization > 100 ? '#dc2626' : utilization > 90 ? '#d97706' : '#059669' }}>{pct(utilization)}</div>
-              : <div className="text-sm font-bold text-slate-400">N/A</div>
-            }
+              ? <div className="text-base font-bold" style={{ color: utilization > 100 ? '#dc2626' : utilization > 90 ? '#d97706' : '#059669' }}>{pct(utilization)}</div>
+              : <div className="text-xs font-bold text-slate-400">N/A</div>}
+          </div>
+          <div className="card p-3"><div className="text-[9px] font-bold text-slate-400 uppercase">Open Anomalies</div>
+            <div className={cn("text-base font-bold", linkedAnomalies.length > 0 ? "text-red-600" : "text-emerald-600")}>{linkedAnomalies.length}</div>
           </div>
         </div>
 
-        {/* AI Clause Risk Analysis */}
-        {clauses.length > 0 && (
-          <div className="mb-6">
-            <div className="flex items-center gap-2 mb-3">
-              <Brain className="w-4 h-4 text-indigo-500" />
-              <h3 className="text-[11px] font-bold text-slate-900 uppercase tracking-wider">AI Clause Risk Analysis</h3>
-              {an.risk_score != null && <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full', an.risk_level === 'high' ? 'bg-red-100 text-red-700' : an.risk_level === 'medium' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700')}>{an.risk_level === 'high' ? 'High Risk' : an.risk_level === 'medium' ? 'Medium Risk' : 'Low Risk'}</span>}
+        {/* ═══ UTILIZATION BAR ═══ */}
+        {c.amount > 0 && (
+          <div className="card p-4 mb-5">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Spend vs Contract Ceiling</div>
+              <div className="text-xs text-slate-500">{$(totalInvoiced, c.currency)} of {$(c.amount, c.currency)}</div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {clauses.map((cl, i) => (
-                <div key={i} className={cn('card p-4 border-l-4', cl.risk === 'high' ? 'border-red-500' : cl.risk === 'medium' ? 'border-amber-400' : 'border-emerald-400')}>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">{(cl.type || '').replace(/_/g, ' ')}</span>
-                    {riskBadge(cl.risk)}
+            <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden relative">
+              <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(utilization, 100)}%`, background: utilization > 100 ? '#dc2626' : utilization > 90 ? '#d97706' : utilization > 80 ? '#eab308' : '#10b981' }} />
+            </div>
+            <div className="flex justify-between mt-1 text-[9px] text-slate-400">
+              <span>0%</span>
+              <span className="text-amber-500 font-semibold">80% warning</span>
+              <span>100%</span>
+            </div>
+          </div>
+        )}
+
+        {/* ═══ KEY ALERTS (time-sensitive) ═══ */}
+        {(epd || (optOutDays != null && optOutDays <= 120) || (hl.days_to_expiry != null && hl.days_to_expiry > 0 && hl.days_to_expiry <= 90)) && (
+          <div className="space-y-2 mb-5">
+            {epd && (
+              <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                <div className="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 text-xs font-bold">$</div>
+                <div><div className="text-sm font-semibold text-emerald-800">Early Payment Discount: {epd.discount_pct}% if paid within {epd.days} days</div>
+                <div className="text-xs text-emerald-600">Apply to all invoices from {c.vendor}</div></div>
+              </div>
+            )}
+            {optOutDays != null && optOutDays <= 120 && (
+              <div className={cn("flex items-center gap-3 p-3 rounded-xl border", optOutDays <= 30 ? "bg-red-50 border-red-200" : optOutDays <= 60 ? "bg-amber-50 border-amber-200" : "bg-blue-50 border-blue-200")}>
+                <div className={cn("w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold", optOutDays <= 30 ? "bg-red-100 text-red-600" : optOutDays <= 60 ? "bg-amber-100 text-amber-600" : "bg-blue-100 text-blue-600")}>⏰</div>
+                <div><div className={cn("text-sm font-semibold", optOutDays <= 30 ? "text-red-800" : optOutDays <= 60 ? "text-amber-800" : "text-blue-800")}>Auto-renewal opt-out: {optOutDate.toLocaleDateString()} ({optOutDays} days)</div>
+                <div className="text-xs text-slate-500">Written notice required to prevent automatic renewal</div></div>
+              </div>
+            )}
+            {hl.days_to_expiry != null && hl.days_to_expiry > 0 && hl.days_to_expiry <= 90 && (
+              <div className={cn("flex items-center gap-3 p-3 rounded-xl border", hl.days_to_expiry <= 30 ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200")}>
+                <div className={cn("w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold", hl.days_to_expiry <= 30 ? "bg-red-100 text-red-600" : "bg-amber-100 text-amber-600")}>📅</div>
+                <div><div className={cn("text-sm font-semibold", hl.days_to_expiry <= 30 ? "text-red-800" : "text-amber-800")}>Contract expires in {hl.days_to_expiry} days</div>
+                <div className="text-xs text-slate-500">Begin renewal negotiation or source alternative</div></div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ═══ THREE COLUMN: Pricing + Details + Invoices ═══ */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
+
+          {/* Column 1: Contracted Pricing Schedule */}
+          <div className="card p-4">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3">Contracted Pricing</div>
+            {pricingItems.length > 0 ? (
+              <div className="space-y-1.5">
+                {pricingItems.map((p, i) => (
+                  <div key={i} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg">
+                    <span className="text-xs text-slate-700 font-medium">{p.item || p.term || `Item ${i+1}`}</span>
+                    <span className="text-xs font-bold font-mono text-slate-900">{typeof p.rate === 'number' ? $(p.rate, c.currency) : (p.value || p.rate)}{p.unit ? ` / ${p.unit}` : ''}</span>
                   </div>
-                  <div className="text-sm text-slate-800 font-medium mb-2">{cl.summary}</div>
-                  <div className="text-xs text-slate-500 mb-1"><span className="font-semibold">Benchmark:</span> {cl.benchmark}</div>
-                  <div className="text-xs text-indigo-600 font-medium">→ {cl.recommendation}</div>
+                ))}
+              </div>
+            ) : c.lineItems?.length > 0 ? (
+              <div className="space-y-1.5">
+                {c.lineItems.map((li, i) => (
+                  <div key={i} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg">
+                    <span className="text-xs text-slate-700 font-medium truncate max-w-[120px]">{li.description || `Item ${i+1}`}</span>
+                    <span className="text-xs font-bold font-mono text-slate-900">{(li.unitPrice || li.unit_price) ? $(li.unitPrice || li.unit_price, c.currency) : ''}{li.quantity ? ` × ${li.quantity}` : ''}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-xs text-slate-400 py-4 text-center">No pricing schedule extracted</div>
+            )}
+            {c.paymentTerms && (
+              <div className="mt-3 pt-3 border-t border-slate-100">
+                <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Payment Terms</div>
+                <div className="text-sm font-semibold text-slate-800">{c.paymentTerms}</div>
+              </div>
+            )}
+            {linkedPOs.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-slate-100">
+                <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Active POs</div>
+                {linkedPOs.slice(0, 3).map(po => (
+                  <div key={po.id} className="flex justify-between text-xs py-0.5">
+                    <span className="font-medium text-slate-600">{po.poNumber || po.id}</span>
+                    <span className="font-mono">{$(po.amount, po.currency)}</span>
+                  </div>
+                ))}
+                {linkedPOs.length > 3 && <div className="text-[10px] text-slate-400">+{linkedPOs.length - 3} more</div>}
+              </div>
+            )}
+          </div>
+
+          {/* Column 2: Contract Details */}
+          <div className="card p-4">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3">Contract Details</div>
+            <div className="space-y-2">
+              <div className="flex justify-between"><span className="text-[10px] text-slate-400 uppercase">Counterparty</span><span className="text-xs font-semibold text-right max-w-[140px] truncate">{c.vendor || '—'}</span></div>
+              <div className="flex justify-between"><span className="text-[10px] text-slate-400 uppercase">Contract #</span><span className="text-xs font-semibold">{c.contractNumber || c.id}</span></div>
+              <div className="flex justify-between"><span className="text-[10px] text-slate-400 uppercase">Effective</span><span className="text-xs">{date(c.effectiveDate || c.issueDate)}</span></div>
+              <div className="flex justify-between"><span className="text-[10px] text-slate-400 uppercase">End Date</span><span className="text-xs">{date(c.endDate) || '—'}</span></div>
+              {c.termMonths && <div className="flex justify-between"><span className="text-[10px] text-slate-400 uppercase">Term</span><span className="text-xs">{c.termMonths} months</span></div>}
+              {c.autoRenewal != null && <div className="flex justify-between"><span className="text-[10px] text-slate-400 uppercase">Auto-Renewal</span><span className="text-xs">{c.autoRenewal ? `Yes (${c.renewalNoticeDays || '?'}d notice)` : 'No'}</span></div>}
+              {c.liabilityCap && <div className="flex justify-between"><span className="text-[10px] text-slate-400 uppercase">Liability Cap</span><span className="text-xs font-mono">{$(c.liabilityCap, c.currency)}</span></div>}
+              {c.governingLaw && <div className="flex justify-between"><span className="text-[10px] text-slate-400 uppercase">Governing Law</span><span className="text-xs">{c.governingLaw}</span></div>}
+              {c.slaSummary && <div className="mt-2 pt-2 border-t border-slate-100"><div className="text-[10px] text-slate-400 uppercase mb-0.5">SLA</div><div className="text-xs text-slate-700">{c.slaSummary}</div></div>}
+              {c.penaltyClauses && <div className="mt-2 pt-2 border-t border-slate-100"><div className="text-[10px] text-slate-400 uppercase mb-0.5">Penalties</div><div className="text-xs text-slate-700">{c.penaltyClauses}</div></div>}
+            </div>
+          </div>
+
+          {/* Column 3: Invoices Against This Contract */}
+          <div className="card p-4">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3">Invoices <Badge c="muted">{linkedInvoices.length}</Badge></div>
+            {linkedInvoices.length === 0 ? (
+              <div className="text-xs text-slate-400 py-6 text-center">No invoices found for this vendor</div>
+            ) : (
+              <div className="space-y-1.5 max-h-[280px] overflow-y-auto">
+                {linkedInvoices.map(inv => {
+                  const invAnoms = allAnomalies.filter(a => a.invoiceId === inv.id && a.status === 'open');
+                  return (
+                    <div key={inv.id} className={cn("flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors", invAnoms.length > 0 ? "bg-red-50 hover:bg-red-100 border border-red-100" : "bg-slate-50 hover:bg-slate-100")} onClick={() => d({ type: 'SEL', doc: inv })}>
+                      <div>
+                        <div className="text-[11px] font-semibold">{inv.invoiceNumber || inv.id}</div>
+                        <div className="text-[10px] text-slate-400">{date(inv.issueDate)}</div>
+                        {invAnoms.length > 0 && <div className="text-[9px] font-bold text-red-600 mt-0.5">{invAnoms.map(a => (a.type||'').replace(/_/g,' ')).join(', ')}</div>}
+                      </div>
+                      <div className="text-right">
+                        <div className="text-[11px] font-bold font-mono">{$(inv.amount, inv.currency)}</div>
+                        <Badge c={inv.triageLane === 'BLOCK' ? 'err' : inv.triageLane === 'AUTO_APPROVE' ? 'ok' : 'warn'}>{inv.triageLane || (inv.status || 'pending').replace(/_/g, ' ')}</Badge>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {linkedInvoices.length > 0 && (
+              <div className="mt-2 pt-2 border-t border-slate-100 flex justify-between text-xs">
+                <span className="text-slate-500">Total invoiced</span>
+                <span className="font-bold font-mono">{$(totalInvoiced, c.currency)}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ═══ OBLIGATIONS TRACKER ═══ */}
+        {obligations.length > 0 && (
+          <div className="card p-4 mb-5">
+            <div className="flex items-center gap-2 mb-3">
+              <Clock className="w-3.5 h-3.5 text-amber-500" />
+              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Obligations Tracker</h3>
+              <span className="badge badge-warn">{obligations.length}</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {obligations.map((ob, i) => (
+                <div key={i} className={cn('flex items-center justify-between p-2.5 rounded-lg border', ob.urgency === 'high' ? 'bg-red-50 border-red-200' : ob.urgency === 'medium' ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200')}>
+                  <div>
+                    <div className="text-xs font-medium text-slate-800">{ob.obligation}</div>
+                    <div className="text-[10px] text-slate-500">{ob.party === 'buyer' ? '📋 Your obligation' : '📦 Vendor obligation'} · {ob.frequency || ob.type?.replace(/_/g, ' ')}</div>
+                  </div>
+                  {ob.days_left != null && <div className={cn('text-sm font-bold ml-2', ob.days_left <= 14 ? 'text-red-600' : ob.days_left <= 45 ? 'text-amber-600' : 'text-slate-400')}>{ob.days_left}d</div>}
                 </div>
               ))}
             </div>
@@ -1247,105 +1417,224 @@ function Contracts() {
         )}
 
         {loadingAnalysis && (
-          <div className="card p-8 text-center mb-6">
-            <div className="w-8 h-8 rounded-full border-3 border-indigo-200 border-t-indigo-600 animate-spin mx-auto mb-3" />
-            <div className="text-sm text-slate-500">Analyzing contract clauses...</div>
+          <div className="card p-6 text-center mb-5">
+            <div className="w-6 h-6 rounded-full border-2 border-indigo-200 border-t-indigo-600 animate-spin mx-auto mb-2" />
+            <div className="text-xs text-slate-400">Analyzing contract clauses...</div>
           </div>
         )}
 
-        {/* Obligations Tracker */}
-        {obligations.length > 0 && (
-          <div className="card p-5 mb-6">
-            <div className="flex items-center gap-2 mb-3">
-              <Clock className="w-4 h-4 text-amber-500" />
-              <h3 className="text-[11px] font-bold text-slate-900 uppercase tracking-wider">Obligations Tracker</h3>
-              <span className="badge badge-warn">{obligations.length}</span>
-            </div>
-            <div className="space-y-2">
-              {obligations.map((ob, i) => (
-                <div key={i} className={cn('flex items-center justify-between p-3 rounded-xl border', ob.urgency === 'high' ? 'bg-red-50 border-red-200' : ob.urgency === 'medium' ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200')}>
-                  <div>
-                    <div className="text-sm font-medium text-slate-800">{ob.obligation}</div>
-                    <div className="text-xs text-slate-500">{ob.party === 'buyer' ? '📋 Your obligation' : '📦 Vendor obligation'} · {ob.frequency || ob.type?.replace(/_/g, ' ')}</div>
-                  </div>
-                  {ob.days_left != null && (
-                    <div className={cn('text-sm font-bold', ob.days_left <= 14 ? 'text-red-600' : ob.days_left <= 45 ? 'text-amber-600' : 'text-slate-500')}>
-                      {ob.days_left}d
+        {/* ═══ COLLAPSIBLE: Legal Risk Summary (for CFO/Auditor) ═══ */}
+        {clauses.length > 0 && (
+          <div className="card mb-5 overflow-hidden">
+            <button onClick={() => setShowClauses(!showClauses)} className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors text-left">
+              <div className="flex items-center gap-2">
+                <Brain className="w-3.5 h-3.5 text-indigo-400" />
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Legal Risk Summary</span>
+                {an.risk_score != null && <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded-full', an.risk_level === 'high' ? 'bg-red-100 text-red-700' : an.risk_level === 'medium' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700')}>{an.risk_level === 'high' ? 'High Risk' : an.risk_level === 'medium' ? 'Medium Risk' : 'Low Risk'}</span>}
+                <span className="text-[10px] text-slate-400">{clauses.length} clauses analyzed</span>
+              </div>
+              <ChevronDown className={cn("w-4 h-4 text-slate-400 transition-transform", showClauses && "rotate-180")} />
+            </button>
+            {showClauses && (
+              <div className="px-4 pb-4 border-t border-slate-100 pt-3">
+                <div className="text-[10px] text-slate-400 mb-3 italic">Clause analysis feeds vendor risk scoring and triage thresholds automatically</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                  {clauses.map((cl, i) => (
+                    <div key={i} className={cn('p-3 rounded-lg border-l-[3px]', cl.risk === 'high' ? 'border-red-500 bg-red-50/50' : cl.risk === 'medium' ? 'border-amber-400 bg-amber-50/50' : 'border-emerald-400 bg-emerald-50/30')}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] font-bold text-slate-600 uppercase">{(cl.type || '').replace(/_/g, ' ')}</span>
+                        {riskBadge(cl.risk)}
+                      </div>
+                      <div className="text-xs text-slate-700 font-medium">{cl.summary}</div>
+                      <div className="text-[10px] text-slate-400 mt-1">Benchmark: {cl.benchmark}</div>
                     </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Two column: Contract Details + Linked Invoices */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="card p-5 space-y-4">
-            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Contract Details</div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Counterparty</div><div className="text-sm font-semibold">{c.vendor || '—'}</div></div>
-              <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Contract #</div><div className="text-sm font-semibold">{c.contractNumber || c.invoiceNumber || c.id}</div></div>
-              <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Effective Date</div><div className="text-sm">{date(c.effectiveDate || c.issueDate)}</div></div>
-              <div><div className="text-[10px] font-semibold text-slate-500 uppercase">End Date</div><div className="text-sm">{date(c.endDate) || '—'}</div></div>
-              {c.termMonths && <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Term</div><div className="text-sm">{c.termMonths} months</div></div>}
-              <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Payment Terms</div><div className="text-sm">{c.paymentTerms || '—'}</div></div>
-              {c.governingLaw && <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Governing Law</div><div className="text-sm">{c.governingLaw}</div></div>}
-              {c.autoRenewal != null && <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Auto-Renewal</div><div className="text-sm">{c.autoRenewal ? `Yes${c.renewalNoticeDays ? ` (${c.renewalNoticeDays}d notice)` : ''}` : 'No'}</div></div>}
-            </div>
-            {(c.liabilityCapDescription || c.slaSummary || c.penaltyClauses) && (
-              <div>
-                <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-2 mb-2">Key Clauses</div>
-                <div className="space-y-2 text-sm">
-                  {(c.liabilityCap || c.liabilityCapDescription) && <div className="p-2 bg-slate-50 rounded-lg"><span className="font-semibold text-slate-600">Liability Cap:</span> {c.liabilityCapDescription || $f(c.liabilityCap, c.currency)}</div>}
-                  {c.slaSummary && <div className="p-2 bg-slate-50 rounded-lg"><span className="font-semibold text-slate-600">SLA:</span> {c.slaSummary}</div>}
-                  {c.penaltyClauses && <div className="p-2 bg-slate-50 rounded-lg"><span className="font-semibold text-slate-600">Penalties:</span> {c.penaltyClauses}</div>}
-                  {c.forceMajeureDays && <div className="p-2 bg-slate-50 rounded-lg"><span className="font-semibold text-slate-600">Force Majeure:</span> {c.forceMajeureDays} days threshold</div>}
+                  ))}
                 </div>
               </div>
             )}
           </div>
-
-          <div className="card p-5">
-            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Invoices Against This Contract <Badge c="muted">{linkedInvoices.length}</Badge></div>
-            {linkedInvoices.length === 0 ? (
-              <div className="text-sm text-slate-500 py-6 text-center">No invoices found for this vendor</div>
-            ) : (
-              <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                {linkedInvoices.map(inv => (
-                  <div key={inv.id} className="flex items-center justify-between p-2.5 bg-slate-50 rounded-lg hover:bg-slate-100 cursor-pointer transition-colors" onClick={() => d({ type: 'SEL', doc: inv })}>
-                    <div>
-                      <div className="text-xs font-semibold">{inv.invoiceNumber || inv.id}</div>
-                      <div className="text-[10px] text-slate-400">{date(inv.issueDate)}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-xs font-bold font-mono">{$(inv.amount, inv.currency)}</div>
-                      <Badge c={inv.status === 'paid' ? 'ok' : inv.status === 'approved' ? 'ok' : 'warn'}>{(inv.status || 'pending').replace(/_/g, ' ')}</Badge>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            {linkedInvoices.length > 0 && (
-              <div className="mt-3 pt-3 border-t border-slate-100 flex justify-between text-xs">
-                <span className="text-slate-500">Total invoiced</span>
-                <span className="font-bold font-mono">{$(totalInvoiced, c.currency)}</span>
-              </div>
-            )}
-          </div>
-        </div>
+        )}
       </div>
     );
   }
 
   // Contract List with Health Scores
   const getHealth = (cid) => healthData.find(h => h.id === cid);
+  const [lifecycleRunning, setLifecycleRunning] = useState(false);
+  const [lifecycleResult, setLifecycleResult] = useState(null);
+  const [intelReport, setIntelReport] = useState(null);
+  const [showReport, setShowReport] = useState(false);
+
+  const runLifecycle = async () => {
+    setLifecycleRunning(true);
+    try {
+      const r = await post('/api/contracts/lifecycle-check', {});
+      setLifecycleResult(r);
+      const dash = await api('/api/dashboard');
+      if (dash && !dash._err) d({ type: 'DASHBOARD', data: dash });
+    } catch (e) { console.error(e); }
+    setLifecycleRunning(false);
+    setTimeout(() => setLifecycleResult(null), 10000);
+  };
+
+  const loadReport = async () => {
+    const r = await api('/api/contracts/intelligence-report');
+    if (r && !r._err) { setIntelReport(r); setShowReport(true); }
+  };
+
+  // AP cases only — over-utilization (the one lifecycle event AP owns)
+  const allCases = s.casesData || [];
+  const utilizationCases = allCases.filter(c => c.type === 'over_utilization' && c.status !== 'closed' && c.status !== 'resolved');
 
   return (
     <div className="page-enter">
       <PageHeader title="Contracts" sub={`${contracts.length} vendor contracts`}>
+        <button onClick={runLifecycle} disabled={lifecycleRunning} className="btn-g text-xs" title="Check contracts and generate intelligence report">
+          {lifecycleRunning ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Shield className="w-3 h-3" />} Lifecycle Check
+        </button>
+        <button onClick={loadReport} className="btn-o text-xs" title="Contract Intelligence Report for CFO/Procurement">
+          <FileCheck className="w-3 h-3" /> Intel Report
+        </button>
         <button onClick={() => d({ type: 'TAB', tab: 'upload' })} className="btn-p"><Upload className="w-4 h-4" /> Upload Contract</button>
       </PageHeader>
+
+      {/* Lifecycle run result banner */}
+      {lifecycleResult && (
+        <div className={cn("p-3 rounded-xl mb-4 text-sm font-medium border",
+          (lifecycleResult.cases_created?.length > 0 || lifecycleResult.alerts_generated?.length > 0)
+            ? "bg-amber-50 text-amber-800 border-amber-200" : "bg-emerald-50 text-emerald-800 border-emerald-200")}>
+          <div>{lifecycleResult.cases_created?.length > 0
+            ? `${lifecycleResult.cases_created.length} AP case${lifecycleResult.cases_created.length > 1 ? 's' : ''} created (over-utilization)`
+            : 'No AP cases needed'}</div>
+          {lifecycleResult.alerts_generated?.length > 0 && (
+            <div className="text-xs mt-1 text-slate-600">
+              {lifecycleResult.alerts_generated.length} intelligence alert{lifecycleResult.alerts_generated.length > 1 ? 's' : ''} for CFO/Procurement:
+              {' '}{lifecycleResult.alerts_generated.map(a => a.headline).join(' · ')}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* AP Cases: Over-Utilization Only (the one AP owns) */}
+      {utilizationCases.length > 0 && (
+        <div className="card p-4 mb-4 border-l-4 border-red-400">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertCircle className="w-3.5 h-3.5 text-red-500" />
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Contract Ceiling Breaches</span>
+            <Badge c="err">{utilizationCases.length}</Badge>
+          </div>
+          <div className="text-[10px] text-slate-400 mb-2">Invoices approaching or exceeding contract value — AP action required</div>
+          <div className="space-y-1.5">
+            {utilizationCases.map(uc => (
+              <div key={uc.id} className="flex items-center justify-between p-2.5 bg-red-50 rounded-lg border border-red-100 cursor-pointer hover:bg-red-100"
+                onClick={() => d({ type: 'TAB', tab: 'cases' })}>
+                <div>
+                  <div className="text-xs font-semibold text-slate-800">{uc.title}</div>
+                  <div className="text-[10px] text-slate-500">{uc.vendor} · {uc.id}</div>
+                </div>
+                <Badge c={uc.priority === 'critical' ? 'err' : 'warn'}>{uc.priority}</Badge>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Intelligence Report Modal (for CFO/Procurement, not AP) */}
+      {showReport && intelReport && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in" onClick={() => setShowReport(false)}>
+          <div className="card w-full max-w-[700px] max-h-[85vh] overflow-y-auto p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <div className="text-lg font-bold text-slate-900">Contract Intelligence Report</div>
+                <div className="text-xs text-slate-500">{intelReport.period} · For CFO / Procurement</div>
+              </div>
+              <button onClick={() => setShowReport(false)} className="p-2 rounded-lg hover:bg-slate-100"><X className="w-4 h-4 text-slate-400" /></button>
+            </div>
+
+            {/* Summary Line */}
+            <div className="p-3 bg-indigo-50 rounded-xl text-sm text-indigo-800 font-medium mb-4 border border-indigo-100">
+              {intelReport.summary_line}
+            </div>
+
+            {/* Sections */}
+            {Object.entries(intelReport.sections || {}).map(([key, sec]) => (
+              <div key={key} className="mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{sec.title}</div>
+                  <span className="text-[9px] px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full">→ {sec.audience}</span>
+                </div>
+
+                {key === 'expiring_contracts' && (
+                  <div>
+                    {sec.count === 0 ? <div className="text-xs text-slate-400">No contracts expiring within 90 days</div> : (
+                      <div className="space-y-1">
+                        {(sec.items || []).map((e, i) => (
+                          <div key={i} className={cn("flex justify-between p-2 rounded-lg text-xs", e.urgency === 'critical' ? 'bg-red-50' : e.urgency === 'warning' ? 'bg-amber-50' : 'bg-slate-50')}>
+                            <span className="font-medium">{e.vendor} ({e.number})</span>
+                            <span className={cn("font-bold", e.days_left <= 30 ? "text-red-600" : "text-amber-600")}>{e.days_left}d</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {key === 'early_payment_discounts' && (
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="p-2.5 bg-emerald-50 rounded-lg text-center"><div className="text-[9px] text-slate-400 uppercase">Captured</div><div className="text-sm font-bold text-emerald-600">${(sec.captured || 0).toLocaleString()}</div></div>
+                    <div className="p-2.5 bg-amber-50 rounded-lg text-center"><div className="text-[9px] text-slate-400 uppercase">Missed</div><div className="text-sm font-bold text-amber-600">${(sec.missed || 0).toLocaleString()}</div></div>
+                    <div className="p-2.5 bg-slate-50 rounded-lg text-center"><div className="text-[9px] text-slate-400 uppercase">Capture Rate</div><div className="text-sm font-bold text-slate-700">{sec.capture_rate_pct || 0}%</div></div>
+                  </div>
+                )}
+
+                {key === 'utilization' && (
+                  <div>
+                    {(sec.items || []).length === 0 ? <div className="text-xs text-slate-400">No contracts above 75% utilization</div> : (
+                      <div className="space-y-1">
+                        {(sec.items || []).map((u, i) => (
+                          <div key={i} className={cn("flex justify-between p-2 rounded-lg text-xs", u.status === 'exceeded' ? 'bg-red-50' : u.status === 'critical' ? 'bg-amber-50' : 'bg-slate-50')}>
+                            <span className="font-medium">{u.vendor} ({u.contract})</span>
+                            <span className={cn("font-bold font-mono", u.status === 'exceeded' ? "text-red-600" : "text-amber-600")}>{u.utilization_pct}%</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {key === 'portfolio_risk' && (
+                  <div className="flex gap-3 flex-wrap">
+                    <div className="px-3 py-1.5 bg-emerald-50 rounded-lg text-xs"><span className="font-bold text-emerald-700">{sec.healthy}</span> <span className="text-slate-500">Healthy</span></div>
+                    <div className="px-3 py-1.5 bg-amber-50 rounded-lg text-xs"><span className="font-bold text-amber-700">{sec.warning}</span> <span className="text-slate-500">Warning</span></div>
+                    <div className="px-3 py-1.5 bg-red-50 rounded-lg text-xs"><span className="font-bold text-red-700">{sec.critical}</span> <span className="text-slate-500">Critical</span></div>
+                    <div className="px-3 py-1.5 bg-slate-50 rounded-lg text-xs"><span className="font-bold text-slate-700">{sec.high_risk_clauses_total}</span> <span className="text-slate-500">High-risk clauses</span></div>
+                  </div>
+                )}
+
+                {key === 'lifecycle_alerts' && (
+                  <div>
+                    {(sec.items || []).length === 0 ? <div className="text-xs text-slate-400">No active lifecycle alerts</div> : (
+                      <div className="space-y-1">
+                        {(sec.items || []).slice(0, 8).map((a, i) => (
+                          <div key={i} className={cn("flex items-center justify-between p-2 rounded-lg text-xs border", a.urgency === 'critical' ? 'bg-red-50 border-red-100' : a.urgency === 'high' ? 'bg-amber-50 border-amber-100' : 'bg-slate-50 border-slate-100')}>
+                            <div>
+                              <span className="font-medium">{a.headline}</span>
+                              <span className="text-slate-400 ml-2">→ {a.audience}</span>
+                            </div>
+                            <Badge c={a.urgency === 'critical' ? 'err' : a.urgency === 'high' ? 'warn' : 'muted'}>{a.urgency}</Badge>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {sec.action && <div className="text-xs text-indigo-600 font-medium mt-2">{sec.action}</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Intelligence Summary Bar */}
       {healthData.length > 0 && (
