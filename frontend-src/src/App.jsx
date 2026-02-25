@@ -1126,6 +1126,10 @@ function Contracts() {
   const [analysis, setAnalysis] = useState(null);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   const [showClauses, setShowClauses] = useState(false);
+  const [lifecycleRunning, setLifecycleRunning] = useState(false);
+  const [lifecycleResult, setLifecycleResult] = useState(null);
+  const [intelReport, setIntelReport] = useState(null);
+  const [showReport, setShowReport] = useState(false);
   const healthData = (s.intel || {}).contract_health || [];
 
   useEffect(() => {
@@ -1460,10 +1464,6 @@ function Contracts() {
 
   // Contract List with Health Scores
   const getHealth = (cid) => healthData.find(h => h.id === cid);
-  const [lifecycleRunning, setLifecycleRunning] = useState(false);
-  const [lifecycleResult, setLifecycleResult] = useState(null);
-  const [intelReport, setIntelReport] = useState(null);
-  const [showReport, setShowReport] = useState(false);
 
   const runLifecycle = async () => {
     setLifecycleRunning(true);

@@ -1175,7 +1175,7 @@ async def run_lifecycle_check_endpoint(request: Request):
     - Creates AP cases ONLY for over-utilization (the one event AP can act on)
     - Generates intelligence alerts for CFO/Procurement (expiry, renewal, SLA, penalties)
     Idempotent: won't create duplicates."""
-    user = await _user_from_request(request)
+    user = _user_from_request(request)
     if not user:
         raise HTTPException(401, "Unauthorized")
     db = get_db()
@@ -1212,7 +1212,7 @@ async def run_lifecycle_check_endpoint(request: Request):
 async def get_intelligence_report(request: Request):
     """Monthly Contract Intelligence Report for CFO/Procurement.
     Packages lifecycle data for executive audience — not AP investigation tickets."""
-    user = await _user_from_request(request)
+    user = _user_from_request(request)
     if not user:
         raise HTTPException(401, "Unauthorized")
     db = get_db()
