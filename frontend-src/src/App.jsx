@@ -38,13 +38,13 @@ function Table({ cols, rows, onRow }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-slate-50/80">
-              {cols.map((c, i) => <th key={i} className={cn('px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider', c.right && 'text-right')}>{c.label}</th>)}
+              {cols.map((c, i) => <th key={i} className={cn('px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider', c.right && 'text-right', c.center && 'text-center')}>{c.label}</th>)}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {rows.map((r, i) => (
               <tr key={r.id || i} onClick={() => onRow?.(r)} className={cn('transition-colors', onRow && 'cursor-pointer hover:bg-slate-50')}>
-                {cols.map((c, j) => <td key={j} className={cn('px-4 py-3', c.right && 'text-right', c.mono && 'font-mono')}>{c.render ? c.render(r) : r[c.key]}</td>)}
+                {cols.map((c, j) => <td key={j} className={cn('px-4 py-3', c.right && 'text-right', c.center && 'text-center', c.mono && 'font-mono')}>{c.render ? c.render(r) : r[c.key]}</td>)}
               </tr>
             ))}
             {rows.length === 0 && <tr><td colSpan={cols.length} className="px-4 py-12 text-center text-slate-500">No data yet</td></tr>}
@@ -493,6 +493,9 @@ function Anomalies() {
   const [notes, setNotes] = useState('');
   const [tab, setTab] = useState('open');
 
+  // Reset to list when sidebar re-clicked
+  useEffect(() => { if (s.tab === 'anomalies') setSel(null); }, [s.tabKey]);
+
   const filtered = tab === 'all' ? anoms : anoms.filter(a => a.status === tab);
 
   async function resolve(id) {
@@ -533,8 +536,8 @@ function Anomalies() {
                 const isDelivery = ['CHRONIC_SHORT_SHIPMENT','PO_FULFILLMENT_STALE','SHORT_SHIPMENT','OVERBILLED_VS_RECEIVED','QUANTITY_RECEIVED_MISMATCH'].includes(r.type);
                 return (
                   <div className="flex items-center gap-1.5">
-                    {isContract && <span className="text-[9px] px-1.5 py-0.5 bg-indigo-100 text-indigo-600 font-bold rounded">CONTRACT</span>}
-                    {isDelivery && <span className="text-[9px] px-1.5 py-0.5 bg-blue-100 text-blue-600 font-bold rounded">DELIVERY</span>}
+                    {isContract && <span className="text-[11px] px-1.5 py-0.5 bg-indigo-100 text-indigo-600 font-bold rounded">CONTRACT</span>}
+                    {isDelivery && <span className="text-[11px] px-1.5 py-0.5 bg-blue-100 text-blue-600 font-bold rounded">DELIVERY</span>}
                     <span className="text-xs text-slate-500">{(r.type || '').replace(/_/g, ' ')}</span>
                   </div>
                 );
@@ -674,6 +677,9 @@ function Triage() {
 
   const [sel, setSel] = useState(null);
   const allAnoms = s.anomalies || [];
+
+  // Reset to list when sidebar re-clicked
+  useEffect(() => { if (s.tab === 'triage') setSel(null); }, [s.tabKey]);
 
   // Find anomalies for selected invoice
   const selAnoms = sel ? allAnoms.filter(a => a.invoiceId === sel.id || a.invoiceNumber === sel.invoiceNumber) : [];
@@ -895,6 +901,9 @@ function Vendors() {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  // Reset to list when sidebar re-clicked
+  useEffect(() => { if (s.tab === 'vendors') { setSel(null); setDetail(null); } }, [s.tabKey]);
+
   async function viewVendor(v) {
     setSel(v);
     setLoading(true);
@@ -975,7 +984,7 @@ function Vendors() {
                   <div className="flex items-center gap-2 mb-3">
                     <Brain className="w-4 h-4 text-indigo-500" />
                     <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">{detail.risk.factor_count || 9}-Factor Risk Profile</span>
-                    {detail.risk.extended && <span className="text-[9px] px-1.5 py-0.5 bg-indigo-100 text-indigo-600 font-bold rounded">FULL PROFILE</span>}
+                    {detail.risk.extended && <span className="text-[11px] px-1.5 py-0.5 bg-indigo-100 text-indigo-600 font-bold rounded">FULL PROFILE</span>}
                   </div>
                   <div className="p-4 bg-slate-50 rounded-xl space-y-0.5">
                     {Object.entries(detail.risk.factors || {}).map(([k, f]) => (
@@ -1140,6 +1149,15 @@ function Contracts() {
     }
   }, [s.contractId]);
 
+  // Reset to list view when sidebar "Contracts" is re-clicked
+  useEffect(() => {
+    if (s.tab === 'contracts' && !s.contractId) {
+      setSel(null);
+      setAnalysis(null);
+      setShowClauses(false);
+    }
+  }, [s.tabKey]);
+
   // Fetch analysis when contract selected
   useEffect(() => {
     if (sel) {
@@ -1235,22 +1253,22 @@ function Contracts() {
         {/* ═══ TOP: AP Operations Summary Bar ═══ */}
         <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-5">
           <div className="card p-3 flex items-center gap-2.5">
-            {hl.health_score != null ? <HealthRing score={hl.health_score} size={40} /> : <div className="w-10 h-10 bg-slate-100 rounded-full animate-pulse" />}
-            <div><div className="text-[9px] font-bold text-slate-400 uppercase">Health</div><div className="text-xs font-bold">{hl.health_level || '...'}</div></div>
+            {hl.health_score != null ? <HealthRing score={hl.health_score} size={44} /> : <div className="w-10 h-10 bg-slate-100 rounded-full animate-pulse" />}
+            <div><div className="text-[11px] font-bold text-slate-400 uppercase">Health</div><div className="text-sm font-bold">{hl.health_level || '...'}</div></div>
           </div>
-          <div className="card p-3"><div className="text-[9px] font-bold text-slate-400 uppercase">Status</div><Badge c={status.color}>{status.label}</Badge></div>
-          <div className="card p-3"><div className="text-[9px] font-bold text-slate-400 uppercase">Contract Value</div>
+          <div className="card p-3"><div className="text-[11px] font-bold text-slate-400 uppercase">Status</div><Badge c={status.color}>{status.label}</Badge></div>
+          <div className="card p-3"><div className="text-[11px] font-bold text-slate-400 uppercase">Contract Value</div>
             {c.amount > 0
               ? <div className="text-base font-bold text-slate-900">{$(c.amount, c.currency)}</div>
-              : <div className="text-xs font-bold text-blue-600">{c.isRateContract || pricingItems.length > 0 ? 'Rate Contract' : '—'}</div>}
+              : <div className="text-sm font-bold text-blue-600">{c.isRateContract || pricingItems.length > 0 ? 'Rate Contract' : '—'}</div>}
           </div>
-          <div className="card p-3"><div className="text-[9px] font-bold text-slate-400 uppercase">Invoiced</div><div className="text-base font-bold text-emerald-600">{$(totalInvoiced, c.currency)}</div></div>
-          <div className="card p-3"><div className="text-[9px] font-bold text-slate-400 uppercase">Utilization</div>
+          <div className="card p-3"><div className="text-[11px] font-bold text-slate-400 uppercase">Invoiced</div><div className="text-base font-bold text-emerald-600">{$(totalInvoiced, c.currency)}</div></div>
+          <div className="card p-3"><div className="text-[11px] font-bold text-slate-400 uppercase">Utilization</div>
             {c.amount > 0
               ? <div className="text-base font-bold" style={{ color: utilization > 100 ? '#dc2626' : utilization > 90 ? '#d97706' : '#059669' }}>{pct(utilization)}</div>
-              : <div className="text-xs font-bold text-slate-400">N/A</div>}
+              : <div className="text-sm font-bold text-slate-400">N/A</div>}
           </div>
-          <div className="card p-3"><div className="text-[9px] font-bold text-slate-400 uppercase">Open Anomalies</div>
+          <div className="card p-3"><div className="text-[11px] font-bold text-slate-400 uppercase">Open Anomalies</div>
             <div className={cn("text-base font-bold", linkedAnomalies.length > 0 ? "text-red-600" : "text-emerald-600")}>{linkedAnomalies.length}</div>
           </div>
         </div>
@@ -1265,7 +1283,7 @@ function Contracts() {
             <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden relative">
               <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(utilization, 100)}%`, background: utilization > 100 ? '#dc2626' : utilization > 90 ? '#d97706' : utilization > 80 ? '#eab308' : '#10b981' }} />
             </div>
-            <div className="flex justify-between mt-1 text-[9px] text-slate-400">
+            <div className="flex justify-between mt-1 text-[11px] text-slate-400">
               <span>0%</span>
               <span className="text-amber-500 font-semibold">80% warning</span>
               <span>100%</span>
@@ -1378,7 +1396,7 @@ function Contracts() {
                       <div>
                         <div className="text-[11px] font-semibold">{inv.invoiceNumber || inv.id}</div>
                         <div className="text-[10px] text-slate-400">{date(inv.issueDate)}</div>
-                        {invAnoms.length > 0 && <div className="text-[9px] font-bold text-red-600 mt-0.5">{invAnoms.map(a => (a.type||'').replace(/_/g,' ')).join(', ')}</div>}
+                        {invAnoms.length > 0 && <div className="text-[11px] font-bold text-red-600 mt-0.5">{invAnoms.map(a => (a.type||'').replace(/_/g,' ')).join(', ')}</div>}
                       </div>
                       <div className="text-right">
                         <div className="text-[11px] font-bold font-mono">{$(inv.amount, inv.currency)}</div>
@@ -1434,7 +1452,7 @@ function Contracts() {
               <div className="flex items-center gap-2">
                 <Brain className="w-3.5 h-3.5 text-indigo-400" />
                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Legal Risk Summary</span>
-                {an.risk_score != null && <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded-full', an.risk_level === 'high' ? 'bg-red-100 text-red-700' : an.risk_level === 'medium' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700')}>{an.risk_level === 'high' ? 'High Risk' : an.risk_level === 'medium' ? 'Medium Risk' : 'Low Risk'}</span>}
+                {an.risk_score != null && <span className={cn('text-[11px] font-bold px-1.5 py-0.5 rounded-full', an.risk_level === 'high' ? 'bg-red-100 text-red-700' : an.risk_level === 'medium' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700')}>{an.risk_level === 'high' ? 'High Risk' : an.risk_level === 'medium' ? 'Medium Risk' : 'Low Risk'}</span>}
                 <span className="text-[10px] text-slate-400">{clauses.length} clauses analyzed</span>
               </div>
               <ChevronDown className={cn("w-4 h-4 text-slate-400 transition-transform", showClauses && "rotate-180")} />
@@ -1561,7 +1579,7 @@ function Contracts() {
               <div key={key} className="mb-4">
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{sec.title}</div>
-                  <span className="text-[9px] px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full">→ {sec.audience}</span>
+                  <span className="text-[11px] px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full">→ {sec.audience}</span>
                 </div>
 
                 {key === 'expiring_contracts' && (
@@ -1581,9 +1599,9 @@ function Contracts() {
 
                 {key === 'early_payment_discounts' && (
                   <div className="grid grid-cols-3 gap-3">
-                    <div className="p-2.5 bg-emerald-50 rounded-lg text-center"><div className="text-[9px] text-slate-400 uppercase">Captured</div><div className="text-sm font-bold text-emerald-600">${(sec.captured || 0).toLocaleString()}</div></div>
-                    <div className="p-2.5 bg-amber-50 rounded-lg text-center"><div className="text-[9px] text-slate-400 uppercase">Missed</div><div className="text-sm font-bold text-amber-600">${(sec.missed || 0).toLocaleString()}</div></div>
-                    <div className="p-2.5 bg-slate-50 rounded-lg text-center"><div className="text-[9px] text-slate-400 uppercase">Capture Rate</div><div className="text-sm font-bold text-slate-700">{sec.capture_rate_pct || 0}%</div></div>
+                    <div className="p-2.5 bg-emerald-50 rounded-lg text-center"><div className="text-[11px] text-slate-400 uppercase">Captured</div><div className="text-sm font-bold text-emerald-600">${(sec.captured || 0).toLocaleString()}</div></div>
+                    <div className="p-2.5 bg-amber-50 rounded-lg text-center"><div className="text-[11px] text-slate-400 uppercase">Missed</div><div className="text-sm font-bold text-amber-600">${(sec.missed || 0).toLocaleString()}</div></div>
+                    <div className="p-2.5 bg-slate-50 rounded-lg text-center"><div className="text-[11px] text-slate-400 uppercase">Capture Rate</div><div className="text-sm font-bold text-slate-700">{sec.capture_rate_pct || 0}%</div></div>
                   </div>
                 )}
 
@@ -1656,13 +1674,13 @@ function Contracts() {
 
       <Table
         cols={[
-          { label: 'Contract', render: r => <div><div className="font-semibold">{r.contractNumber || r.invoiceNumber || r.id}</div><div className="text-xs text-slate-500">{r.vendor}</div></div> },
-          { label: 'Health', render: r => { const h = getHealth(r.id); if (!h) return <span className="text-slate-400">—</span>; return <HealthRing score={h.health_score} size={36} />; }},
-          { label: 'Status', render: r => { const st = getStatus(r); return <Badge c={st.color}>{st.label}</Badge>; }},
-          { label: 'Value', right: true, render: r => <span className="font-semibold font-mono">{$(r.amount, r.currency)}</span> },
-          { label: 'Clause Risk', render: r => { const h = getHealth(r.id); if (!h) return '—'; const cr = h.clause_risk; return <span className={cn('text-xs font-bold', cr >= 60 ? 'text-red-600' : cr >= 30 ? 'text-amber-600' : 'text-emerald-600')}>{cr >= 60 ? 'High' : cr >= 30 ? 'Medium' : 'Low'}</span>; }},
-          { label: 'Expiry', render: r => { const h = getHealth(r.id); if (!h?.days_to_expiry) return '—'; return <span className={cn('text-xs font-bold', h.days_to_expiry <= 30 ? 'text-red-600' : h.days_to_expiry <= 90 ? 'text-amber-600' : 'text-slate-500')}>{h.days_to_expiry}d</span>; }},
-          { label: 'Confidence', render: r => <ConfidenceRing score={r.confidence || 0} /> },
+          { label: 'Contract', render: r => <div><div className="font-semibold text-sm">{r.contractNumber || r.invoiceNumber || r.id}</div><div className="text-xs text-slate-500">{r.vendor}</div></div> },
+          { label: 'Health', center: true, render: r => { const h = getHealth(r.id); if (!h) return <span className="text-slate-400">—</span>; return <HealthRing score={h.health_score} size={38} />; }},
+          { label: 'Status', center: true, render: r => { const st = getStatus(r); return <Badge c={st.color}>{st.label}</Badge>; }},
+          { label: 'Value', right: true, render: r => <span className="font-semibold text-sm font-mono">{$(r.amount, r.currency)}</span> },
+          { label: 'Clause Risk', center: true, render: r => { const h = getHealth(r.id); if (!h) return '—'; const cr = h.clause_risk; return <span className={cn('text-sm font-bold', cr >= 60 ? 'text-red-600' : cr >= 30 ? 'text-amber-600' : 'text-emerald-600')}>{cr >= 60 ? 'High' : cr >= 30 ? 'Medium' : 'Low'}</span>; }},
+          { label: 'Expiry', center: true, render: r => { const h = getHealth(r.id); if (!h?.days_to_expiry) return '—'; return <span className={cn('text-sm font-bold', h.days_to_expiry <= 30 ? 'text-red-600' : h.days_to_expiry <= 90 ? 'text-amber-600' : 'text-slate-600')}>{h.days_to_expiry}d</span>; }},
+          { label: 'Confidence', center: true, render: r => <ConfidenceRing score={r.confidence || 0} /> },
         ]}
         rows={contracts}
         onRow={r => setSel(r)}
@@ -2449,7 +2467,7 @@ function DocModal() {
                   if (fields.length === 0 && !hasLI && !hasTax) return null;
                   return (
                     <div className="mt-2 pt-2 border-t border-current/10">
-                      <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Field-by-Field Verification</div>
+                      <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Field-by-Field Verification</div>
                       <div className="space-y-0.5">
                         {fields.map(([field, info]) => (
                           <div key={field} className="flex items-center gap-2 text-[11px] py-0.5">
@@ -2704,7 +2722,7 @@ function LandingPage({ onGo }) {
           <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
               <span className="text-sm font-bold text-slate-900 uppercase tracking-wider">⚡ How AuditLens Processes Every Invoice</span>
-              <span className="shrink-0 px-2.5 py-1 rounded-md bg-emerald-600 text-white text-[9px] font-bold tracking-wider shadow-sm">LIVE DEMO</span>
+              <span className="shrink-0 px-2.5 py-1 rounded-md bg-emerald-600 text-white text-[11px] font-bold tracking-wider shadow-sm">LIVE DEMO</span>
             </div>
             <div className="p-5 space-y-2">
               {[
@@ -2905,7 +2923,7 @@ function LandingPage({ onGo }) {
               <div className="space-y-1.5">
                 {pipeline.map(x => (
                   <div key={x.n} className="flex gap-2 items-start">
-                    <div className="w-5 h-5 rounded-md bg-indigo-600 text-white flex items-center justify-center text-[9px] font-bold flex-shrink-0 mt-0.5">{x.n}</div>
+                    <div className="w-5 h-5 rounded-md bg-indigo-600 text-white flex items-center justify-center text-[11px] font-bold flex-shrink-0 mt-0.5">{x.n}</div>
                     <div><div className="text-xs font-semibold text-slate-800">{x.t}</div><div className="text-[11px] text-slate-400">{x.d}</div></div>
                   </div>
                 ))}
@@ -2972,7 +2990,7 @@ function LandingPage({ onGo }) {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
             {deployOptions.map(f => (
               <div key={f.title} className="bg-white rounded-2xl border border-slate-200/60 p-5 relative">
-                <div className="absolute top-4 right-4 px-2 py-0.5 rounded text-white text-[9px] font-bold tracking-wider" style={{ background: f.color }}>{f.tag}</div>
+                <div className="absolute top-4 right-4 px-2 py-0.5 rounded text-white text-[11px] font-bold tracking-wider" style={{ background: f.color }}>{f.tag}</div>
                 <div className="flex items-center gap-2 mb-3">
                   <Database className="w-4 h-4" style={{ color: f.color }} />
                   <span className="text-sm font-extrabold text-slate-900">{f.title}</span>
