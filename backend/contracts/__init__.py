@@ -1335,7 +1335,8 @@ def generate_contract_intelligence_report(db: dict) -> dict:
     if critical_alerts:
         summary_parts.append(f"{len(critical_alerts)} critical alert{'s' if len(critical_alerts) != 1 else ''} requiring attention")
     if high_risk_clause_total:
-        summary_parts.append(f"{high_risk_clause_total} high-risk clauses across {total_contracts} contracts")
+        contracts_with_high_risk = sum(1 for h in health_data if h["high_risk_clauses"] > 0)
+        summary_parts.append(f"{high_risk_clause_total} high-risk clauses across {contracts_with_high_risk} contract{'s' if contracts_with_high_risk != 1 else ''}")
 
     report["summary_line"] = ". ".join(summary_parts) + "." if summary_parts else "All contracts healthy, no action required."
 
