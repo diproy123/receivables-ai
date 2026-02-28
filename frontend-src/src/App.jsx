@@ -471,8 +471,8 @@ function Documents() {
         cols={[
           { label: 'Document', render: r => <div><div className="font-semibold text-slate-900">{r.invoiceNumber || r.poNumber || r.documentNumber || r.id}</div><div className="text-xs text-slate-500">{r.vendor}</div></div> },
           { label: 'Type', render: r => <Badge c={docColor(r.type)}>{docLabel(r.type)}</Badge> },
-          { label: 'Amount', right: true, mono: true, render: r => <span className="font-semibold">{$(r.amount, r.currency)}</span> },
-          { label: 'Date', render: r => <span className="text-slate-500">{date(r.issueDate)}</span> },
+          { label: 'Amount', right: true, mono: true, render: r => r.type === 'contract' && (!r.amount || r.amount === 0) ? <span className="text-sm font-semibold text-blue-600">Rate Contract</span> : <span className="font-semibold">{$(r.amount, r.currency)}</span> },
+          { label: 'Date', render: r => <span className="text-slate-500">{date(r.issueDate || r.effectiveDate || r.startDate)}</span> },
           { label: 'Confidence', render: r => <ConfidenceRing score={r.confidence || 0} /> },
           { label: 'Status', render: r => <Badge c={r.status === 'paid' ? 'ok' : r.status === 'disputed' ? 'err' : r.status === 'approved' ? 'ok' : 'warn'}>{(r.status || '').replace(/_/g, ' ')}</Badge> },
         ]}
@@ -637,19 +637,56 @@ function Anomalies() {
 function Matching() {
   const { s, toast, load } = useStore();
   const matches = s.matches || [];
+  const allDocs = s.docs || [];
   async function approve(id) { await post(`/api/matches/${id}/approve`, {}); await load(); toast('Match approved', 'success'); }
   async function reject(id) { await post(`/api/matches/${id}/reject`, {}); await load(); toast('Match rejected', 'warning'); }
+
+  // Summary counts
+  const twoWay = matches.filter(m => !m.grnIds?.length).length;
+  const threeWay = matches.filter(m => m.grnIds?.length > 0).length;
+  const needsReview = matches.filter(m => m.status === 'pending_review' || m.status === 'review_needed').length;
+
   return (
     <div className="page-enter">
       <PageHeader title="PO Matching" sub={`${matches.length} matches`} />
+
+      {/* Summary pills */}
+      {matches.length > 0 && (
+        <div className="flex gap-3 mb-4 flex-wrap">
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 rounded-xl border border-blue-100">
+            <div className="w-2 h-2 rounded-full bg-blue-500" />
+            <span className="text-xs font-semibold text-blue-700">{twoWay} Two-Way</span>
+          </div>
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 rounded-xl border border-emerald-100">
+            <div className="w-2 h-2 rounded-full bg-emerald-500" />
+            <span className="text-xs font-semibold text-emerald-700">{threeWay} Three-Way</span>
+          </div>
+          {needsReview > 0 && (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 rounded-xl border border-amber-100">
+              <div className="w-2 h-2 rounded-full bg-amber-500" />
+              <span className="text-xs font-semibold text-amber-700">{needsReview} Needs Review</span>
+            </div>
+          )}
+        </div>
+      )}
+
       <Table
         cols={[
           { label: 'Invoice → PO', render: r => <div><span className="font-semibold">{r.invoiceNumber}</span><span className="text-slate-500 mx-2">→</span><span className="font-semibold text-accent-600">{r.poNumber}</span></div> },
           { label: 'Vendor', render: r => <span className="text-slate-600">{r.vendor}</span> },
+          { label: 'Match Type', center: true, render: r => {
+            const hasGRN = r.grnIds?.length > 0 || r.grnStatus === 'matched';
+            return (
+              <span className={cn("text-[11px] font-bold px-2 py-0.5 rounded-full",
+                hasGRN ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700")}>
+                {hasGRN ? "3-Way" : "2-Way"}
+              </span>
+            );
+          }},
           { label: 'Δ Amount', right: true, render: r => { const d = r.amountDifference || 0; return <span className={cn('font-mono font-semibold', Math.abs(d) > 0 ? 'text-red-600' : 'text-emerald-600')}>{d > 0 ? '+' : ''}{$f(d)}</span>; }},
-          { label: 'Match', render: r => <ConfidenceRing score={r.matchScore || 0} /> },
-          { label: 'Status', render: r => <Badge c={r.status === 'matched' ? 'ok' : r.status === 'mismatch' ? 'err' : 'warn'}>{r.status}</Badge> },
-          { label: '', render: r => r.status === 'pending_review' && (
+          { label: 'Match', center: true, render: r => <ConfidenceRing score={r.matchScore || 0} /> },
+          { label: 'Status', render: r => <Badge c={r.status === 'matched' || r.status === 'auto_matched' ? 'ok' : r.status === 'mismatch' ? 'err' : 'warn'}>{(r.status || '').replace(/_/g, ' ')}</Badge> },
+          { label: '', render: r => (r.status === 'pending_review' || r.status === 'review_needed') && (
             <div className="flex gap-1">
               <button onClick={e => { e.stopPropagation(); approve(r.id); }} className="text-emerald-600 hover:bg-emerald-50 p-1.5 rounded-lg transition-all"><Check className="w-4 h-4" /></button>
               <button onClick={e => { e.stopPropagation(); reject(r.id); }} className="text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-all"><X className="w-4 h-4" /></button>
@@ -759,6 +796,74 @@ function Triage() {
                 <div className="text-lg font-bold">{pct(sel.confidence)}</div>
               </div>
             </div>
+
+            {/* PO Match — 3-way match context */}
+            {(() => {
+              const match = (s.matches || []).find(m => m.invoiceId === sel.id);
+              const allDocs = s.docs || [];
+              const po = match ? allDocs.find(d => d.id === match.poId) : null;
+              const grn = match ? allDocs.find(d => d.type === 'goods_receipt' && (d.poReference === match.poNumber || d.poId === match.poId)) : null;
+              const hasMatch = match && po;
+
+              return (
+                <div className="mb-4">
+                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">PO Match</div>
+                  {hasMatch ? (
+                    <div className="rounded-xl border border-slate-200 overflow-hidden">
+                      {/* 3-way match indicator */}
+                      <div className="flex items-center gap-0 text-xs font-bold bg-slate-50 px-4 py-2.5">
+                        <div className="flex items-center gap-1.5 text-emerald-700"><FileText className="w-3.5 h-3.5" /> Invoice</div>
+                        <div className={cn("mx-2 text-lg", match.matchScore >= 75 ? "text-emerald-500" : "text-amber-500")}>{match.matchScore >= 75 ? "↔" : "⇢"}</div>
+                        <div className="flex items-center gap-1.5 text-blue-700"><Link2 className="w-3.5 h-3.5" /> PO</div>
+                        <div className={cn("mx-2 text-lg", grn ? "text-emerald-500" : "text-slate-300")}>{grn ? "↔" : "·····"}</div>
+                        <div className={cn("flex items-center gap-1.5", grn ? "text-indigo-700" : "text-slate-400")}><ClipboardList className="w-3.5 h-3.5" /> GRN</div>
+                        <div className="ml-auto">
+                          <span className={cn("px-2 py-0.5 rounded-full text-[11px] font-bold",
+                            grn ? "bg-emerald-100 text-emerald-700" : match.matchScore >= 75 ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700")}>
+                            {grn ? "3-Way Match" : match.matchScore >= 75 ? "2-Way Match" : "Review Needed"}
+                          </span>
+                        </div>
+                      </div>
+                      {/* PO details */}
+                      <div className="px-4 py-3 border-t border-slate-100">
+                        <div className="flex items-center justify-between mb-2">
+                          <div>
+                            <span className="text-sm font-bold text-slate-900">{match.poNumber}</span>
+                            <span className="text-xs text-slate-500 ml-2">{po.vendor}</span>
+                          </div>
+                          <ConfidenceRing score={match.matchScore || 0} />
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-xs">
+                          <div><span className="text-slate-500">PO Value</span><div className="font-bold font-mono">{$(po.amount, po.currency)}</div></div>
+                          <div><span className="text-slate-500">Invoiced</span><div className={cn("font-bold font-mono", match.overInvoiced ? "text-red-600" : "text-slate-800")}>{$(match.poAlreadyInvoiced || 0)}</div></div>
+                          <div><span className="text-slate-500">Δ Amount</span><div className={cn("font-bold font-mono", (match.amountDifference || 0) > 0 ? "text-amber-600" : "text-emerald-600")}>{$f(match.amountDifference || 0)}</div></div>
+                        </div>
+                        {match.overInvoiced && (
+                          <div className="mt-2 px-2.5 py-1.5 rounded-lg bg-red-50 border border-red-100 text-xs text-red-700 font-medium">
+                            ⚠ Total invoiced exceeds PO value — requires review
+                          </div>
+                        )}
+                      </div>
+                      {/* GRN status if present */}
+                      {grn && (
+                        <div className="px-4 py-2.5 border-t border-slate-100 bg-indigo-50/50">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-semibold text-indigo-700">GRN: {grn.documentNumber || grn.grnNumber || grn.id}</span>
+                            <span className="text-slate-500">{date(grn.issueDate || grn.receivedDate)}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-slate-200 p-4 text-center text-xs text-slate-400">
+                      {sel.poReference
+                        ? <span>PO Ref: <span className="font-semibold text-slate-600">{sel.poReference}</span> — no matching PO found in system</span>
+                        : "No PO reference on invoice — unmatched"}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Triage Decision */}
             <div className="mb-4">
@@ -1357,14 +1462,35 @@ function Contracts() {
             )}
             {linkedPOs.length > 0 && (
               <div className="mt-3 pt-3 border-t border-slate-100">
-                <div className="text-[11px] font-bold text-slate-400 uppercase mb-1">Active POs</div>
-                {linkedPOs.slice(0, 3).map(po => (
-                  <div key={po.id} className="flex justify-between text-xs py-0.5">
-                    <span className="font-medium text-slate-600">{po.poNumber || po.id}</span>
-                    <span className="font-mono">{$(po.amount, po.currency)}</span>
-                  </div>
-                ))}
-                {linkedPOs.length > 3 && <div className="text-[11px] text-slate-400">+{linkedPOs.length - 3} more</div>}
+                <div className="text-[11px] font-bold text-slate-400 uppercase mb-2">Purchase Orders ({linkedPOs.length})</div>
+                <div className="space-y-1.5">
+                  {linkedPOs.slice(0, 5).map(po => {
+                    const match = (s.matches || []).find(m => m.poId === po.id);
+                    const matchedInv = match ? (s.docs || []).find(d => d.id === match.invoiceId) : null;
+                    return (
+                      <div key={po.id} className="bg-slate-50/50 rounded-lg p-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-semibold text-slate-700">{po.poNumber || po.id}</span>
+                          <span className="text-xs font-mono font-bold">{$(po.amount, po.currency)}</span>
+                        </div>
+                        {match && matchedInv && (
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <span className={cn("w-1.5 h-1.5 rounded-full", match.matchScore >= 75 ? "bg-emerald-500" : "bg-amber-500")} />
+                            <span className="text-[11px] text-slate-500">Matched to <span className="font-semibold">{matchedInv.invoiceNumber || matchedInv.id}</span></span>
+                            {match.overInvoiced && <span className="text-[11px] text-red-600 font-bold ml-auto">Over-invoiced</span>}
+                          </div>
+                        )}
+                        {!match && (
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+                            <span className="text-[11px] text-slate-400">No invoice matched</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {linkedPOs.length > 5 && <div className="text-[11px] text-slate-400">+{linkedPOs.length - 5} more</div>}
+                </div>
               </div>
             )}
           </div>
