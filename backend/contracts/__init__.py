@@ -1265,15 +1265,27 @@ def generate_contract_intelligence_report(db: dict) -> dict:
 
     # ── 4. Portfolio Risk Summary ──
     health_data = []
+    high_risk_clause_details = []
     for c in contracts:
         h = compute_contract_health(c, db)
+        cnum = c.get("contractNumber") or c.get("id")
+        vendor = c.get("vendor")
         health_data.append({
-            "contract": c.get("contractNumber") or c.get("id"),
-            "vendor": c.get("vendor"),
+            "contract": cnum,
+            "vendor": vendor,
             "health_score": h["health_score"],
             "health_level": h["health_level"],
             "high_risk_clauses": h["high_risk_clauses"],
         })
+        # Collect individual high-risk clause details for CFO drill-down
+        for cl in h.get("analysis", {}).get("clauses", []):
+            if cl.get("risk") == "high":
+                high_risk_clause_details.append({
+                    "contract": cnum,
+                    "vendor": vendor,
+                    "clause_type": (cl.get("type") or "").replace("_", " ").title(),
+                    "summary": cl.get("summary", ""),
+                })
 
     total_contracts = len(contracts)
     critical_count = sum(1 for h in health_data if h["health_level"] == "critical")
@@ -1289,6 +1301,7 @@ def generate_contract_intelligence_report(db: dict) -> dict:
         "critical": critical_count,
         "high_risk_clauses_total": high_risk_clause_total,
         "worst_contracts": sorted(health_data, key=lambda x: x["health_score"])[:5],
+        "high_risk_clause_details": high_risk_clause_details[:20],
         "action": f"{critical_count} contracts need immediate review; {high_risk_clause_total} high-risk clauses across portfolio" if critical_count > 0 else "Portfolio health acceptable",
     }
 
