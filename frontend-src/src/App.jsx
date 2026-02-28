@@ -125,7 +125,7 @@ function Sidebar() {
     ]},
     { section: 'Master Data', items: [
       { id: 'vendors', label: 'Vendors', icon: Building2, badge: s.dash?.vendor_risk?.high_risk, bc: 'err' },
-      { id: 'contracts', label: 'Contracts', icon: FileCheck, badge: intelBadges.expiring || intelBadges.critical || null, bc: intelBadges.critical ? 'err' : 'warn' },
+      { id: 'contracts', label: 'Contracts', icon: FileCheck },
     ]},
     ...(lvl >= 1 ? [{ section: 'Configure', items: [
       { id: 'settings', label: 'AP Policy', icon: Settings },
@@ -151,7 +151,7 @@ function Sidebar() {
         </div>
         <div>
           <div className="text-[17px] font-extrabold tracking-tight">AuditLens</div>
-          <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-[.12em]">AP Intelligence</div>
+          <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-[.12em]">AP Intelligence</div>
         </div>
       </div>
       <div className="px-3 mb-3">
@@ -162,7 +162,7 @@ function Sidebar() {
       <nav className="flex-1 overflow-y-auto px-3 pb-3">
         {nav.map(sec => (
           <div key={sec.section}>
-            <div className="text-[10px] font-bold text-accent-600/80 uppercase tracking-[.1em] px-3 pt-5 pb-2">{sec.section}</div>
+            <div className="text-[11px] font-bold text-accent-600/80 uppercase tracking-[.1em] px-3 pt-5 pb-2">{sec.section}</div>
             {sec.items.map(it => {
               const on = s.tab === it.id; const Ic = it.icon;
               return (
@@ -179,7 +179,7 @@ function Sidebar() {
         ))}
         {lvl >= 2 && (
           <div>
-            <div className="text-[10px] font-bold text-accent-600/80 uppercase tracking-[.1em] px-3 pt-5 pb-2">Admin</div>
+            <div className="text-[11px] font-bold text-accent-600/80 uppercase tracking-[.1em] px-3 pt-5 pb-2">Admin</div>
             <button onClick={seed} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-[13px] text-emerald-600 hover:bg-emerald-50 font-medium"><Database className="w-4 h-4" /> Load Sample Data</button>
             <button onClick={reset} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-[13px] text-red-500 hover:bg-red-50 font-medium"><Trash2 className="w-4 h-4" /> Clear All Data</button>
           </div>
@@ -191,7 +191,7 @@ function Sidebar() {
             <div className="w-8 h-8 rounded-full bg-accent-600 text-white flex items-center justify-center text-xs font-bold">{(s.user.name||'?')[0].toUpperCase()}</div>
             <div className="flex-1 min-w-0">
               <div className="text-[12px] font-semibold truncate">{s.user.name}</div>
-              <div className="text-[10px] text-slate-400 truncate">{s.user.email}</div>
+              <div className="text-[11px] text-slate-400 truncate">{s.user.email}</div>
             </div>
             <button onClick={logout} className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all"><LogOut className="w-4 h-4" /></button>
           </div>
@@ -390,8 +390,8 @@ function Dashboard() {
                       </div>
                       <div className="text-right">
                         <div className={cn('text-sm font-bold', e.days_left <= 30 ? 'text-red-600' : 'text-amber-600')}>{e.days_left}d left</div>
-                        {e.notice_overdue && <div className="text-[10px] text-red-500 font-bold">⚠ OPT-OUT OVERDUE</div>}
-                        {e.auto_renewal && !e.notice_overdue && <div className="text-[10px] text-amber-500">Auto-renews</div>}
+                        {e.notice_overdue && <div className="text-[11px] text-red-500 font-bold">⚠ OPT-OUT OVERDUE</div>}
+                        {e.auto_renewal && !e.notice_overdue && <div className="text-[11px] text-amber-500">Auto-renews</div>}
                       </div>
                     </div>
                   ))}
@@ -404,11 +404,11 @@ function Dashboard() {
               {/* Contract Health Summary */}
               {ch.length > 0 && (
                 <div className="card p-5">
-                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3">Contract Health</div>
+                  <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">Contract Health</div>
                   <div className="flex items-center gap-4 mb-3">
-                    <div className="text-center"><div className="text-2xl font-extrabold text-emerald-600">{ch.filter(c => c.health_level === 'good').length}</div><div className="text-[10px] text-slate-400">Good</div></div>
-                    <div className="text-center"><div className="text-2xl font-extrabold text-amber-500">{warningContracts.length}</div><div className="text-[10px] text-slate-400">Warning</div></div>
-                    <div className="text-center"><div className="text-2xl font-extrabold text-red-500">{criticalContracts.length}</div><div className="text-[10px] text-slate-400">Critical</div></div>
+                    <div className="text-center"><div className="text-2xl font-extrabold text-emerald-600">{ch.filter(c => c.health_level === 'good').length}</div><div className="text-[11px] text-slate-400">Good</div></div>
+                    <div className="text-center"><div className="text-2xl font-extrabold text-amber-500">{warningContracts.length}</div><div className="text-[11px] text-slate-400">Warning</div></div>
+                    <div className="text-center"><div className="text-2xl font-extrabold text-red-500">{criticalContracts.length}</div><div className="text-[11px] text-slate-400">Critical</div></div>
                   </div>
                   {criticalContracts.length > 0 && (
                     <div className="space-y-1">
@@ -426,7 +426,7 @@ function Dashboard() {
               {/* High Risk Clauses */}
               {intel.high_risk_clauses > 0 && (
                 <div className="card p-5">
-                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3">Clause Risk Analysis</div>
+                  <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">Clause Risk Analysis</div>
                   <div className="text-3xl font-extrabold text-red-600 mb-1">{intel.high_risk_clauses}</div>
                   <div className="text-xs text-slate-500">High-risk clauses across {ch.length} contracts</div>
                   <div className="text-xs text-slate-400 mt-2">Missing liability caps, restrictive auto-renewal, no SLA terms</div>
@@ -436,10 +436,10 @@ function Dashboard() {
               {/* GRN / Delivery */}
               {intel.grn_count > 0 && (
                 <div className="card p-5">
-                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3">Delivery Intelligence</div>
+                  <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">Delivery Intelligence</div>
                   <div className="flex items-center gap-4">
-                    <div><div className="text-2xl font-extrabold text-blue-600">{intel.grn_count}</div><div className="text-[10px] text-slate-400">Deliveries Tracked</div></div>
-                    {intel.grn_open_anomalies > 0 && <div><div className="text-2xl font-extrabold text-red-500">{intel.grn_open_anomalies}</div><div className="text-[10px] text-slate-400">Open Alerts</div></div>}
+                    <div><div className="text-2xl font-extrabold text-blue-600">{intel.grn_count}</div><div className="text-[11px] text-slate-400">Deliveries Tracked</div></div>
+                    {intel.grn_open_anomalies > 0 && <div><div className="text-2xl font-extrabold text-red-500">{intel.grn_open_anomalies}</div><div className="text-[11px] text-slate-400">Open Alerts</div></div>}
                   </div>
                   {intel.top_vendor_concentration > 25 && (
                     <div className="text-xs text-amber-600 mt-2 p-2 bg-amber-50 rounded-lg">⚠ Top vendor = {pct(intel.top_vendor_concentration)} of spend</div>
@@ -855,20 +855,20 @@ function Cases() {
               <button onClick={() => setDetail(null)} className="p-2 rounded-lg hover:bg-slate-100"><X className="w-5 h-5 text-slate-400" /></button>
             </div>
             <div className="grid grid-cols-2 gap-4 mb-4">
-              <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Priority</div><Badge c={priColor[detail.priority] || 'muted'}>{detail.priority}</Badge></div>
-              <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Status</div><Badge c={detail.status === 'resolved' ? 'ok' : 'warn'}>{(detail.status || '').replace(/_/g, ' ')}</Badge></div>
-              <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Assigned</div><div className="text-sm font-medium">{detail.assignedTo || '—'}</div></div>
-              <div><div className="text-[10px] font-semibold text-slate-500 uppercase">Created</div><div className="text-sm">{dateTime(detail.createdAt)}</div></div>
+              <div><div className="text-[11px] font-semibold text-slate-500 uppercase">Priority</div><Badge c={priColor[detail.priority] || 'muted'}>{detail.priority}</Badge></div>
+              <div><div className="text-[11px] font-semibold text-slate-500 uppercase">Status</div><Badge c={detail.status === 'resolved' ? 'ok' : 'warn'}>{(detail.status || '').replace(/_/g, ' ')}</Badge></div>
+              <div><div className="text-[11px] font-semibold text-slate-500 uppercase">Assigned</div><div className="text-sm font-medium">{detail.assignedTo || '—'}</div></div>
+              <div><div className="text-[11px] font-semibold text-slate-500 uppercase">Created</div><div className="text-sm">{dateTime(detail.createdAt)}</div></div>
             </div>
             {detail.description && <div className="p-3 bg-slate-50 rounded-xl text-sm text-slate-600 mb-4">{detail.description}</div>}
             {/* Notes */}
             {detail.notes?.length > 0 && (
               <div className="mb-4">
-                <div className="text-[10px] font-bold text-slate-900 uppercase tracking-wider mb-2">Notes</div>
+                <div className="text-[11px] font-bold text-slate-900 uppercase tracking-wider mb-2">Notes</div>
                 <div className="space-y-2">{detail.notes.map((n, i) => (
                   <div key={i} className="p-3 bg-slate-50 rounded-xl">
                     <div className="text-sm">{n.text}</div>
-                    <div className="text-[10px] text-slate-400 mt-1">{n.addedBy} · {dateTime(n.addedAt)}</div>
+                    <div className="text-[11px] text-slate-400 mt-1">{n.addedBy} · {dateTime(n.addedAt)}</div>
                   </div>
                 ))}</div>
               </div>
@@ -931,7 +931,7 @@ function Vendors() {
           <div className="h-full rounded-full transition-all" style={{ width: Math.max(2, score) + '%', background: cl }} />
         </div>
         <span className="text-xs font-bold font-mono w-8 text-right" style={{ color: cl }}>{Math.round(score)}</span>
-        <span className="text-[10px] text-slate-400 w-10 text-right">{pct(weight * 100)}</span>
+        <span className="text-[11px] text-slate-400 w-10 text-right">{pct(weight * 100)}</span>
       </div>
     );
   };
@@ -1053,27 +1053,27 @@ function Vendors() {
                         <div className="text-lg font-bold" style={{ color: detail.risk.delivery.on_time_rate >= 0.9 ? '#10b981' : detail.risk.delivery.on_time_rate >= 0.75 ? '#f59e0b' : '#ef4444' }}>
                           {pct(detail.risk.delivery.on_time_rate * 100)}
                         </div>
-                        <div className="text-[10px] text-slate-400">On-Time</div>
+                        <div className="text-[11px] text-slate-400">On-Time</div>
                       </div>
                       <div className="p-3 bg-slate-50 rounded-xl">
                         <div className="text-lg font-bold" style={{ color: detail.risk.delivery.late_count > 0 ? '#ef4444' : '#10b981' }}>
                           {detail.risk.delivery.late_count || 0}
                         </div>
-                        <div className="text-[10px] text-slate-400">Late</div>
+                        <div className="text-[11px] text-slate-400">Late</div>
                       </div>
                       <div className="p-3 bg-slate-50 rounded-xl">
                         <div className="text-lg font-bold" style={{ color: detail.risk.delivery.short_shipment_rate <= 0.1 ? '#10b981' : '#ef4444' }}>
                           {pct(detail.risk.delivery.short_shipment_rate * 100)}
                         </div>
-                        <div className="text-[10px] text-slate-400">Short Ship</div>
+                        <div className="text-[11px] text-slate-400">Short Ship</div>
                       </div>
                       <div className="p-3 bg-slate-50 rounded-xl">
                         <div className="text-lg font-bold text-blue-600">{detail.risk.delivery.total_grns}</div>
-                        <div className="text-[10px] text-slate-400">Deliveries</div>
+                        <div className="text-[11px] text-slate-400">Deliveries</div>
                       </div>
                     </div>
                     {detail.risk.delivery.unmeasurable_count > 0 && (
-                      <div className="text-[10px] text-amber-600 mt-1.5 p-1.5 bg-amber-50 rounded-lg text-center">
+                      <div className="text-[11px] text-amber-600 mt-1.5 p-1.5 bg-amber-50 rounded-lg text-center">
                         ⚠ {detail.risk.delivery.unmeasurable_count} of {detail.risk.delivery.total_grns} deliveries have incomplete date data — on-time rate based on {detail.risk.delivery.measurable_count || 0} measurable deliveries
                       </div>
                     )}
@@ -1086,7 +1086,7 @@ function Vendors() {
                     )}
                     {detail.risk.delivery.open_pos?.length > 0 && (
                       <div className="mt-2">
-                        <div className="text-[10px] font-semibold text-slate-500 mb-1">Open POs</div>
+                        <div className="text-[11px] font-semibold text-slate-500 mb-1">Open POs</div>
                         {detail.risk.delivery.open_pos.slice(0, 3).map((po, i) => (
                           <div key={i} className="text-xs flex justify-between p-1.5 bg-amber-50 rounded-lg mb-1 border border-amber-100">
                             <span className="text-slate-600">{po.po_number}</span>
@@ -1205,7 +1205,7 @@ function Contracts() {
 
   const riskBadge = (risk) => {
     const colors = { high: 'bg-red-100 text-red-700 border-red-200', medium: 'bg-amber-100 text-amber-700 border-amber-200', low: 'bg-emerald-100 text-emerald-700 border-emerald-200' };
-    return <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full border', colors[risk] || colors.low)}>{risk}</span>;
+    return <span className={cn('text-[11px] font-bold px-2 py-0.5 rounded-full border', colors[risk] || colors.low)}>{risk}</span>;
   };
 
   if (c) {
@@ -1277,7 +1277,7 @@ function Contracts() {
         {c.amount > 0 && (
           <div className="card p-4 mb-5">
             <div className="flex items-center justify-between mb-2">
-              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Spend vs Contract Ceiling</div>
+              <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Spend vs Contract Ceiling</div>
               <div className="text-xs text-slate-500">{$(totalInvoiced, c.currency)} of {$(c.amount, c.currency)}</div>
             </div>
             <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden relative">
@@ -1323,7 +1323,7 @@ function Contracts() {
 
           {/* Column 1: Contracted Pricing Schedule */}
           <div className="card p-4">
-            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3">Contracted Pricing</div>
+            <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">Contracted Pricing</div>
             {pricingItems.length > 0 ? (
               <div className="space-y-1.5">
                 {pricingItems.map((p, i) => (
@@ -1347,44 +1347,44 @@ function Contracts() {
             )}
             {c.paymentTerms && (
               <div className="mt-3 pt-3 border-t border-slate-100">
-                <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Payment Terms</div>
+                <div className="text-[11px] font-bold text-slate-400 uppercase mb-1">Payment Terms</div>
                 <div className="text-sm font-semibold text-slate-800">{c.paymentTerms}</div>
               </div>
             )}
             {linkedPOs.length > 0 && (
               <div className="mt-3 pt-3 border-t border-slate-100">
-                <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Active POs</div>
+                <div className="text-[11px] font-bold text-slate-400 uppercase mb-1">Active POs</div>
                 {linkedPOs.slice(0, 3).map(po => (
                   <div key={po.id} className="flex justify-between text-xs py-0.5">
                     <span className="font-medium text-slate-600">{po.poNumber || po.id}</span>
                     <span className="font-mono">{$(po.amount, po.currency)}</span>
                   </div>
                 ))}
-                {linkedPOs.length > 3 && <div className="text-[10px] text-slate-400">+{linkedPOs.length - 3} more</div>}
+                {linkedPOs.length > 3 && <div className="text-[11px] text-slate-400">+{linkedPOs.length - 3} more</div>}
               </div>
             )}
           </div>
 
           {/* Column 2: Contract Details */}
           <div className="card p-4">
-            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3">Contract Details</div>
+            <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">Contract Details</div>
             <div className="space-y-2">
-              <div className="flex justify-between"><span className="text-[10px] text-slate-400 uppercase">Counterparty</span><span className="text-xs font-semibold text-right max-w-[140px] truncate">{c.vendor || '—'}</span></div>
-              <div className="flex justify-between"><span className="text-[10px] text-slate-400 uppercase">Contract #</span><span className="text-xs font-semibold">{c.contractNumber || c.id}</span></div>
-              <div className="flex justify-between"><span className="text-[10px] text-slate-400 uppercase">Effective</span><span className="text-xs">{date(c.effectiveDate || c.issueDate)}</span></div>
-              <div className="flex justify-between"><span className="text-[10px] text-slate-400 uppercase">End Date</span><span className="text-xs">{date(c.endDate) || '—'}</span></div>
-              {c.termMonths && <div className="flex justify-between"><span className="text-[10px] text-slate-400 uppercase">Term</span><span className="text-xs">{c.termMonths} months</span></div>}
-              {c.autoRenewal != null && <div className="flex justify-between"><span className="text-[10px] text-slate-400 uppercase">Auto-Renewal</span><span className="text-xs">{c.autoRenewal ? `Yes (${c.renewalNoticeDays || '?'}d notice)` : 'No'}</span></div>}
-              {c.liabilityCap && <div className="flex justify-between"><span className="text-[10px] text-slate-400 uppercase">Liability Cap</span><span className="text-xs font-mono">{$(c.liabilityCap, c.currency)}</span></div>}
-              {c.governingLaw && <div className="flex justify-between"><span className="text-[10px] text-slate-400 uppercase">Governing Law</span><span className="text-xs">{c.governingLaw}</span></div>}
-              {c.slaSummary && <div className="mt-2 pt-2 border-t border-slate-100"><div className="text-[10px] text-slate-400 uppercase mb-0.5">SLA</div><div className="text-xs text-slate-700">{c.slaSummary}</div></div>}
-              {c.penaltyClauses && <div className="mt-2 pt-2 border-t border-slate-100"><div className="text-[10px] text-slate-400 uppercase mb-0.5">Penalties</div><div className="text-xs text-slate-700">{c.penaltyClauses}</div></div>}
+              <div className="flex justify-between"><span className="text-[11px] text-slate-400 uppercase">Counterparty</span><span className="text-xs font-semibold text-right max-w-[140px] truncate">{c.vendor || '—'}</span></div>
+              <div className="flex justify-between"><span className="text-[11px] text-slate-400 uppercase">Contract #</span><span className="text-xs font-semibold">{c.contractNumber || c.id}</span></div>
+              <div className="flex justify-between"><span className="text-[11px] text-slate-400 uppercase">Effective</span><span className="text-xs">{date(c.effectiveDate || c.issueDate)}</span></div>
+              <div className="flex justify-between"><span className="text-[11px] text-slate-400 uppercase">End Date</span><span className="text-xs">{date(c.endDate) || '—'}</span></div>
+              {c.termMonths && <div className="flex justify-between"><span className="text-[11px] text-slate-400 uppercase">Term</span><span className="text-xs">{c.termMonths} months</span></div>}
+              {c.autoRenewal != null && <div className="flex justify-between"><span className="text-[11px] text-slate-400 uppercase">Auto-Renewal</span><span className="text-xs">{c.autoRenewal ? `Yes (${c.renewalNoticeDays || '?'}d notice)` : 'No'}</span></div>}
+              {c.liabilityCap && <div className="flex justify-between"><span className="text-[11px] text-slate-400 uppercase">Liability Cap</span><span className="text-xs font-mono">{$(c.liabilityCap, c.currency)}</span></div>}
+              {c.governingLaw && <div className="flex justify-between"><span className="text-[11px] text-slate-400 uppercase">Governing Law</span><span className="text-xs">{c.governingLaw}</span></div>}
+              {c.slaSummary && <div className="mt-2 pt-2 border-t border-slate-100"><div className="text-[11px] text-slate-400 uppercase mb-0.5">SLA</div><div className="text-xs text-slate-700">{c.slaSummary}</div></div>}
+              {c.penaltyClauses && <div className="mt-2 pt-2 border-t border-slate-100"><div className="text-[11px] text-slate-400 uppercase mb-0.5">Penalties</div><div className="text-xs text-slate-700">{c.penaltyClauses}</div></div>}
             </div>
           </div>
 
           {/* Column 3: Invoices Against This Contract */}
           <div className="card p-4">
-            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3">Invoices <Badge c="muted">{linkedInvoices.length}</Badge></div>
+            <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">Invoices <Badge c="muted">{linkedInvoices.length}</Badge></div>
             {linkedInvoices.length === 0 ? (
               <div className="text-xs text-slate-400 py-6 text-center">No invoices found for this vendor</div>
             ) : (
@@ -1395,7 +1395,7 @@ function Contracts() {
                     <div key={inv.id} className={cn("flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors", invAnoms.length > 0 ? "bg-red-50 hover:bg-red-100 border border-red-100" : "bg-slate-50 hover:bg-slate-100")} onClick={() => d({ type: 'SEL', doc: inv })}>
                       <div>
                         <div className="text-[11px] font-semibold">{inv.invoiceNumber || inv.id}</div>
-                        <div className="text-[10px] text-slate-400">{date(inv.issueDate)}</div>
+                        <div className="text-[11px] text-slate-400">{date(inv.issueDate)}</div>
                         {invAnoms.length > 0 && <div className="text-[11px] font-bold text-red-600 mt-0.5">{invAnoms.map(a => (a.type||'').replace(/_/g,' ')).join(', ')}</div>}
                       </div>
                       <div className="text-right">
@@ -1416,27 +1416,73 @@ function Contracts() {
           </div>
         </div>
 
-        {/* ═══ OBLIGATIONS TRACKER ═══ */}
-        {obligations.length > 0 && (
-          <div className="card p-4 mb-5">
-            <div className="flex items-center gap-2 mb-3">
-              <Clock className="w-3.5 h-3.5 text-amber-500" />
-              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Obligations Tracker</h3>
-              <span className="badge badge-warn">{obligations.length}</span>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              {obligations.map((ob, i) => (
-                <div key={i} className={cn('flex items-center justify-between p-2.5 rounded-lg border', ob.urgency === 'high' ? 'bg-red-50 border-red-200' : ob.urgency === 'medium' ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200')}>
-                  <div>
-                    <div className="text-xs font-medium text-slate-800">{ob.obligation}</div>
-                    <div className="text-[10px] text-slate-500">{ob.party === 'buyer' ? '📋 Your obligation' : '📦 Vendor obligation'} · {ob.frequency || ob.type?.replace(/_/g, ' ')}</div>
+        {/* ═══ AP CHECKLIST — what matters when the next invoice arrives ═══ */}
+        {obligations.length > 0 && (() => {
+          // Separate AP-actionable obligations from procurement/legal ones
+          const apTypes = ['payment_terms', 'early_payment_discount', 'pricing', 'rate', 'volume', 'utilization', 'spend', 'invoice', 'billing'];
+          const apObs = obligations.filter(ob => {
+            const t = (ob.type || '').toLowerCase();
+            const o = (ob.obligation || '').toLowerCase();
+            // AP owns: payment terms, EPD, pricing/rate checks, utilization, invoice-related
+            return ob.party === 'buyer' && (
+              apTypes.some(k => t.includes(k) || o.includes(k)) ||
+              o.includes('payment') || o.includes('discount') || o.includes('net ') ||
+              o.includes('per invoice') || o.includes('utilization') || o.includes('rate')
+            );
+          });
+          const procObs = obligations.filter(ob => !apObs.includes(ob));
+
+          return (
+            <>
+              {/* AP Invoice Checklist — always visible */}
+              {apObs.length > 0 && (
+                <div className="card p-4 mb-5 border-l-4 border-blue-400">
+                  <div className="flex items-center gap-2 mb-3">
+                    <ClipboardList className="w-4 h-4 text-blue-500" />
+                    <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Invoice Processing Checklist</h3>
+                    <span className="text-[11px] text-slate-400">Check these when processing invoices for this vendor</span>
                   </div>
-                  {ob.days_left != null && <div className={cn('text-sm font-bold ml-2', ob.days_left <= 14 ? 'text-red-600' : ob.days_left <= 45 ? 'text-amber-600' : 'text-slate-400')}>{ob.days_left}d</div>}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {apObs.map((ob, i) => (
+                      <div key={i} className={cn('flex items-center justify-between p-3 rounded-lg border', ob.urgency === 'high' ? 'bg-red-50 border-red-200' : ob.urgency === 'medium' ? 'bg-amber-50 border-amber-200' : 'bg-blue-50/50 border-blue-200')}>
+                        <div>
+                          <div className="text-sm font-medium text-slate-800">{ob.obligation}</div>
+                          <div className="text-xs text-slate-500">{ob.frequency || ob.type?.replace(/_/g, ' ')}</div>
+                        </div>
+                        {ob.days_left != null && <div className={cn('text-sm font-bold ml-2', ob.days_left <= 14 ? 'text-red-600' : ob.days_left <= 45 ? 'text-amber-600' : 'text-slate-400')}>{ob.days_left}d</div>}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
+              )}
+
+              {/* Procurement/Legal obligations — collapsed, not AP's job */}
+              {procObs.length > 0 && (
+                <details className="card mb-5 overflow-hidden">
+                  <summary className="flex items-center gap-2 p-4 cursor-pointer hover:bg-slate-50 transition-colors">
+                    <Clock className="w-3.5 h-3.5 text-slate-400" />
+                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Vendor & Contract Obligations</span>
+                    <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">{procObs.length}</span>
+                    <span className="text-[11px] text-slate-400 ml-1">→ Procurement / Legal</span>
+                  </summary>
+                  <div className="px-4 pb-4 border-t border-slate-100 pt-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      {procObs.map((ob, i) => (
+                        <div key={i} className={cn('flex items-center justify-between p-2.5 rounded-lg border', ob.urgency === 'high' ? 'bg-red-50 border-red-200' : ob.urgency === 'medium' ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200')}>
+                          <div>
+                            <div className="text-xs font-medium text-slate-700">{ob.obligation}</div>
+                            <div className="text-[11px] text-slate-500">{ob.party === 'buyer' ? '📋 Your obligation' : '📦 Vendor obligation'} · {ob.frequency || ob.type?.replace(/_/g, ' ')}</div>
+                          </div>
+                          {ob.days_left != null && <div className={cn('text-sm font-bold ml-2', ob.days_left <= 14 ? 'text-red-600' : ob.days_left <= 45 ? 'text-amber-600' : 'text-slate-400')}>{ob.days_left}d</div>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </details>
+              )}
+            </>
+          );
+        })()}
 
         {loadingAnalysis && (
           <div className="card p-6 text-center mb-5">
@@ -1451,24 +1497,24 @@ function Contracts() {
             <button onClick={() => setShowClauses(!showClauses)} className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors text-left">
               <div className="flex items-center gap-2">
                 <Brain className="w-3.5 h-3.5 text-indigo-400" />
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Legal Risk Summary</span>
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Legal Risk Summary</span>
                 {an.risk_score != null && <span className={cn('text-[11px] font-bold px-1.5 py-0.5 rounded-full', an.risk_level === 'high' ? 'bg-red-100 text-red-700' : an.risk_level === 'medium' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700')}>{an.risk_level === 'high' ? 'High Risk' : an.risk_level === 'medium' ? 'Medium Risk' : 'Low Risk'}</span>}
-                <span className="text-[10px] text-slate-400">{clauses.length} clauses analyzed</span>
+                <span className="text-[11px] text-slate-400">{clauses.length} clauses analyzed</span>
               </div>
               <ChevronDown className={cn("w-4 h-4 text-slate-400 transition-transform", showClauses && "rotate-180")} />
             </button>
             {showClauses && (
               <div className="px-4 pb-4 border-t border-slate-100 pt-3">
-                <div className="text-[10px] text-slate-400 mb-3 italic">Clause analysis feeds vendor risk scoring and triage thresholds automatically</div>
+                <div className="text-[11px] text-slate-400 mb-3 italic">Clause analysis feeds vendor risk scoring and triage thresholds automatically</div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                   {clauses.map((cl, i) => (
                     <div key={i} className={cn('p-3 rounded-lg border-l-[3px]', cl.risk === 'high' ? 'border-red-500 bg-red-50/50' : cl.risk === 'medium' ? 'border-amber-400 bg-amber-50/50' : 'border-emerald-400 bg-emerald-50/30')}>
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-[10px] font-bold text-slate-600 uppercase">{(cl.type || '').replace(/_/g, ' ')}</span>
+                        <span className="text-[11px] font-bold text-slate-600 uppercase">{(cl.type || '').replace(/_/g, ' ')}</span>
                         {riskBadge(cl.risk)}
                       </div>
                       <div className="text-xs text-slate-700 font-medium">{cl.summary}</div>
-                      <div className="text-[10px] text-slate-400 mt-1">Benchmark: {cl.benchmark}</div>
+                      <div className="text-[11px] text-slate-400 mt-1">Benchmark: {cl.benchmark}</div>
                     </div>
                   ))}
                 </div>
@@ -1507,12 +1553,6 @@ function Contracts() {
   return (
     <div className="page-enter">
       <PageHeader title="Contracts" sub={`${contracts.length} vendor contracts`}>
-        <button onClick={runLifecycle} disabled={lifecycleRunning} className="btn-g text-xs" title="Check contracts and generate intelligence report">
-          {lifecycleRunning ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Shield className="w-3 h-3" />} Lifecycle Check
-        </button>
-        <button onClick={loadReport} className="btn-o text-xs" title="Contract Intelligence Report for CFO/Procurement">
-          <FileCheck className="w-3 h-3" /> Intel Report
-        </button>
         <button onClick={() => d({ type: 'TAB', tab: 'upload' })} className="btn-p"><Upload className="w-4 h-4" /> Upload Contract</button>
       </PageHeader>
 
@@ -1538,17 +1578,17 @@ function Contracts() {
         <div className="card p-4 mb-4 border-l-4 border-red-400">
           <div className="flex items-center gap-2 mb-2">
             <AlertCircle className="w-3.5 h-3.5 text-red-500" />
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Contract Ceiling Breaches</span>
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Contract Ceiling Breaches</span>
             <Badge c="err">{utilizationCases.length}</Badge>
           </div>
-          <div className="text-[10px] text-slate-400 mb-2">Invoices approaching or exceeding contract value — AP action required</div>
+          <div className="text-[11px] text-slate-400 mb-2">Invoices approaching or exceeding contract value — AP action required</div>
           <div className="space-y-1.5">
             {utilizationCases.map(uc => (
               <div key={uc.id} className="flex items-center justify-between p-2.5 bg-red-50 rounded-lg border border-red-100 cursor-pointer hover:bg-red-100"
                 onClick={() => d({ type: 'TAB', tab: 'cases' })}>
                 <div>
                   <div className="text-xs font-semibold text-slate-800">{uc.title}</div>
-                  <div className="text-[10px] text-slate-500">{uc.vendor} · {uc.id}</div>
+                  <div className="text-[11px] text-slate-500">{uc.vendor} · {uc.id}</div>
                 </div>
                 <Badge c={uc.priority === 'critical' ? 'err' : 'warn'}>{uc.priority}</Badge>
               </div>
@@ -1560,96 +1600,156 @@ function Contracts() {
       {/* Intelligence Report Modal (for CFO/Procurement, not AP) */}
       {showReport && intelReport && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in" onClick={() => setShowReport(false)}>
-          <div className="card w-full max-w-[700px] max-h-[85vh] overflow-y-auto p-6" onClick={e => e.stopPropagation()}>
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <div className="text-lg font-bold text-slate-900">Contract Intelligence Report</div>
-                <div className="text-xs text-slate-500">{intelReport.period} · For CFO / Procurement</div>
-              </div>
-              <button onClick={() => setShowReport(false)} className="p-2 rounded-lg hover:bg-slate-100"><X className="w-4 h-4 text-slate-400" /></button>
-            </div>
+          <div className="card w-full max-w-[720px] max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
 
-            {/* Summary Line */}
-            <div className="p-3 bg-indigo-50 rounded-xl text-sm text-indigo-800 font-medium mb-4 border border-indigo-100">
-              {intelReport.summary_line}
-            </div>
-
-            {/* Sections */}
-            {Object.entries(intelReport.sections || {}).map(([key, sec]) => (
-              <div key={key} className="mb-4">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{sec.title}</div>
-                  <span className="text-[11px] px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full">→ {sec.audience}</span>
+            {/* Header */}
+            <div className="bg-gradient-to-r from-slate-800 to-slate-700 text-white p-6 rounded-t-2xl">
+              <div className="flex justify-between items-start">
+                <div>
+                  <div className="text-xl font-bold">Contract Intelligence Briefing</div>
+                  <div className="text-sm text-slate-300 mt-1">{intelReport.period}</div>
                 </div>
-
-                {key === 'expiring_contracts' && (
-                  <div>
-                    {sec.count === 0 ? <div className="text-xs text-slate-400">No contracts expiring within 90 days</div> : (
-                      <div className="space-y-1">
-                        {(sec.items || []).map((e, i) => (
-                          <div key={i} className={cn("flex justify-between p-2 rounded-lg text-xs", e.urgency === 'critical' ? 'bg-red-50' : e.urgency === 'warning' ? 'bg-amber-50' : 'bg-slate-50')}>
-                            <span className="font-medium">{e.vendor} ({e.number})</span>
-                            <span className={cn("font-bold", e.days_left <= 30 ? "text-red-600" : "text-amber-600")}>{e.days_left}d</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {key === 'early_payment_discounts' && (
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="p-2.5 bg-emerald-50 rounded-lg text-center"><div className="text-[11px] text-slate-400 uppercase">Captured</div><div className="text-sm font-bold text-emerald-600">${(sec.captured || 0).toLocaleString()}</div></div>
-                    <div className="p-2.5 bg-amber-50 rounded-lg text-center"><div className="text-[11px] text-slate-400 uppercase">Missed</div><div className="text-sm font-bold text-amber-600">${(sec.missed || 0).toLocaleString()}</div></div>
-                    <div className="p-2.5 bg-slate-50 rounded-lg text-center"><div className="text-[11px] text-slate-400 uppercase">Capture Rate</div><div className="text-sm font-bold text-slate-700">{sec.capture_rate_pct || 0}%</div></div>
-                  </div>
-                )}
-
-                {key === 'utilization' && (
-                  <div>
-                    {(sec.items || []).length === 0 ? <div className="text-xs text-slate-400">No contracts above 75% utilization</div> : (
-                      <div className="space-y-1">
-                        {(sec.items || []).map((u, i) => (
-                          <div key={i} className={cn("flex justify-between p-2 rounded-lg text-xs", u.status === 'exceeded' ? 'bg-red-50' : u.status === 'critical' ? 'bg-amber-50' : 'bg-slate-50')}>
-                            <span className="font-medium">{u.vendor} ({u.contract})</span>
-                            <span className={cn("font-bold font-mono", u.status === 'exceeded' ? "text-red-600" : "text-amber-600")}>{u.utilization_pct}%</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {key === 'portfolio_risk' && (
-                  <div className="flex gap-3 flex-wrap">
-                    <div className="px-3 py-1.5 bg-emerald-50 rounded-lg text-xs"><span className="font-bold text-emerald-700">{sec.healthy}</span> <span className="text-slate-500">Healthy</span></div>
-                    <div className="px-3 py-1.5 bg-amber-50 rounded-lg text-xs"><span className="font-bold text-amber-700">{sec.warning}</span> <span className="text-slate-500">Warning</span></div>
-                    <div className="px-3 py-1.5 bg-red-50 rounded-lg text-xs"><span className="font-bold text-red-700">{sec.critical}</span> <span className="text-slate-500">Critical</span></div>
-                    <div className="px-3 py-1.5 bg-slate-50 rounded-lg text-xs"><span className="font-bold text-slate-700">{sec.high_risk_clauses_total}</span> <span className="text-slate-500">High-risk clauses</span></div>
-                  </div>
-                )}
-
-                {key === 'lifecycle_alerts' && (
-                  <div>
-                    {(sec.items || []).length === 0 ? <div className="text-xs text-slate-400">No active lifecycle alerts</div> : (
-                      <div className="space-y-1">
-                        {(sec.items || []).slice(0, 8).map((a, i) => (
-                          <div key={i} className={cn("flex items-center justify-between p-2 rounded-lg text-xs border", a.urgency === 'critical' ? 'bg-red-50 border-red-100' : a.urgency === 'high' ? 'bg-amber-50 border-amber-100' : 'bg-slate-50 border-slate-100')}>
-                            <div>
-                              <span className="font-medium">{a.headline}</span>
-                              <span className="text-slate-400 ml-2">→ {a.audience}</span>
-                            </div>
-                            <Badge c={a.urgency === 'critical' ? 'err' : a.urgency === 'high' ? 'warn' : 'muted'}>{a.urgency}</Badge>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {sec.action && <div className="text-xs text-indigo-600 font-medium mt-2">{sec.action}</div>}
+                <button onClick={() => setShowReport(false)} className="p-2 rounded-lg hover:bg-white/10 transition-colors"><X className="w-4 h-4 text-white/60" /></button>
               </div>
-            ))}
+              <div className="mt-4 p-3 bg-white/10 rounded-xl text-sm font-medium leading-relaxed">
+                {intelReport.summary_line}
+              </div>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* ACTION REQUIRED — only sections that need decisions */}
+              {(() => {
+                const secs = intelReport.sections || {};
+                const expiring = secs.expiring_contracts;
+                const util = secs.utilization;
+                const epd = secs.early_payment_discounts;
+                const risk = secs.portfolio_risk;
+                const alerts = secs.lifecycle_alerts;
+
+                const hasExpiring = expiring?.count > 0;
+                const hasUtilization = (util?.items || []).length > 0;
+                const hasEPD = (epd?.captured || 0) > 0 || (epd?.missed || 0) > 0;
+                const hasAlerts = (alerts?.items || []).length > 0;
+                const hasCriticalRisk = (risk?.critical || 0) > 0 || (risk?.high_risk_clauses_total || 0) > 4;
+
+                const actionItems = [];
+                if (hasExpiring) actionItems.push(...(expiring.items || []).map(e => ({
+                  urgency: e.days_left <= 30 ? 'critical' : 'warning',
+                  text: `${e.vendor} (${e.number}) expires in ${e.days_left} days`,
+                  action: 'Begin renewal negotiation',
+                  owner: 'Procurement',
+                })));
+                if (hasUtilization) actionItems.push(...(util.items || []).map(u => ({
+                  urgency: u.status === 'exceeded' ? 'critical' : 'warning',
+                  text: `${u.vendor} at ${u.utilization_pct}% utilization`,
+                  action: u.status === 'exceeded' ? 'Amend contract ceiling' : 'Monitor closely',
+                  owner: 'Finance / Procurement',
+                })));
+
+                return (
+                  <>
+                    {/* Section 1: Action Items */}
+                    {actionItems.length > 0 && (
+                      <div>
+                        <div className="flex items-center gap-2 mb-3">
+                          <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                          <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wide">Action Required</h3>
+                        </div>
+                        <div className="space-y-2">
+                          {actionItems.sort((a,b) => (a.urgency === 'critical' ? 0 : 1) - (b.urgency === 'critical' ? 0 : 1)).map((item, i) => (
+                            <div key={i} className={cn("p-3 rounded-xl border-l-4", item.urgency === 'critical' ? "border-red-500 bg-red-50" : "border-amber-400 bg-amber-50")}>
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <div className="text-sm font-semibold text-slate-900">{item.text}</div>
+                                  <div className="text-sm text-slate-600 mt-1">→ <span className="font-semibold">{item.action}</span></div>
+                                </div>
+                                <span className="text-[11px] px-2 py-1 bg-white/80 rounded-full text-slate-500 font-medium whitespace-nowrap">{item.owner}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* No actions needed */}
+                    {actionItems.length === 0 && (
+                      <div className="flex items-center gap-3 p-4 bg-emerald-50 rounded-xl border border-emerald-100">
+                        <CheckCircle2 className="w-5 h-5 text-emerald-500 flex-shrink-0" />
+                        <div className="text-sm font-medium text-emerald-800">No immediate action required. All contracts within acceptable parameters.</div>
+                      </div>
+                    )}
+
+                    {/* Section 2: EPD Performance — only if there's data */}
+                    {hasEPD && (
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wide mb-3">Early Payment Discount Performance</h3>
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="p-4 bg-emerald-50 rounded-xl text-center border border-emerald-100">
+                            <div className="text-2xl font-bold text-emerald-600">${(epd.captured || 0).toLocaleString()}</div>
+                            <div className="text-xs text-slate-500 mt-1 font-medium">Captured</div>
+                          </div>
+                          <div className="p-4 bg-amber-50 rounded-xl text-center border border-amber-100">
+                            <div className="text-2xl font-bold text-amber-600">${(epd.missed || 0).toLocaleString()}</div>
+                            <div className="text-xs text-slate-500 mt-1 font-medium">Missed</div>
+                          </div>
+                          <div className="p-4 bg-slate-50 rounded-xl text-center border border-slate-200">
+                            <div className="text-2xl font-bold text-slate-800">{epd.capture_rate_pct || 0}%</div>
+                            <div className="text-xs text-slate-500 mt-1 font-medium">Capture Rate</div>
+                          </div>
+                        </div>
+                        {epd.action && <div className="text-sm text-indigo-600 font-medium mt-2">→ {epd.action}</div>}
+                      </div>
+                    )}
+
+                    {/* Section 3: Portfolio Health — always show, compact */}
+                    {risk && (
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wide mb-3">Portfolio Health</h3>
+                        <div className="flex gap-3 flex-wrap">
+                          <div className={cn("flex items-center gap-2 px-4 py-2.5 rounded-xl border", risk.critical > 0 ? "bg-red-50 border-red-200" : "bg-emerald-50 border-emerald-100")}>
+                            <div className={cn("text-xl font-bold", risk.critical > 0 ? "text-red-600" : "text-emerald-600")}>{risk.healthy}</div>
+                            <div className="text-xs text-slate-500 font-medium">Healthy</div>
+                          </div>
+                          <div className={cn("flex items-center gap-2 px-4 py-2.5 rounded-xl border", risk.warning > 0 ? "bg-amber-50 border-amber-200" : "bg-slate-50 border-slate-200")}>
+                            <div className={cn("text-xl font-bold", risk.warning > 0 ? "text-amber-600" : "text-slate-400")}>{risk.warning}</div>
+                            <div className="text-xs text-slate-500 font-medium">Warning</div>
+                          </div>
+                          <div className={cn("flex items-center gap-2 px-4 py-2.5 rounded-xl border", risk.critical > 0 ? "bg-red-50 border-red-200" : "bg-slate-50 border-slate-200")}>
+                            <div className={cn("text-xl font-bold", risk.critical > 0 ? "text-red-600" : "text-slate-400")}>{risk.critical}</div>
+                            <div className="text-xs text-slate-500 font-medium">Critical</div>
+                          </div>
+                          {(risk.high_risk_clauses_total || 0) > 0 && (
+                            <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl border bg-orange-50 border-orange-200">
+                              <div className="text-xl font-bold text-orange-600">{risk.high_risk_clauses_total}</div>
+                              <div className="text-xs text-slate-500 font-medium">High-risk clauses</div>
+                            </div>
+                          )}
+                        </div>
+                        {risk.action && <div className="text-sm text-indigo-600 font-medium mt-2">→ {risk.action}</div>}
+                      </div>
+                    )}
+
+                    {/* Section 4: Active Alerts — only if there are any */}
+                    {hasAlerts && (
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wide mb-3">Active Lifecycle Alerts</h3>
+                        <div className="space-y-2">
+                          {(alerts.items || []).slice(0, 6).map((a, i) => (
+                            <div key={i} className={cn("flex items-center justify-between p-3 rounded-xl border", a.urgency === 'critical' ? 'bg-red-50 border-red-100' : a.urgency === 'high' ? 'bg-amber-50 border-amber-100' : 'bg-slate-50 border-slate-100')}>
+                              <div className="text-sm font-medium text-slate-800">{a.headline}</div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[11px] text-slate-400">{a.audience}</span>
+                                <Badge c={a.urgency === 'critical' ? 'err' : a.urgency === 'high' ? 'warn' : 'muted'}>{a.urgency}</Badge>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
           </div>
         </div>
       )}
@@ -1672,12 +1772,21 @@ function Contracts() {
         </div>
       )}
 
+      {/* Intel Report — VP/CFO only */}
+      {(RL[s.user?.role] || 0) >= 2 && (
+        <div className="mb-4">
+          <button onClick={loadReport} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 text-white text-sm font-semibold hover:bg-slate-700 transition-all shadow-sm">
+            <FileCheck className="w-4 h-4" /> View Intelligence Briefing
+          </button>
+        </div>
+      )}
+
       <Table
         cols={[
           { label: 'Contract', render: r => <div><div className="font-semibold text-sm">{r.contractNumber || r.invoiceNumber || r.id}</div><div className="text-xs text-slate-500">{r.vendor}</div></div> },
           { label: 'Health', center: true, render: r => { const h = getHealth(r.id); if (!h) return <span className="text-slate-400">—</span>; return <HealthRing score={h.health_score} size={38} />; }},
           { label: 'Status', center: true, render: r => { const st = getStatus(r); return <Badge c={st.color}>{st.label}</Badge>; }},
-          { label: 'Value', right: true, render: r => <span className="font-semibold text-sm font-mono">{$(r.amount, r.currency)}</span> },
+          { label: 'Value', right: true, render: r => r.amount > 0 ? <span className="font-semibold text-sm font-mono">{$(r.amount, r.currency)}</span> : <span className="text-sm font-semibold text-blue-600">Rate Contract</span> },
           { label: 'Clause Risk', center: true, render: r => { const h = getHealth(r.id); if (!h) return '—'; const cr = h.clause_risk; return <span className={cn('text-sm font-bold', cr >= 60 ? 'text-red-600' : cr >= 30 ? 'text-amber-600' : 'text-emerald-600')}>{cr >= 60 ? 'High' : cr >= 30 ? 'Medium' : 'Low'}</span>; }},
           { label: 'Expiry', center: true, render: r => { const h = getHealth(r.id); if (!h?.days_to_expiry) return '—'; return <span className={cn('text-sm font-bold', h.days_to_expiry <= 30 ? 'text-red-600' : h.days_to_expiry <= 90 ? 'text-amber-600' : 'text-slate-600')}>{h.days_to_expiry}d</span>; }},
           { label: 'Confidence', center: true, render: r => <ConfidenceRing score={r.confidence || 0} /> },
@@ -2261,13 +2370,13 @@ function DocModal() {
   const Field = ({ label, val, k, type = 'text' }) => {
     if (editing && k) return (
       <div>
-        <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">{label}</div>
+        <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">{label}</div>
         <input type={type} defaultValue={val || ''} onChange={e => setFields(f => ({ ...f, [k]: e.target.value }))}
           className="inp text-sm py-1.5 border-accent-300 bg-accent-50/30" />
       </div>
     );
     return (
-      <div><div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">{label}</div><div className="text-sm font-semibold text-slate-800">{val || '—'}</div></div>
+      <div><div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">{label}</div><div className="text-sm font-semibold text-slate-800">{val || '—'}</div></div>
     );
   };
 
@@ -2399,7 +2508,7 @@ function DocModal() {
             {/* Confidence Breakdown */}
             {fc && (
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                <div className="text-[10px] font-bold text-slate-900 uppercase tracking-wider mb-2">Confidence Breakdown</div>
+                <div className="text-[11px] font-bold text-slate-900 uppercase tracking-wider mb-2">Confidence Breakdown</div>
                 {Object.entries(fc).map(([k, v]) => (
                   <div key={k} className="flex items-center justify-between py-1 text-xs border-b border-slate-100 last:border-0">
                     <span className="text-slate-600">{k.replace(/_/g, ' ')} <span className="text-slate-400">({pct(v.weight * 100)})</span></span>
@@ -2415,7 +2524,7 @@ function DocModal() {
             {/* Math Validation — 5 deterministic checks */}
             {ens?.math_validation && (
               <div className={cn('p-3 rounded-xl border', ens.math_validation.passed ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200')}>
-                <div className="text-[10px] font-bold text-slate-900 uppercase tracking-wider mb-2">🔢 Math Validation</div>
+                <div className="text-[11px] font-bold text-slate-900 uppercase tracking-wider mb-2">🔢 Math Validation</div>
                 <div className="flex items-center gap-2 text-xs mb-1.5">
                   <span className={cn('font-bold', ens.math_validation.passed ? 'text-emerald-600' : 'text-amber-600')}>{ens.math_validation.passed ? '✓ All checks passed' : '⚠ Issues detected'}</span>
                   <span className="text-slate-400">({ens.math_validation.checks_run || 5} checks)</span>
@@ -2439,11 +2548,11 @@ function DocModal() {
             {/* Ensemble Data */}
             {ens && ens.fields_agreed != null && (
               <div className={cn('p-3 rounded-xl border', ens.ensemble_confidence === 'high' ? 'bg-emerald-50 border-emerald-200' : ens.ensemble_confidence === 'medium' ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200')}>
-                <div className="text-[10px] font-bold text-slate-900 uppercase tracking-wider mb-2">🤝 Ensemble Verification</div>
+                <div className="text-[11px] font-bold text-slate-900 uppercase tracking-wider mb-2">🤝 Ensemble Verification</div>
                 <div className="grid grid-cols-3 gap-3 mb-2 text-center">
-                  <div><div className="text-lg font-bold text-emerald-600">{ens.fields_agreed || 0}</div><div className="text-[10px] text-slate-400">Agreed</div></div>
-                  <div><div className="text-lg font-bold" style={{ color: (ens.fields_disputed || 0) > 0 ? '#ef4444' : '#10b981' }}>{ens.fields_disputed || 0}</div><div className="text-[10px] text-slate-400">Disputed</div></div>
-                  <div><div className="text-lg font-bold" style={{ color: (ens.agreement_rate || 0) >= 90 ? '#10b981' : '#f59e0b' }}>{pct(ens.agreement_rate)}</div><div className="text-[10px] text-slate-400">Agreement</div></div>
+                  <div><div className="text-lg font-bold text-emerald-600">{ens.fields_agreed || 0}</div><div className="text-[11px] text-slate-400">Agreed</div></div>
+                  <div><div className="text-lg font-bold" style={{ color: (ens.fields_disputed || 0) > 0 ? '#ef4444' : '#10b981' }}>{ens.fields_disputed || 0}</div><div className="text-[11px] text-slate-400">Disputed</div></div>
+                  <div><div className="text-lg font-bold" style={{ color: (ens.agreement_rate || 0) >= 90 ? '#10b981' : '#f59e0b' }}>{pct(ens.agreement_rate)}</div><div className="text-[11px] text-slate-400">Agreement</div></div>
                 </div>
                 {/* Per-field breakdown */}
                 {doc.fieldConfidence && Object.keys(doc.fieldConfidence).length > 0 && (() => {
@@ -2476,10 +2585,10 @@ function DocModal() {
                             </span>
                             <span className="text-slate-700 font-medium w-28 flex-shrink-0">{LABELS[field] || field.replace(/_/g, ' ')}</span>
                             {info.status === 'disputed' && info.a != null && (
-                              <span className="text-[10px] text-red-500 truncate">{String(info.a)} ≠ {String(info.b)}</span>
+                              <span className="text-[11px] text-red-500 truncate">{String(info.a)} ≠ {String(info.b)}</span>
                             )}
                             {info.status === 'single_source' && (
-                              <span className="text-[10px] text-slate-400">one model only</span>
+                              <span className="text-[11px] text-slate-400">one model only</span>
                             )}
                           </div>
                         ))}
@@ -2489,7 +2598,7 @@ function DocModal() {
                               {hasLI.status === 'all_agreed' ? '✓' : hasLI.status === 'count_mismatch' ? '✗' : '–'}
                             </span>
                             <span className="text-slate-700 font-medium w-28 flex-shrink-0">Line Items</span>
-                            <span className="text-[10px] text-slate-400">
+                            <span className="text-[11px] text-slate-400">
                               {hasLI.matched_count != null ? `${hasLI.matched_count} items verified` : hasLI.status === 'all_agreed' ? 'Models agree on all items' : hasLI.status === 'count_mismatch' ? 'Item count differs between models' : hasLI.status === 'both_empty' ? 'No line items extracted' : 'Single model extraction'}
                             </span>
                           </div>
@@ -2500,7 +2609,7 @@ function DocModal() {
                               {hasTax.status === 'agreed' || hasTax.status === 'both_empty' ? '✓' : '~'}
                             </span>
                             <span className="text-slate-700 font-medium w-28 flex-shrink-0">Tax Details</span>
-                            <span className="text-[10px] text-slate-400">
+                            <span className="text-[11px] text-slate-400">
                               {hasTax.status === 'agreed' ? 'Tax calculations verified' : hasTax.status === 'both_empty' ? 'No tax on document' : hasTax.status === 'count_mismatch' ? 'Tax entries differ' : 'Single model extraction'}
                             </span>
                           </div>
@@ -2510,7 +2619,7 @@ function DocModal() {
                   );
                 })()}
                 {ens.resolution_applied && <div className="text-xs text-accent-700 mt-1">✔ Disputes auto-resolved ({ens.fields_resolved?.join(', ')})</div>}
-                <div className="text-[10px] text-slate-400 mt-1">Models: {ens.models_used?.map(m => m.split('-').slice(0, 2).join(' ')).join(' + ') || 'N/A'} · {(ens.primary_latency_ms || 0) + (ens.secondary_latency_ms || 0) || ens.total_latency_ms || 0}ms</div>
+                <div className="text-[11px] text-slate-400 mt-1">Models: {ens.models_used?.map(m => m.split('-').slice(0, 2).join(' ')).join(' + ') || 'N/A'} · {(ens.primary_latency_ms || 0) + (ens.secondary_latency_ms || 0) || ens.total_latency_ms || 0}ms</div>
               </div>
             )}
 
@@ -2528,7 +2637,7 @@ function DocModal() {
                 {doc.triageReasons.map((r, i) => <div key={i} className="text-sm text-slate-600 mt-0.5">• {r}</div>)}
                 {!editing && doc.type === 'invoice' && (
                   <div className="flex gap-1 mt-2">{['AUTO_APPROVE', 'REVIEW', 'BLOCK'].filter(l => l !== doc.triageLane).map(l => (
-                    <button key={l} onClick={() => overrideTriage(l)} className="btn-g text-[10px] px-2 py-1">{laneLabel(l)}</button>
+                    <button key={l} onClick={() => overrideTriage(l)} className="btn-g text-[11px] px-2 py-1">{laneLabel(l)}</button>
                   ))}</div>
                 )}
               </div>
@@ -2537,7 +2646,7 @@ function DocModal() {
             {/* Anomalies */}
             {anoms.length > 0 && (
               <div>
-                <div className="text-[10px] font-bold text-red-600 uppercase tracking-wider mb-2">⚠ {anoms.length} Anomalies</div>
+                <div className="text-[11px] font-bold text-red-600 uppercase tracking-wider mb-2">⚠ {anoms.length} Anomalies</div>
                 {anoms.map(a => (
                   <div key={a.id} className="p-3 bg-red-50 border border-red-200 rounded-xl mb-2">
                     <div className="flex justify-between mb-1"><Badge c="err">{a.severity} · {(a.type || '').replace(/_/g, ' ')}</Badge><span className="font-mono font-bold text-red-600">{$(Math.abs(a.amount_at_risk || 0))}</span></div>
@@ -2549,10 +2658,10 @@ function DocModal() {
 
             {/* Line Items */}
             <div>
-              <div className="text-[10px] font-bold text-slate-900 uppercase tracking-wider mb-2">Line Items {editing && <span className="text-accent-600 font-normal">(click values to edit)</span>}</div>
+              <div className="text-[11px] font-bold text-slate-900 uppercase tracking-wider mb-2">Line Items {editing && <span className="text-accent-600 font-normal">(click values to edit)</span>}</div>
               <div className="rounded-xl overflow-hidden border border-slate-100">
                 <table className="w-full text-sm">
-                  <thead><tr className="bg-slate-50"><th className="px-3 py-2 text-left text-[10px] text-slate-500 uppercase">Item</th><th className="px-3 py-2 text-right text-[10px] text-slate-500 uppercase">Qty</th><th className="px-3 py-2 text-right text-[10px] text-slate-500 uppercase">Price</th><th className="px-3 py-2 text-right text-[10px] text-slate-500 uppercase">Total</th></tr></thead>
+                  <thead><tr className="bg-slate-50"><th className="px-3 py-2 text-left text-[11px] text-slate-500 uppercase">Item</th><th className="px-3 py-2 text-right text-[11px] text-slate-500 uppercase">Qty</th><th className="px-3 py-2 text-right text-[11px] text-slate-500 uppercase">Price</th><th className="px-3 py-2 text-right text-[11px] text-slate-500 uppercase">Total</th></tr></thead>
                   <tbody className="divide-y divide-slate-50">
                     {(doc.lineItems || []).map((li, i) => {
                       const q = fields[`li_${i}_qty`] ?? li.quantity;
@@ -2761,7 +2870,7 @@ function LandingPage({ onGo }) {
             <div className="grid grid-cols-2 gap-3 mb-4">
               {/* Manual column */}
               <div className="rounded-xl p-4 bg-red-50/80 border border-red-100">
-                <div className="text-[10px] font-bold text-red-400 uppercase tracking-widest mb-3">Manual Process</div>
+                <div className="text-[11px] font-bold text-red-400 uppercase tracking-widest mb-3">Manual Process</div>
                 <div className="space-y-3">
                   <div>
                     <div className="text-2xl font-extrabold text-red-500">2–3</div>
@@ -2780,7 +2889,7 @@ function LandingPage({ onGo }) {
 
               {/* AuditLens column */}
               <div className="rounded-xl p-4 bg-emerald-50/80 border border-emerald-100">
-                <div className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-3">With AuditLens</div>
+                <div className="text-[11px] font-bold text-emerald-500 uppercase tracking-widest mb-3">With AuditLens</div>
                 <div className="space-y-3">
                   <div>
                     <div className="text-2xl font-extrabold text-emerald-600">450+</div>
@@ -2825,17 +2934,17 @@ function LandingPage({ onGo }) {
 
             {/* Layer 1: Standard rules */}
             <div className="mb-3">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Rule-Based Audit · {rc} Checks</div>
+              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Rule-Based Audit · {rc} Checks</div>
               {ruleNames.length > 0 && (
                 <div className="flex flex-wrap gap-1">
-                  {ruleNames.map(r => <span key={r} className="text-[10px] px-2 py-0.5 rounded bg-red-50 text-red-600 font-medium border border-red-100">{r}</span>)}
+                  {ruleNames.map(r => <span key={r} className="text-[11px] px-2 py-0.5 rounded bg-red-50 text-red-600 font-medium border border-red-100">{r}</span>)}
                 </div>
               )}
             </div>
 
             {/* Layer 2: AI contract intelligence */}
             <div className="mb-3">
-              <div className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mb-1.5">AI Contract & Vendor Intelligence</div>
+              <div className="text-[11px] font-bold text-indigo-500 uppercase tracking-widest mb-1.5">AI Contract & Vendor Intelligence</div>
               <div className="flex flex-wrap gap-1">
                 {[
                   {n: 'Price Drift Detection', d: 'Invoiced vs contracted rates'},
@@ -2845,20 +2954,20 @@ function LandingPage({ onGo }) {
                   {n: 'Volume Commitment', d: 'Minimum purchase shortfall risk'},
                   {n: 'Currency Validation', d: 'Cross-currency invoice checks'},
                 ].map(r => (
-                  <span key={r.n} className="text-[10px] px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 font-medium border border-indigo-100" title={r.d}>{r.n}</span>
+                  <span key={r.n} className="text-[11px] px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 font-medium border border-indigo-100" title={r.d}>{r.n}</span>
                 ))}
               </div>
             </div>
 
             {/* Layer 3: AI delivery analytics */}
             <div className="mb-3">
-              <div className="text-[10px] font-bold text-blue-500 uppercase tracking-widest mb-1.5">AI Delivery Analytics</div>
+              <div className="text-[11px] font-bold text-blue-500 uppercase tracking-widest mb-1.5">AI Delivery Analytics</div>
               <div className="flex flex-wrap gap-1">
                 {[
                   {n: 'Chronic Short Shipment', d: 'Repeated under-delivery patterns'},
                   {n: 'Stale PO Fulfillment', d: 'Aged POs with low completion'},
                 ].map(r => (
-                  <span key={r.n} className="text-[10px] px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-medium border border-blue-100" title={r.d}>{r.n}</span>
+                  <span key={r.n} className="text-[11px] px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-medium border border-blue-100" title={r.d}>{r.n}</span>
                 ))}
               </div>
             </div>
@@ -2866,15 +2975,15 @@ function LandingPage({ onGo }) {
             {/* Opportunity detection */}
             {oppNames.length > 0 && (
               <div className="mb-3">
-                <div className="text-[10px] font-bold text-amber-500 uppercase tracking-widest mb-1.5">Savings Opportunities</div>
+                <div className="text-[11px] font-bold text-amber-500 uppercase tracking-widest mb-1.5">Savings Opportunities</div>
                 <div className="flex flex-wrap gap-1">
-                  {oppNames.map(r => <span key={r} className="text-[10px] px-2 py-0.5 rounded bg-amber-50 text-amber-700 font-medium border border-amber-100">💡 {r}</span>)}
+                  {oppNames.map(r => <span key={r} className="text-[11px] px-2 py-0.5 rounded bg-amber-50 text-amber-700 font-medium border border-amber-100">💡 {r}</span>)}
                 </div>
               </div>
             )}
             <div className="pt-3 mt-3 border-t border-slate-100">
               <div className="flex flex-wrap gap-1.5">
-                {trustBadges.map(t => <span key={t} className="text-[10px] px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 font-semibold border border-slate-200">{t}</span>)}
+                {trustBadges.map(t => <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 font-semibold border border-slate-200">{t}</span>)}
               </div>
             </div>
           </div>
@@ -2895,7 +3004,7 @@ function LandingPage({ onGo }) {
                   <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: f.color + '10' }}>
                     <f.icon className="w-3.5 h-3.5" style={{ color: f.color }} />
                   </div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ color: f.color, background: f.color + '10' }}>{f.tag}</span>
+                  <span className="text-[11px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ color: f.color, background: f.color + '10' }}>{f.tag}</span>
                 </div>
                 <h3 className="text-sm font-bold text-slate-900 mb-1 leading-snug">{f.title}</h3>
                 <p className="text-xs text-slate-500 leading-relaxed">{f.desc}</p>
@@ -2951,10 +3060,10 @@ function LandingPage({ onGo }) {
               </div>
               {Object.keys(sla).length > 0 && (
                 <div className="mt-3 pt-3 border-t border-slate-100">
-                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">SLA Targets</div>
+                  <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">SLA Targets</div>
                   <div className="flex flex-wrap gap-1">
                     {Object.entries(sla).map(([k, v]) => (
-                      <span key={k} className="text-[10px] px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100">{k}: <strong>{v}h</strong></span>
+                      <span key={k} className="text-[11px] px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100">{k}: <strong>{v}h</strong></span>
                     ))}
                   </div>
                 </div>
@@ -2976,7 +3085,7 @@ function LandingPage({ onGo }) {
               </div>
               <div className="flex flex-wrap gap-1">
                 {taxSystems.map(t => (
-                  <span key={t} className="text-[10px] px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 font-medium border border-slate-200">{t}</span>
+                  <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 font-medium border border-slate-200">{t}</span>
                 ))}
               </div>
             </div>
@@ -3046,7 +3155,7 @@ function LandingPage({ onGo }) {
                 <div key={s.l} className="text-center">
                   <div className="text-2xl font-extrabold text-emerald-600">{s.v}</div>
                   <div className="text-xs font-bold text-slate-700">{s.l}</div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">{s.d}</div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">{s.d}</div>
                 </div>
               ))}
             </div>
@@ -3064,7 +3173,7 @@ function LandingPage({ onGo }) {
                 { badge: 'Audit Trail', desc: 'Every action, decision, and AI recommendation logged with timestamp' },
               ].map(c => (
                 <div key={c.badge} className="flex gap-3 items-start">
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-100 whitespace-nowrap">{c.badge}</span>
+                  <span className="text-[11px] px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-100 whitespace-nowrap">{c.badge}</span>
                   <span className="text-xs text-slate-600">{c.desc}</span>
                 </div>
               ))}
