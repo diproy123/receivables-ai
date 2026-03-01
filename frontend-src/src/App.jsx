@@ -2952,10 +2952,14 @@ function DocModal() {
             ) : (
               <>
                 <button onClick={() => {
-                  const w = window.open('', '_blank', 'width=900,height=700,scrollbars=yes,resizable=yes');
+                  const sw = window.screen.availWidth, sh = window.screen.availHeight;
+                  const pw = Math.min(1280, sw - 100), ph = Math.min(800, sh - 80);
+                  const pl = Math.floor((sw - pw) / 2);
+                  const w = window.open('', '_blank', `width=${pw},height=${ph},left=${pl},top=40,scrollbars=yes,resizable=yes`);
                   if (!w) return;
                   const docNum = doc.invoiceNumber || doc.poNumber || doc.contractNumber || doc.id;
                   const docType = docLabel(doc.type);
+                  const pdfUrl = doc.uploadedFile ? `${window.location.origin}/api/uploads/${encodeURIComponent(doc.uploadedFile)}` : '';
                   const fields = [
                     ['Type', docType], ['Document #', docNum], ['Vendor', doc.vendor],
                     ['Amount', doc.amount ? `${doc.currency || 'USD'} ${Number(doc.amount).toLocaleString()}` : '—'],
@@ -2967,7 +2971,6 @@ function DocModal() {
                     ['Payment Terms', doc.paymentTerms || '—'],
                     ['Status', doc.status || '—'],
                     ['PO Reference', doc.poReference || '—'],
-                    ['Parties', [doc.buyer, doc.vendor].filter(Boolean).join(' & ') || '—'],
                     ['Confidence', doc.confidence ? `${Math.round(doc.confidence)}%` : '—'],
                   ];
                   const lineItems = (doc.lineItems || []).map(li =>
@@ -2976,23 +2979,36 @@ function DocModal() {
                     `<td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:right">${li.unitPrice ? Number(li.unitPrice).toLocaleString() : '—'}</td>` +
                     `<td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">${li.total ? Number(li.total).toLocaleString() : '—'}</td></tr>`
                   ).join('');
+                  const pdfPanel = pdfUrl
+                    ? `<div class="pdf-panel"><iframe src="${pdfUrl}" style="width:100%;height:100%;border:none"></iframe></div>`
+                    : `<div class="pdf-panel" style="display:flex;align-items:center;justify-content:center;background:#1e293b;color:#64748b;font-size:14px">
+                        <div style="text-align:center"><div style="font-size:48px;margin-bottom:12px">📄</div>Original file not available<br><span style="font-size:12px;opacity:.6">File lost after redeployment</span></div></div>`;
                   w.document.write(`<!DOCTYPE html><html><head><title>${docType}: ${docNum}</title>
-                    <style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;padding:24px;background:#f8fafc;color:#1e293b}
-                    .hdr{background:linear-gradient(135deg,#1e293b,#334155);color:#fff;padding:20px 24px;margin:-24px -24px 24px;border-radius:0}
-                    .hdr h1{margin:0;font-size:20px}.hdr .sub{opacity:.7;font-size:13px;margin-top:4px}
-                    .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px}
-                    .field{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px}
-                    .field .lbl{font-size:11px;color:#94a3b8;text-transform:uppercase;font-weight:700;letter-spacing:.5px}
-                    .field .val{font-size:14px;font-weight:600;margin-top:2px}
-                    table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden}
-                    th{background:#f1f5f9;font-size:11px;text-transform:uppercase;color:#64748b;padding:8px 10px;text-align:left;font-weight:700}
+                    <style>
+                    *{box-sizing:border-box;margin:0;padding:0}
+                    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f172a;color:#1e293b;height:100vh;overflow:hidden}
+                    .hdr{background:linear-gradient(135deg,#1e293b,#334155);color:#fff;padding:14px 20px;display:flex;align-items:center;justify-content:space-between}
+                    .hdr h1{font-size:17px;font-weight:700}.hdr .sub{opacity:.7;font-size:12px}
+                    .split{display:flex;height:calc(100vh - 52px)}
+                    .pdf-panel{flex:1;min-width:0;background:#1e293b}
+                    .data-panel{width:380px;min-width:380px;background:#fff;overflow-y:auto;border-left:1px solid #e2e8f0}
+                    .section{padding:16px 20px;border-bottom:1px solid #f1f5f9}
+                    .section-title{font-size:11px;color:#94a3b8;text-transform:uppercase;font-weight:700;letter-spacing:.5px;margin-bottom:10px}
+                    .field-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f8fafc}
+                    .field-row .lbl{font-size:11px;color:#94a3b8;text-transform:uppercase;font-weight:600}
+                    .field-row .val{font-size:13px;font-weight:600;text-align:right;max-width:200px}
+                    table{width:100%;border-collapse:collapse}
+                    th{font-size:10px;text-transform:uppercase;color:#94a3b8;padding:6px 8px;text-align:left;font-weight:700;border-bottom:2px solid #e2e8f0}
+                    td{padding:6px 8px;font-size:12px;border-bottom:1px solid #f1f5f9}
                     </style></head><body>
-                    <div class="hdr"><h1>${docType}: ${docNum}</h1><div class="sub">${doc.vendor || ''} · Confidence: ${doc.confidence ? Math.round(doc.confidence)+'%' : '—'}</div></div>
-                    <div class="grid">${fields.map(([l,v]) => `<div class="field"><div class="lbl">${l}</div><div class="val">${v}</div></div>`).join('')}</div>
-                    ${(doc.lineItems||[]).length ? `<h3 style="font-size:13px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Line Items</h3>
-                    <table><thead><tr><th>Description</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Total</th></tr></thead><tbody>${lineItems}</tbody></table>` : ''}
-                    <div style="margin-top:24px;text-align:center;font-size:11px;color:#94a3b8">AuditLens · Popped out ${new Date().toLocaleString()}</div>
-                    </body></html>`);
+                    <div class="hdr"><div><h1>${docType}: ${docNum}</h1><div class="sub">${doc.vendor || ''} · Confidence: ${doc.confidence ? Math.round(doc.confidence)+'%' : '—'}</div></div><div style="font-size:11px;opacity:.5">AuditLens Pop-Out</div></div>
+                    <div class="split">
+                      ${pdfPanel}
+                      <div class="data-panel">
+                        <div class="section"><div class="section-title">Extracted Data</div>${fields.map(([l,v]) => `<div class="field-row"><span class="lbl">${l}</span><span class="val">${v || '—'}</span></div>`).join('')}</div>
+                        ${(doc.lineItems||[]).length ? `<div class="section"><div class="section-title">Line Items</div><table><thead><tr><th>Description</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit</th><th style="text-align:right">Total</th></tr></thead><tbody>${lineItems}</tbody></table></div>` : ''}
+                      </div>
+                    </div></body></html>`);
                   w.document.close();
                   d({ type: 'SEL', doc: null }); setEditing(false);
                 }} className="btn-g text-xs"><ExternalLink className="w-3 h-3" /> Pop Out</button>
