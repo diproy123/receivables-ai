@@ -622,7 +622,7 @@ function Anomalies() {
                       </button>
                     )}
                     {linkedContract && (
-                      <button onClick={() => { d({ type: 'TAB', tab: 'contracts' }); d({ type: 'SET', contractId: linkedContract.id }); }}
+                      <button onClick={() => { d({ type: 'SEL', doc: linkedContract }); }}
                         className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 hover:border-blue-300 transition-all text-sm font-medium text-slate-700">
                         <FileCheck className="w-3.5 h-3.5 text-blue-600" />
                         View Contract: {linkedContract.contractNumber || linkedContract.id}
