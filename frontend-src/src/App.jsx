@@ -1292,7 +1292,7 @@ function Contracts() {
       const target = contracts.find(c => c.id === s.contractId);
       if (target) setSel(target);
     }
-  }, [s.contractId]);
+  }, [s.contractId, contracts.length]);
 
   // Reset to list view when sidebar "Contracts" is re-clicked
   useEffect(() => {
@@ -2968,7 +2968,7 @@ function DocModal() {
                     ['Status', doc.status || '—'],
                     ['PO Reference', doc.poReference || '—'],
                     ['Parties', [doc.buyer, doc.vendor].filter(Boolean).join(' & ') || '—'],
-                    ['Confidence', doc.confidence ? `${Math.round(doc.confidence * 100)}%` : '—'],
+                    ['Confidence', doc.confidence ? `${Math.round(doc.confidence)}%` : '—'],
                   ];
                   const lineItems = (doc.lineItems || []).map(li =>
                     `<tr><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0">${li.description || '—'}</td>` +
@@ -2987,7 +2987,7 @@ function DocModal() {
                     table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden}
                     th{background:#f1f5f9;font-size:11px;text-transform:uppercase;color:#64748b;padding:8px 10px;text-align:left;font-weight:700}
                     </style></head><body>
-                    <div class="hdr"><h1>${docType}: ${docNum}</h1><div class="sub">${doc.vendor || ''} · Confidence: ${doc.confidence ? Math.round(doc.confidence*100)+'%' : '—'}</div></div>
+                    <div class="hdr"><h1>${docType}: ${docNum}</h1><div class="sub">${doc.vendor || ''} · Confidence: ${doc.confidence ? Math.round(doc.confidence)+'%' : '—'}</div></div>
                     <div class="grid">${fields.map(([l,v]) => `<div class="field"><div class="lbl">${l}</div><div class="val">${v}</div></div>`).join('')}</div>
                     ${(doc.lineItems||[]).length ? `<h3 style="font-size:13px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Line Items</h3>
                     <table><thead><tr><th>Description</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Total</th></tr></thead><tbody>${lineItems}</tbody></table>` : ''}

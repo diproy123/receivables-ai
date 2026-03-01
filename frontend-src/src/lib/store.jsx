@@ -39,7 +39,7 @@ export function Store({ children }) {
   const tt = useRef();
 
   useEffect(() => {
-    const t = sessionStorage.getItem('al_token'), u = sessionStorage.getItem('al_user');
+    const t = localStorage.getItem('al_token'), u = localStorage.getItem('al_user');
     if (t && u) { setToken(t); d({ type: 'AUTH', token: t, user: JSON.parse(u) }); }
     onAuthExpire(() => d({ type: 'LOGOUT' }));
     // Deep link from hash
@@ -74,19 +74,19 @@ export function Store({ children }) {
   const login = useCallback(async (email, pw) => {
     const r = await api('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password: pw }) });
     if (r?._err) return r.detail;
-    if (r?.success) { setToken(r.token); sessionStorage.setItem('al_token', r.token); sessionStorage.setItem('al_user', JSON.stringify(r.user)); d({ type: 'AUTH', token: r.token, user: r.user }); return null; }
+    if (r?.success) { setToken(r.token); localStorage.setItem('al_token', r.token); localStorage.setItem('al_user', JSON.stringify(r.user)); d({ type: 'AUTH', token: r.token, user: r.user }); return null; }
     return 'Login failed';
   }, []);
 
   const register = useCallback(async (email, pw, name, role) => {
     const r = await api('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password: pw, name, role }) });
     if (r?._err) return r.detail;
-    if (r?.success) { setToken(r.token); sessionStorage.setItem('al_token', r.token); sessionStorage.setItem('al_user', JSON.stringify(r.user)); d({ type: 'AUTH', token: r.token, user: r.user }); return null; }
+    if (r?.success) { setToken(r.token); localStorage.setItem('al_token', r.token); localStorage.setItem('al_user', JSON.stringify(r.user)); d({ type: 'AUTH', token: r.token, user: r.user }); return null; }
     return 'Registration failed';
   }, []);
 
   const logout = useCallback(() => {
-    setToken(null); sessionStorage.removeItem('al_token'); sessionStorage.removeItem('al_user');
+    setToken(null); localStorage.removeItem('al_token'); localStorage.removeItem('al_user');
     d({ type: 'LOGOUT' });
   }, []);
 
