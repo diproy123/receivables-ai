@@ -615,14 +615,10 @@ function Anomalies() {
                   <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Source Documents</div>
                   <div className="flex gap-2 flex-wrap">
                     {sourceDoc && (
-                      <button onClick={() => {
-                        const fUrl = sourceDoc.uploadedFile ? `/api/uploads/${encodeURIComponent(sourceDoc.uploadedFile)}` : null;
-                        if (fUrl) { window.open(fUrl, '_blank'); }
-                        else { d({ type: 'SEL', doc: sourceDoc }); }
-                      }}
+                      <button onClick={() => { d({ type: 'SEL', doc: sourceDoc }); }}
                         className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 hover:border-accent-300 transition-all text-sm font-medium text-slate-700">
-                        <ExternalLink className="w-3.5 h-3.5 text-accent-600" />
-                        {sourceDoc.uploadedFile ? 'Open' : 'View'} {sourceDoc.type === 'purchase_order' ? 'PO' : sourceDoc.type === 'invoice' ? 'Invoice' : 'Document'}: {sourceDoc.poNumber || sourceDoc.invoiceNumber || sourceDoc.documentNumber || sourceDoc.id}
+                        <Eye className="w-3.5 h-3.5 text-accent-600" />
+                        View {sourceDoc.type === 'purchase_order' ? 'PO' : sourceDoc.type === 'invoice' ? 'Invoice' : 'Document'}: {sourceDoc.poNumber || sourceDoc.invoiceNumber || sourceDoc.documentNumber || sourceDoc.id}
                       </button>
                     )}
                     {linkedContract && (
@@ -1295,7 +1291,6 @@ function Contracts() {
     if (s.contractId && !sel) {
       const target = contracts.find(c => c.id === s.contractId);
       if (target) setSel(target);
-      d({ type: 'TAB', tab: 'contracts' });
     }
   }, [s.contractId]);
 
