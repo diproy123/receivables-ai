@@ -615,14 +615,18 @@ function Anomalies() {
                   <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Source Documents</div>
                   <div className="flex gap-2 flex-wrap">
                     {sourceDoc && (
-                      <button onClick={() => { d({ type: 'SEL', doc: sourceDoc }); }}
+                      <button onClick={() => {
+                        const fUrl = sourceDoc.uploadedFile ? `/api/uploads/${encodeURIComponent(sourceDoc.uploadedFile)}` : null;
+                        if (fUrl) { window.open(fUrl, '_blank'); }
+                        else { d({ type: 'SEL', doc: sourceDoc }); }
+                      }}
                         className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 hover:border-accent-300 transition-all text-sm font-medium text-slate-700">
-                        <Eye className="w-3.5 h-3.5 text-accent-600" />
-                        View {sourceDoc.type === 'purchase_order' ? 'PO' : sourceDoc.type === 'invoice' ? 'Invoice' : 'Document'}: {sourceDoc.poNumber || sourceDoc.invoiceNumber || sourceDoc.documentNumber || sourceDoc.id}
+                        <ExternalLink className="w-3.5 h-3.5 text-accent-600" />
+                        {sourceDoc.uploadedFile ? 'Open' : 'View'} {sourceDoc.type === 'purchase_order' ? 'PO' : sourceDoc.type === 'invoice' ? 'Invoice' : 'Document'}: {sourceDoc.poNumber || sourceDoc.invoiceNumber || sourceDoc.documentNumber || sourceDoc.id}
                       </button>
                     )}
                     {linkedContract && (
-                      <button onClick={() => { d({ type: 'SEL', doc: linkedContract }); }}
+                      <button onClick={() => { d({ type: 'TAB', tab: 'contracts', contractId: linkedContract.id }); }}
                         className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 hover:border-blue-300 transition-all text-sm font-medium text-slate-700">
                         <FileCheck className="w-3.5 h-3.5 text-blue-600" />
                         View Contract: {linkedContract.contractNumber || linkedContract.id}
