@@ -622,11 +622,11 @@ function Anomalies() {
                       </button>
                     )}
                     {linkedContract && (
-                      <button onClick={() => { d({ type: 'TAB', tab: 'contracts', contractId: linkedContract.id }); }}
-                        className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 hover:border-blue-300 transition-all text-sm font-medium text-slate-700">
-                        <FileCheck className="w-3.5 h-3.5 text-blue-600" />
+                      <a href={`#/contracts/${linkedContract.id}`} target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 hover:border-blue-300 transition-all text-sm font-medium text-slate-700 cursor-pointer">
+                        <ExternalLink className="w-3.5 h-3.5 text-blue-600" />
                         View Contract: {linkedContract.contractNumber || linkedContract.id}
-                      </button>
+                      </a>
                     )}
                   </div>
                 </div>
@@ -2950,7 +2950,54 @@ function DocModal() {
                 <button onClick={() => { setEditing(false); setFields({}); }} className="btn-g text-xs"><X className="w-3 h-3" /> Cancel</button>
               </>
             ) : (
-              <button onClick={() => setEditing(true)} className="btn-o text-xs"><Edit3 className="w-3 h-3" /> Edit</button>
+              <>
+                <button onClick={() => {
+                  const w = window.open('', '_blank', 'width=900,height=700,scrollbars=yes,resizable=yes');
+                  if (!w) return;
+                  const docNum = doc.invoiceNumber || doc.poNumber || doc.contractNumber || doc.id;
+                  const docType = docLabel(doc.type);
+                  const fields = [
+                    ['Type', docType], ['Document #', docNum], ['Vendor', doc.vendor],
+                    ['Amount', doc.amount ? `${doc.currency || 'USD'} ${Number(doc.amount).toLocaleString()}` : '—'],
+                    ['Subtotal', doc.subtotal ? `${doc.currency || 'USD'} ${Number(doc.subtotal).toLocaleString()}` : '—'],
+                    ['Tax', doc.tax ? `${doc.currency || 'USD'} ${Number(doc.tax).toLocaleString()}` : '—'],
+                    ['Currency', doc.currency || '—'],
+                    ['Issue Date', doc.issueDate || doc.effectiveDate || '—'],
+                    ['Due Date', doc.dueDate || doc.endDate || '—'],
+                    ['Payment Terms', doc.paymentTerms || '—'],
+                    ['Status', doc.status || '—'],
+                    ['PO Reference', doc.poReference || '—'],
+                    ['Parties', [doc.buyer, doc.vendor].filter(Boolean).join(' & ') || '—'],
+                    ['Confidence', doc.confidence ? `${Math.round(doc.confidence * 100)}%` : '—'],
+                  ];
+                  const lineItems = (doc.lineItems || []).map(li =>
+                    `<tr><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0">${li.description || '—'}</td>` +
+                    `<td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:right">${li.quantity || '—'}</td>` +
+                    `<td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:right">${li.unitPrice ? Number(li.unitPrice).toLocaleString() : '—'}</td>` +
+                    `<td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">${li.total ? Number(li.total).toLocaleString() : '—'}</td></tr>`
+                  ).join('');
+                  w.document.write(`<!DOCTYPE html><html><head><title>${docType}: ${docNum}</title>
+                    <style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;padding:24px;background:#f8fafc;color:#1e293b}
+                    .hdr{background:linear-gradient(135deg,#1e293b,#334155);color:#fff;padding:20px 24px;margin:-24px -24px 24px;border-radius:0}
+                    .hdr h1{margin:0;font-size:20px}.hdr .sub{opacity:.7;font-size:13px;margin-top:4px}
+                    .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px}
+                    .field{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px}
+                    .field .lbl{font-size:11px;color:#94a3b8;text-transform:uppercase;font-weight:700;letter-spacing:.5px}
+                    .field .val{font-size:14px;font-weight:600;margin-top:2px}
+                    table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden}
+                    th{background:#f1f5f9;font-size:11px;text-transform:uppercase;color:#64748b;padding:8px 10px;text-align:left;font-weight:700}
+                    </style></head><body>
+                    <div class="hdr"><h1>${docType}: ${docNum}</h1><div class="sub">${doc.vendor || ''} · Confidence: ${doc.confidence ? Math.round(doc.confidence*100)+'%' : '—'}</div></div>
+                    <div class="grid">${fields.map(([l,v]) => `<div class="field"><div class="lbl">${l}</div><div class="val">${v}</div></div>`).join('')}</div>
+                    ${(doc.lineItems||[]).length ? `<h3 style="font-size:13px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Line Items</h3>
+                    <table><thead><tr><th>Description</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Total</th></tr></thead><tbody>${lineItems}</tbody></table>` : ''}
+                    <div style="margin-top:24px;text-align:center;font-size:11px;color:#94a3b8">AuditLens · Popped out ${new Date().toLocaleString()}</div>
+                    </body></html>`);
+                  w.document.close();
+                  d({ type: 'SEL', doc: null }); setEditing(false);
+                }} className="btn-g text-xs"><ExternalLink className="w-3 h-3" /> Pop Out</button>
+                <button onClick={() => setEditing(true)} className="btn-o text-xs"><Edit3 className="w-3 h-3" /> Edit</button>
+              </>
             )}
             <button onClick={() => { d({ type: 'SEL', doc: null }); setEditing(false); }} className="p-2 rounded-lg hover:bg-slate-100 text-slate-400"><X className="w-5 h-5" /></button>
           </div>

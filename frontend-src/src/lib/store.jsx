@@ -10,6 +10,15 @@ const init = {
   ft: { status: null, loading: false },
 };
 
+function parseHash() {
+  const h = window.location.hash.replace('#/', '');
+  if (!h) return {};
+  const [tab, id] = h.split('/');
+  if (tab === 'contracts' && id) return { tab: 'contracts', contractId: id };
+  if (['dashboard','documents','anomalies','matching','triage','cases','vendors','contracts'].includes(tab)) return { tab };
+  return {};
+}
+
 function reducer(s, a) {
   switch (a.type) {
     case 'AUTH': return { ...s, user: a.user, token: a.token };
@@ -33,6 +42,9 @@ export function Store({ children }) {
     const t = sessionStorage.getItem('al_token'), u = sessionStorage.getItem('al_user');
     if (t && u) { setToken(t); d({ type: 'AUTH', token: t, user: JSON.parse(u) }); }
     onAuthExpire(() => d({ type: 'LOGOUT' }));
+    // Deep link from hash
+    const hp = parseHash();
+    if (hp.tab) d({ type: 'TAB', tab: hp.tab, contractId: hp.contractId || null });
   }, []);
 
   const toast = useCallback((msg, t) => {
