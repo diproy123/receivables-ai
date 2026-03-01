@@ -722,6 +722,20 @@ async def upload_document(request: Request, file: UploadFile = File(...), docume
 
     new_matches, new_anomalies = [], []
 
+    # ── AUTO-SUPPRESSION: repeated false positives get severity downgraded ──
+    def _check_suppression(anom_dict, vendor):
+        patterns = db.get("resolution_patterns", [])
+        atype = anom_dict.get("type", "")
+        dismiss_ct = sum(1 for p in patterns if p.get("vendor") == vendor
+                         and p.get("anomalyType") == atype and p.get("outcome") == "dismissed")
+        if dismiss_ct >= 3:
+            anom_dict["suppressed"] = True
+            anom_dict["suppressionReason"] = f"Dismissed {dismiss_ct}x for this vendor"
+            orig = anom_dict.get("severity", "medium")
+            anom_dict["originalSeverity"] = orig
+            anom_dict["severity"] = "low" if orig in ("medium", "low") else "medium"
+        return anom_dict
+
     _t3 = _time.time()
     if record["type"] in ("invoice", "purchase_order"):
         new_matches = run_matching(db)
@@ -746,6 +760,7 @@ async def upload_document(request: Request, file: UploadFile = File(...), docume
                 "invoiceNumber": record.get("invoiceNumber", ""), "vendor": record["vendor"],
                 "currency": record.get("currency", "USD"),
                 "detectedAt": datetime.now().isoformat(), "status": "open", **a}
+            _check_suppression(anom, record["vendor"])
             new_anomalies.append(anom)
             db["anomalies"].append(anom)
 
@@ -760,6 +775,7 @@ async def upload_document(request: Request, file: UploadFile = File(...), docume
                     "invoiceNumber": record.get("invoiceNumber", ""), "vendor": record["vendor"],
                     "currency": record.get("currency", "USD"),
                     "detectedAt": datetime.now().isoformat(), "status": "open", **a}
+                _check_suppression(anom, record["vendor"])
                 new_anomalies.append(anom)
                 db["anomalies"].append(anom)
 
@@ -772,6 +788,7 @@ async def upload_document(request: Request, file: UploadFile = File(...), docume
                     "invoiceNumber": record.get("invoiceNumber", ""), "vendor": record["vendor"],
                     "currency": record.get("currency", "USD"),
                     "detectedAt": datetime.now().isoformat(), "status": "open", **a}
+                _check_suppression(anom, record["vendor"])
                 new_anomalies.append(anom)
                 db["anomalies"].append(anom)
 
@@ -1259,6 +1276,26 @@ async def resolve_anomaly(aid: str, request: Request):
             a["resolution"] = body.get("resolution", "")
             a["resolvedAt"] = datetime.now().isoformat()
             a["resolvedBy"] = user_display
+            # ── AUDIT TRAIL: Log the resolution action ──
+            db["activity_log"].append({"id": str(uuid.uuid4())[:8], "action": "anomaly_resolved",
+                "anomalyId": aid, "anomalyType": a.get("type", ""),
+                "vendor": a.get("vendor", ""), "severity": a.get("severity", ""),
+                "amountAtRisk": a.get("amount_at_risk", 0),
+                "resolution": a.get("resolution", ""),
+                "timestamp": datetime.now().isoformat(), "performedBy": user_display})
+            # ── RESOLUTION PATTERN: Capture for model training ──
+            db.setdefault("resolution_patterns", []).append({
+                "id": str(uuid.uuid4())[:8],
+                "anomalyType": a.get("type", ""),
+                "severity": a.get("severity", ""),
+                "vendor": a.get("vendor", ""),
+                "amountAtRisk": a.get("amount_at_risk", 0),
+                "outcome": "resolved",
+                "resolution": a.get("resolution", ""),
+                "daysOpen": round((datetime.now() - datetime.fromisoformat(a.get("detectedAt", datetime.now().isoformat()))).total_seconds() / 86400, 1) if a.get("detectedAt") else 0,
+                "resolvedBy": user_display,
+                "timestamp": datetime.now().isoformat()
+            })
             # C3 FIX: Cascade — update vendor risk + re-triage affected invoice
             if a.get("vendor"):
                 update_vendor_profile(a["vendor"], db)
@@ -1293,6 +1330,26 @@ async def dismiss_anomaly(aid: str, request: Request):
             a["dismissReason"] = body.get("reason", "")
             a["dismissedAt"] = datetime.now().isoformat()
             a["dismissedBy"] = user_display
+            # ── AUDIT TRAIL: Log the dismissal action ──
+            db["activity_log"].append({"id": str(uuid.uuid4())[:8], "action": "anomaly_dismissed",
+                "anomalyId": aid, "anomalyType": a.get("type", ""),
+                "vendor": a.get("vendor", ""), "severity": a.get("severity", ""),
+                "amountAtRisk": a.get("amount_at_risk", 0),
+                "dismissReason": a.get("dismissReason", ""),
+                "timestamp": datetime.now().isoformat(), "performedBy": user_display})
+            # ── RESOLUTION PATTERN: Capture for model training ──
+            db.setdefault("resolution_patterns", []).append({
+                "id": str(uuid.uuid4())[:8],
+                "anomalyType": a.get("type", ""),
+                "severity": a.get("severity", ""),
+                "vendor": a.get("vendor", ""),
+                "amountAtRisk": a.get("amount_at_risk", 0),
+                "outcome": "dismissed",
+                "resolution": a.get("dismissReason", ""),
+                "daysOpen": round((datetime.now() - datetime.fromisoformat(a.get("detectedAt", datetime.now().isoformat()))).total_seconds() / 86400, 1) if a.get("detectedAt") else 0,
+                "resolvedBy": user_display,
+                "timestamp": datetime.now().isoformat()
+            })
             # C3 FIX: Cascade — update vendor risk + re-triage affected invoice
             if a.get("vendor"):
                 update_vendor_profile(a["vendor"], db)
@@ -1312,6 +1369,151 @@ async def dismiss_anomaly(aid: str, request: Request):
             save_db(db)
             return {"success": True, "anomaly": a}
     raise HTTPException(404)
+
+
+# ── Resolution Patterns & Training Data ──
+
+@app.get("/api/anomalies/resolution-patterns")
+async def get_resolution_patterns(request: Request):
+    """Return analyst resolution patterns for training and analytics."""
+    db = get_db()
+    patterns = db.get("resolution_patterns", [])
+    # Aggregate by anomaly type
+    type_stats = {}
+    for p in patterns:
+        t = p.get("anomalyType", "unknown")
+        if t not in type_stats:
+            type_stats[t] = {"type": t, "total": 0, "resolved": 0, "dismissed": 0,
+                "avg_days_open": 0, "vendors": set(), "total_risk": 0}
+        ts = type_stats[t]
+        ts["total"] += 1
+        ts["resolved" if p.get("outcome") == "resolved" else "dismissed"] += 1
+        ts["avg_days_open"] += p.get("daysOpen", 0)
+        ts["vendors"].add(p.get("vendor", ""))
+        ts["total_risk"] += p.get("amountAtRisk", 0)
+    for ts in type_stats.values():
+        ts["avg_days_open"] = round(ts["avg_days_open"] / max(ts["total"], 1), 1)
+        ts["dismiss_rate"] = round(ts["dismissed"] / max(ts["total"], 1) * 100, 1)
+        ts["unique_vendors"] = len(ts["vendors"])
+        ts["vendors"] = list(ts["vendors"])[:5]
+    return {
+        "total_patterns": len(patterns),
+        "by_type": sorted(type_stats.values(), key=lambda x: x["total"], reverse=True),
+        "recent": patterns[-20:] if patterns else [],
+        "training_ready": len(patterns) >= 10,
+        "training_message": f"{len(patterns)} resolution patterns captured. {max(0, 10 - len(patterns))} more needed for training export." if len(patterns) < 10 else f"{len(patterns)} patterns ready for model training."
+    }
+
+
+@app.get("/api/anomalies/escalation-targets")
+async def get_escalation_targets(request: Request):
+    """Return smart escalation targets based on anomaly type and policy."""
+    db = get_db()
+    policy = db.get("policy", {})
+    authority = policy.get("authority_tiers", [
+        {"role": "ap_clerk", "limit": 5000, "label": "AP Clerk"},
+        {"role": "ap_manager", "limit": 25000, "label": "AP Manager"},
+        {"role": "controller", "limit": 100000, "label": "Controller"},
+        {"role": "vp_finance", "limit": 500000, "label": "VP Finance"},
+        {"role": "cfo", "limit": None, "label": "CFO"},
+    ])
+    # Escalation routing — read from policy if configured, else use defaults
+    default_routing = {
+        "TERMS_VIOLATION": {"primary": "AP Manager", "secondary": "Procurement Lead", "reason": "Contract/PO terms discrepancy requires procurement review"},
+        "PRICE_VARIANCE": {"primary": "AP Manager", "secondary": "Category Manager", "reason": "Price discrepancy needs vendor negotiation oversight"},
+        "DUPLICATE_INVOICE": {"primary": "AP Manager", "secondary": "Internal Audit", "reason": "Potential duplicate payment requires investigation"},
+        "MISSING_PO": {"primary": "Procurement Lead", "secondary": "AP Manager", "reason": "Missing purchase order — procurement must validate"},
+        "CONTRACT_EXPIRY_WARNING": {"primary": "Procurement Lead", "secondary": "Legal", "reason": "Expired contract needs renewal or new agreement"},
+        "CONTRACT_PRICE_DRIFT": {"primary": "Category Manager", "secondary": "Controller", "reason": "Systematic price drift from contract rates"},
+        "CONTRACT_OVER_UTILIZATION": {"primary": "Controller", "secondary": "VP Finance", "reason": "Contract budget exceeded — requires financial review"},
+        "AMOUNT_SPIKE": {"primary": "AP Manager", "secondary": "Controller", "reason": "Unusual amount increase needs approval"},
+        "SHORT_SHIPMENT": {"primary": "Receiving/Warehouse", "secondary": "Procurement Lead", "reason": "Goods received less than PO — vendor follow-up needed"},
+    }
+    routing = policy.get("escalation_routing", default_routing)
+    return {"authority_tiers": authority, "routing_suggestions": routing}
+
+
+# ── Activity Log / Audit Trail ──
+
+@app.get("/api/activity-log")
+async def get_activity_log(request: Request, limit: int = 100, action: str = None):
+    """Full audit trail — every action with who, what, when."""
+    _user_from_request(request)
+    db = get_db()
+    log = db.get("activity_log", [])
+    if action:
+        log = [e for e in log if e.get("action") == action]
+    log = sorted(log, key=lambda x: x.get("timestamp", ""), reverse=True)[:limit]
+    action_counts = {}
+    for e in db.get("activity_log", []):
+        a = e.get("action", "unknown")
+        action_counts[a] = action_counts.get(a, 0) + 1
+    return {"log": log, "total": len(db.get("activity_log", [])), "action_counts": action_counts}
+
+
+# ── In-App Notifications ──
+
+@app.get("/api/notifications")
+async def get_notifications(request: Request):
+    """Cases assigned to current user + recent team activity."""
+    user = _user_from_request(request)
+    user_name = user.get("name", "")
+    user_role = user.get("role", "")
+    db = get_db()
+    role_labels = {"cfo": "CFO", "vp_finance": "VP Finance", "controller": "Controller",
+                   "ap_manager": "AP Manager", "ap_clerk": "AP Clerk"}
+    my_label = role_labels.get(user_role, user_role)
+    active = [c for c in db.get("cases", []) if c.get("status") in ("open", "in_progress", "escalated")]
+    my_cases = [c for c in active
+                if (c.get("assignedTo") or "").lower() in (user_name.lower(), my_label.lower(), user_role.lower())
+                or not c.get("assignedTo") or c.get("assignedTo") == "unassigned"]
+    escalations = [c for c in my_cases if c.get("type") == "anomaly_escalation"]
+    recent = sorted([e for e in db.get("activity_log", [])
+                     if e.get("action") in ("anomaly_resolved", "anomaly_dismissed", "case_created",
+                                             "case_auto_resolved", "escalation_matrix_updated")],
+                    key=lambda x: x.get("timestamp", ""), reverse=True)[:15]
+    return {"my_cases": len(my_cases), "cases": my_cases[:10],
+            "unread_escalations": len(escalations), "recent_activity": recent}
+
+
+# ── Configurable Escalation Matrix ──
+
+@app.get("/api/policy/escalation-matrix")
+async def get_escalation_matrix(request: Request):
+    _user_from_request(request)
+    db = get_db()
+    policy = db.get("policy", {})
+    default = {
+        "TERMS_VIOLATION": {"primary": "AP Manager", "secondary": "Procurement Lead"},
+        "PRICE_VARIANCE": {"primary": "AP Manager", "secondary": "Category Manager"},
+        "DUPLICATE_INVOICE": {"primary": "AP Manager", "secondary": "Internal Audit"},
+        "MISSING_PO": {"primary": "Procurement Lead", "secondary": "AP Manager"},
+        "CONTRACT_EXPIRY_WARNING": {"primary": "Procurement Lead", "secondary": "Legal"},
+        "CONTRACT_PRICE_DRIFT": {"primary": "Category Manager", "secondary": "Controller"},
+        "CONTRACT_OVER_UTILIZATION": {"primary": "Controller", "secondary": "VP Finance"},
+        "AMOUNT_SPIKE": {"primary": "AP Manager", "secondary": "Controller"},
+        "SHORT_SHIPMENT": {"primary": "Receiving/Warehouse", "secondary": "Procurement Lead"},
+    }
+    matrix = policy.get("escalation_routing", default)
+    roles = ["AP Clerk", "AP Manager", "Procurement Lead", "Category Manager",
+             "Controller", "VP Finance", "CFO", "Legal", "Internal Audit", "Receiving/Warehouse"]
+    return {"matrix": matrix, "available_roles": roles}
+
+
+@app.post("/api/policy/escalation-matrix")
+async def update_escalation_matrix(request: Request):
+    user = _user_from_request(request)
+    user_display = get_user_display(request)
+    body = await request.json()
+    matrix = body.get("matrix", {})
+    db = get_db()
+    db.setdefault("policy", {})["escalation_routing"] = matrix
+    db["activity_log"].append({"id": str(uuid.uuid4())[:8], "action": "escalation_matrix_updated",
+        "timestamp": datetime.now().isoformat(), "performedBy": user_display,
+        "changes": f"{len(matrix)} routing rules updated"})
+    save_db(db)
+    return {"success": True, "matrix": matrix}
+
 
 @app.post("/api/invoices/{iid}/status")
 async def update_invoice_status(iid: str, request: Request, status: str = Form(...)):
@@ -1796,9 +1998,16 @@ async def create_case_manual(request: Request):
     db.setdefault("cases", []).append(case)
     db["activity_log"].append({"id": str(uuid.uuid4())[:8], "action": "case_created",
         "caseId": case["id"], "caseType": case["type"], "title": case["title"],
-        "priority": case["priority"], "timestamp": datetime.now().isoformat(),
+        "priority": case["priority"], "assignedTo": case.get("assignedTo", "unassigned"),
+        "timestamp": datetime.now().isoformat(),
         "performedBy": user_display})
     save_db(db)
+    # Notify via webhook (email/Slack/Teams integration)
+    await dispatch_webhook_event(db, "case.created", {
+        "caseId": case["id"], "title": case["title"], "type": case["type"],
+        "priority": case["priority"], "assignedTo": case.get("assignedTo", "unassigned"),
+        "description": case.get("description", ""), "createdBy": user_display,
+    })
     return {"success": True, "case": case}
 
 @app.post("/api/cases/{case_id}/transition")

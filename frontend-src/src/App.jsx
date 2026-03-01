@@ -7,7 +7,7 @@ import {
   Settings, Brain, Upload, Database, Trash2, LogOut, Shield, ChevronRight, ChevronDown, Search,
   CheckCircle2, XCircle, Clock, TrendingUp, Eye, Edit3, X, UploadCloud, FileUp,
   ArrowUpRight, ArrowDownRight, RotateCcw, Check, Filter, RefreshCw, AlertCircle,
-  CircleDot, ExternalLink, Download, Send
+  CircleDot, ExternalLink, Download, Send, Activity, Bell, Users
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
@@ -122,6 +122,7 @@ function Sidebar() {
     { section: 'Audit', items: [
       { id: 'anomalies', label: 'Anomalies', icon: AlertTriangle, badge: oa, bc: 'err' },
       { id: 'matching', label: 'PO Matching', icon: Link2, badge: rm, bc: 'warn' },
+      { id: 'audit_trail', label: 'Audit Trail', icon: Activity },
     ]},
     { section: 'Master Data', items: [
       { id: 'vendors', label: 'Vendors', icon: Building2, badge: s.dash?.vendor_risk?.high_risk, bc: 'err' },
@@ -492,21 +493,73 @@ function Anomalies() {
   const [sel, setSel] = useState(null);
   const [notes, setNotes] = useState('');
   const [tab, setTab] = useState('open');
+  const [actionType, setActionType] = useState('');
+  const [actionMode, setActionMode] = useState('');
 
   // Reset to list when sidebar re-clicked
-  useEffect(() => { if (s.tab === 'anomalies') setSel(null); }, [s.tabKey]);
+  useEffect(() => { if (s.tab === 'anomalies') { setSel(null); setActionMode(''); setActionType(''); setNotes(''); } }, [s.tabKey]);
 
   const filtered = tab === 'all' ? anoms : anoms.filter(a => a.status === tab);
 
+  const resolveActions = [
+    { value: 'corrected_po', label: 'Corrected PO / Document' },
+    { value: 'vendor_notified', label: 'Vendor Notified' },
+    { value: 'credit_note_issued', label: 'Credit Note Issued' },
+    { value: 'payment_adjusted', label: 'Payment Adjusted' },
+    { value: 'contract_updated', label: 'Contract Updated' },
+    { value: 'other_resolution', label: 'Other — See Notes' },
+  ];
+  const dismissReasons = [
+    { value: 'approved_exception', label: 'Approved Exception' },
+    { value: 'false_positive', label: 'False Positive / Not an Issue' },
+    { value: 'duplicate_detection', label: 'Duplicate Detection' },
+    { value: 'within_tolerance', label: 'Within Acceptable Tolerance' },
+    { value: 'other_dismiss', label: 'Other — See Notes' },
+  ];
+
   async function resolve(id) {
+    if (!actionType) { toast('Select what action was taken', 'warning'); return; }
     if (!notes.trim()) { toast('Please add resolution notes', 'warning'); return; }
-    await post(`/api/anomalies/${id}/resolve`, { resolution: notes });
-    await load(); setNotes(''); setSel(null); toast('Anomaly resolved', 'success');
+    const label = resolveActions.find(a => a.value === actionType)?.label || actionType;
+    await post(`/api/anomalies/${id}/resolve`, { resolution: `[${label}] ${notes}` });
+    await load(); setNotes(''); setActionType(''); setSel(null); toast('Anomaly resolved', 'success');
   }
   async function dismiss(id) {
-    if (!notes.trim()) { toast('Please add a reason for dismissal', 'warning'); return; }
-    await post(`/api/anomalies/${id}/dismiss`, { reason: notes });
-    await load(); setNotes(''); setSel(null); toast('Anomaly dismissed', 'success');
+    if (!actionType) { toast('Select a dismissal reason', 'warning'); return; }
+    if (!notes.trim()) { toast('Please add justification notes', 'warning'); return; }
+    const label = dismissReasons.find(a => a.value === actionType)?.label || actionType;
+    await post(`/api/anomalies/${id}/dismiss`, { reason: `[${label}] ${notes}` });
+    await load(); setNotes(''); setActionType(''); setSel(null); toast('Anomaly dismissed', 'success');
+  }
+  const escalationRouting = {
+    'TERMS_VIOLATION': { primary: 'AP Manager', secondary: 'Procurement Lead' },
+    'PRICE_VARIANCE': { primary: 'AP Manager', secondary: 'Category Manager' },
+    'DUPLICATE_INVOICE': { primary: 'AP Manager', secondary: 'Internal Audit' },
+    'MISSING_PO': { primary: 'Procurement Lead', secondary: 'AP Manager' },
+    'CONTRACT_EXPIRY_WARNING': { primary: 'Procurement Lead', secondary: 'Legal' },
+    'CONTRACT_PRICE_DRIFT': { primary: 'Category Manager', secondary: 'Controller' },
+    'CONTRACT_OVER_UTILIZATION': { primary: 'Controller', secondary: 'VP Finance' },
+    'AMOUNT_SPIKE': { primary: 'AP Manager', secondary: 'Controller' },
+    'SHORT_SHIPMENT': { primary: 'Receiving / Warehouse', secondary: 'Procurement Lead' },
+  };
+
+  async function escalate(anom) {
+    const route = escalationRouting[anom.type] || { primary: 'AP Manager', secondary: 'Controller' };
+    const desc = `Anomaly: ${anom.description}\nVendor: ${anom.vendor}\nAmount at Risk: ${anom.amount_at_risk ? '$' + Number(anom.amount_at_risk).toLocaleString() : 'N/A'}\nEscalated to: ${route.primary}\n${anom.recommendation ? 'Recommendation: ' + anom.recommendation : ''}`;
+    await post('/api/cases', {
+      title: `Escalation: ${anom.invoiceNumber || anom.id} — ${anom.type}`,
+      description: desc,
+      type: 'anomaly_escalation',
+      priority: anom.severity === 'high' ? 'high' : 'medium',
+      invoiceId: anom.invoiceId || anom.id,
+      anomalyIds: [anom.id],
+      vendor: anom.vendor,
+      amountAtRisk: anom.amount_at_risk || 0,
+      assignedTo: route.primary,
+    });
+    // Mark anomaly as escalated so it can't be escalated again
+    await post(`/api/anomalies/${anom.id}/resolve`, { resolution: `[Escalated to ${route.primary}] Case created for investigation.` });
+    await load(); setActionMode(''); toast(`Escalated to ${route.primary} — case created`, 'success');
   }
 
   const openCount = anoms.filter(a => a.status === 'open').length;
@@ -542,7 +595,12 @@ function Anomalies() {
                   </div>
                 );
               }},
-              { label: 'Status', render: r => <Badge c={r.status === 'open' ? 'warn' : r.status === 'resolved' ? 'ok' : 'muted'}>{r.status}</Badge> },
+              { label: 'Status', render: r => (
+                <div className="flex items-center gap-1.5">
+                  <Badge c={r.status === 'open' ? 'warn' : r.status === 'resolved' ? 'ok' : 'muted'}>{r.status}</Badge>
+                  {r.suppressed && <span className="text-[10px] px-1.5 py-0.5 bg-purple-100 text-purple-600 font-bold rounded" title={r.suppressionReason}>⚡ SUPPRESSED</span>}
+                </div>
+              )},
             ]}
             rows={filtered}
             onRow={r => setSel(r)}
@@ -560,6 +618,12 @@ function Anomalies() {
                 </div>
                 <h3 className="text-lg font-bold text-slate-900">{sel.invoiceNumber}</h3>
                 <div className="text-sm text-slate-500">{sel.vendor}</div>
+                {sel.suppressed && (
+                  <div className="mt-2 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-50 border border-purple-100">
+                    <span className="text-[11px] font-bold text-purple-600">⚡ Auto-Suppressed</span>
+                    <span className="text-[11px] text-purple-500">{sel.suppressionReason}{sel.originalSeverity ? ` · Severity downgraded from ${sel.originalSeverity}` : ''}</span>
+                  </div>
+                )}
               </div>
               <button onClick={() => setSel(null)} className="p-1 hover:bg-slate-100 rounded-lg"><X className="w-4 h-4" /></button>
             </div>
@@ -644,19 +708,97 @@ function Anomalies() {
             {/* Resolution section */}
             {sel.status === 'open' ? (
               <div className="mt-6 pt-4 border-t border-slate-200">
-                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Take Action</div>
-                <textarea value={notes} onChange={e => setNotes(e.target.value)}
-                  placeholder="Enter resolution notes — what did you find? What action was taken?"
-                  className="w-full border border-slate-200 rounded-xl p-3 text-sm h-24 resize-none focus:ring-2 focus:ring-accent-500 focus:border-accent-500 mb-3" />
-                <div className="flex gap-2">
-                  <button onClick={() => resolve(sel.id)} className="btn-p text-sm px-4 py-2 flex-1"><Check className="w-4 h-4" /> Resolve</button>
-                  <button onClick={() => dismiss(sel.id)} className="btn-g text-sm px-4 py-2 flex-1"><X className="w-4 h-4" /> Dismiss</button>
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Take Action</div>
+
+                {/* Action type tabs */}
+                <div className="flex gap-1.5 mb-3">
+                  {[['resolve', 'Resolve', 'bg-emerald-600'], ['dismiss', 'Dismiss', 'bg-slate-500'], ['escalate', 'Escalate', 'bg-amber-600']].map(([k, label, bg]) => (
+                    <button key={k} onClick={() => { setActionType(''); setNotes(''); setActionMode(k); }}
+                      className={cn('px-3 py-1.5 rounded-lg text-xs font-semibold transition-all',
+                        actionMode === k ? `${bg} text-white` : 'bg-slate-100 text-slate-600 hover:bg-slate-200')}
+                    >{label}</button>
+                  ))}
                 </div>
+
+                {/* Resolve flow */}
+                {actionMode === 'resolve' && (
+                  <div className="space-y-2.5">
+                    <div>
+                      <div className="text-[11px] font-semibold text-slate-500 mb-1">Action Taken *</div>
+                      <select value={actionType} onChange={e => setActionType(e.target.value)}
+                        className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
+                        <option value="">Select what action was taken...</option>
+                        {resolveActions.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
+                      </select>
+                    </div>
+                    <textarea value={notes} onChange={e => setNotes(e.target.value)}
+                      placeholder="Describe what was done — e.g. 'Reissued PO with corrected payment terms. Vendor confirmed receipt.'"
+                      className="w-full border border-slate-200 rounded-lg p-2.5 text-sm h-20 resize-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" />
+                    <button onClick={() => resolve(sel.id)} className="btn-p text-sm px-4 py-2 w-full"><Check className="w-4 h-4" /> Resolve Anomaly</button>
+                  </div>
+                )}
+
+                {/* Dismiss flow */}
+                {actionMode === 'dismiss' && (
+                  <div className="space-y-2.5">
+                    <div>
+                      <div className="text-[11px] font-semibold text-slate-500 mb-1">Reason for Dismissal *</div>
+                      <select value={actionType} onChange={e => setActionType(e.target.value)}
+                        className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-slate-400 focus:border-slate-400">
+                        <option value="">Select reason...</option>
+                        {dismissReasons.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
+                      </select>
+                    </div>
+                    <textarea value={notes} onChange={e => setNotes(e.target.value)}
+                      placeholder="Justification — e.g. 'Net 45 exception approved by VP Procurement per email 2/15/2025.'"
+                      className="w-full border border-slate-200 rounded-lg p-2.5 text-sm h-20 resize-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400" />
+                    <button onClick={() => dismiss(sel.id)} className="bg-slate-600 hover:bg-slate-700 text-white text-sm px-4 py-2 rounded-xl font-semibold w-full flex items-center justify-center gap-2 transition-all"><X className="w-4 h-4" /> Dismiss Anomaly</button>
+                  </div>
+                )}
+
+                {/* Escalate flow */}
+                {actionMode === 'escalate' && (
+                  <div className="space-y-2.5">
+                    {(() => {
+                      const route = escalationRouting[sel.type] || { primary: 'AP Manager', secondary: 'Controller' };
+                      const amtText = sel.amount_at_risk > 25000 ? 'High value — consider escalating to Controller/VP' : '';
+                      return (
+                        <>
+                          <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 text-sm text-amber-800">
+                            <div className="font-bold mb-1">Recommended Escalation Path</div>
+                            <div className="flex gap-3 mb-2">
+                              <div className="flex-1 bg-white rounded-lg p-2 border border-amber-200">
+                                <div className="text-[11px] text-amber-600 font-bold uppercase">Primary</div>
+                                <div className="text-sm font-bold text-slate-800">{route.primary}</div>
+                              </div>
+                              <div className="flex-1 bg-white rounded-lg p-2 border border-amber-200">
+                                <div className="text-[11px] text-amber-600 font-bold uppercase">Alternative</div>
+                                <div className="text-sm font-bold text-slate-800">{route.secondary}</div>
+                              </div>
+                            </div>
+                            {amtText && <div className="text-xs font-semibold text-red-700 mt-1">⚠ {amtText}</div>}
+                            <div className="text-xs text-amber-700 mt-1">This creates a <span className="font-bold">Case</span> assigned to the review queue.</div>
+                          </div>
+                          <button onClick={() => escalate(sel)} className="bg-amber-600 hover:bg-amber-700 text-white text-sm px-4 py-2 rounded-xl font-semibold w-full flex items-center justify-center gap-2 transition-all"><ClipboardList className="w-4 h-4" /> Escalate to {route.primary}</button>
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {/* Default — no mode selected yet */}
+                {!actionMode && (
+                  <div className="text-center text-xs text-slate-400 py-4">Select an action above to proceed</div>
+                )}
               </div>
             ) : (
               <div className="mt-6 pt-4 border-t border-slate-200">
                 <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Resolution</div>
-                <div className="text-sm text-slate-700 bg-emerald-50 border border-emerald-100 rounded-xl p-3">
+                <div className={cn("text-sm text-slate-700 rounded-xl p-3 border", sel.status === 'resolved' ? "bg-emerald-50 border-emerald-100" : "bg-slate-50 border-slate-100")}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <Badge c={sel.status === 'resolved' ? 'ok' : 'muted'}>{sel.status}</Badge>
+                    <span className="text-xs text-slate-400">{sel.resolvedBy || sel.dismissedBy || ''} · {sel.resolvedAt ? new Date(sel.resolvedAt).toLocaleString() : sel.dismissedAt ? new Date(sel.dismissedAt).toLocaleString() : ''}</span>
+                  </div>
                   {sel.resolution || sel.dismissReason || 'No notes recorded'}
                 </div>
               </div>
@@ -2342,6 +2484,135 @@ ${hasEPD ? `
 }
 
 /* ═══════════════════════════════════════════════════
+   AUDIT TRAIL
+   ═══════════════════════════════════════════════════ */
+function AuditTrail() {
+  const { s, toast } = useStore();
+  const [log, setLog] = useState([]);
+  const [counts, setCounts] = useState({});
+  const [total, setTotal] = useState(0);
+  const [filter, setFilter] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const url = filter ? `/api/activity-log?limit=200&action=${filter}` : '/api/activity-log?limit=200';
+    const r = await api(url);
+    if (r && !r._err) { setLog(r.log || []); setCounts(r.action_counts || {}); setTotal(r.total || 0); }
+    setLoading(false);
+  }, [filter]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const actionMeta = {
+    document_uploaded: { icon: Upload, color: '#2563eb', label: 'Document Uploaded' },
+    anomalies_detected: { icon: AlertTriangle, color: '#f59e0b', label: 'Anomalies Detected' },
+    anomaly_resolved: { icon: Check, color: '#10b981', label: 'Anomaly Resolved' },
+    anomaly_dismissed: { icon: X, color: '#6b7280', label: 'Anomaly Dismissed' },
+    case_created: { icon: ClipboardList, color: '#8b5cf6', label: 'Case Created' },
+    case_auto_resolved: { icon: CheckCircle2, color: '#10b981', label: 'Case Auto-Resolved' },
+    status_changed: { icon: RefreshCw, color: '#3b82f6', label: 'Status Changed' },
+    policy_updated: { icon: Settings, color: '#6366f1', label: 'Policy Updated' },
+    policy_preset_applied: { icon: RotateCcw, color: '#6366f1', label: 'Preset Applied' },
+    escalation_matrix_updated: { icon: Users, color: '#d97706', label: 'Escalation Matrix Updated' },
+    lifecycle_case_created: { icon: AlertCircle, color: '#ef4444', label: 'Lifecycle Alert' },
+    extraction_failed: { icon: XCircle, color: '#ef4444', label: 'Extraction Failed' },
+    manual_entry: { icon: Edit3, color: '#0ea5e9', label: 'Manual Entry' },
+    grn_matched: { icon: Link2, color: '#059669', label: 'GRN Matched' },
+  };
+
+  const topActions = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 8);
+
+  return (
+    <div className="page-enter space-y-6">
+      <PageHeader title="Audit Trail" sub={`${total} events logged`}>
+        <button onClick={load} className="btn-o text-xs"><RefreshCw className="w-3 h-3" /> Refresh</button>
+      </PageHeader>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[
+          { label: 'Total Events', value: total, color: '#3b82f6' },
+          { label: 'Documents Uploaded', value: counts.document_uploaded || 0, color: '#2563eb' },
+          { label: 'Anomalies Resolved', value: (counts.anomaly_resolved || 0) + (counts.anomaly_dismissed || 0), color: '#10b981' },
+          { label: 'Cases Created', value: (counts.case_created || 0) + (counts.lifecycle_case_created || 0), color: '#8b5cf6' },
+        ].map(c => (
+          <div key={c.label} className="card p-4 text-center">
+            <div className="text-2xl font-extrabold" style={{ color: c.color }}>{c.value}</div>
+            <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mt-1">{c.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Filter tabs */}
+      <div className="flex gap-1.5 flex-wrap">
+        <button onClick={() => setFilter('')}
+          className={cn('px-3 py-1.5 rounded-lg text-xs font-semibold transition-all',
+            !filter ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')}>
+          All ({total})
+        </button>
+        {topActions.map(([action, count]) => {
+          const meta = actionMeta[action] || {};
+          return (
+            <button key={action} onClick={() => setFilter(action)}
+              className={cn('px-3 py-1.5 rounded-lg text-xs font-semibold transition-all',
+                filter === action ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')}>
+              {meta.label || action.replace(/_/g, ' ')} ({count})
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Event list */}
+      <div className="card overflow-hidden">
+        {loading ? (
+          <div className="p-8 text-center text-slate-400 text-sm">Loading audit trail...</div>
+        ) : log.length === 0 ? (
+          <div className="p-8 text-center text-slate-400 text-sm">No events found</div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {log.map((e, i) => {
+              const meta = actionMeta[e.action] || { icon: CircleDot, color: '#94a3b8', label: e.action };
+              const Ic = meta.icon;
+              return (
+                <div key={e.id || i} className="flex items-start gap-3 px-5 py-3 hover:bg-slate-50 transition-colors">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
+                    style={{ background: meta.color + '15' }}>
+                    <Ic className="w-4 h-4" style={{ color: meta.color }} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-semibold text-slate-900">{meta.label}</span>
+                      {e.vendor && <span className="text-[11px] px-1.5 py-0.5 bg-slate-100 text-slate-600 font-semibold rounded">{e.vendor}</span>}
+                      {e.documentNumber && <span className="text-[11px] font-mono text-slate-500">{e.documentNumber}</span>}
+                      {e.anomalyType && <span className="text-[11px] px-1.5 py-0.5 bg-amber-50 text-amber-700 font-semibold rounded">{e.anomalyType.replace(/_/g, ' ')}</span>}
+                      {e.caseId && <span className="text-[11px] font-mono text-purple-500">Case {e.caseId}</span>}
+                      {e.severity && <Badge c={e.severity === 'high' ? 'err' : e.severity === 'medium' ? 'warn' : 'muted'}>{e.severity}</Badge>}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-0.5">
+                      {e.resolution && <span className="text-emerald-600 font-medium mr-2">{e.resolution}</span>}
+                      {e.dismissReason && <span className="text-slate-500 font-medium mr-2">{e.dismissReason}</span>}
+                      {e.count && <span className="mr-2">{e.count} anomalies detected</span>}
+                      {e.totalRisk > 0 && <span className="text-red-500 font-semibold mr-2">${num(e.totalRisk)} at risk</span>}
+                      {e.assignedTo && <span className="mr-2">→ {e.assignedTo}</span>}
+                      {e.changes && typeof e.changes === 'string' && <span className="mr-2">{e.changes}</span>}
+                    </div>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <div className="text-[11px] text-slate-400">{e.timestamp ? dateTime(e.timestamp) : ''}</div>
+                    <div className="text-[11px] text-slate-500 font-medium">{e.performedBy || 'system'}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
    SETTINGS (AP POLICY)
    ═══════════════════════════════════════════════════ */
 /* ── Confidence Weight Profiles Editor ── */
@@ -2399,6 +2670,79 @@ function ConfidenceWeightsEditor({ policy, save }) {
       <div className={cn('mt-3 text-sm font-semibold text-center py-2 rounded-lg', isValid ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700')}>
         Total: {(total * 100).toFixed(1)}% {isValid ? '✓' : '— must equal 100%'}
       </div>
+    </div>
+  );
+}
+
+function EscalationMatrixEditor() {
+  const { toast } = useStore();
+  const [matrix, setMatrix] = useState({});
+  const [roles, setRoles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const r = await api('/api/policy/escalation-matrix');
+      if (r && !r._err) { setMatrix(r.matrix || {}); setRoles(r.available_roles || []); }
+      setLoading(false);
+    })();
+  }, []);
+
+  const updateCell = (anomalyType, field, value) => {
+    setMatrix(prev => ({ ...prev, [anomalyType]: { ...prev[anomalyType], [field]: value } }));
+    setDirty(true);
+  };
+
+  const saveMatrix = async () => {
+    const r = await post('/api/policy/escalation-matrix', { matrix });
+    if (r?.success) { toast('Escalation matrix saved', 'success'); setDirty(false); }
+    else toast('Failed to save', 'danger');
+  };
+
+  const anomalyTypes = Object.keys(matrix);
+
+  return (
+    <div className="card p-5">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Escalation Routing Matrix</h3>
+          <p className="text-xs text-slate-500 mt-0.5">Configure who handles each anomaly type. Changes apply to new escalations.</p>
+        </div>
+        {dirty && <button onClick={saveMatrix} className="btn-p text-xs"><Check className="w-3 h-3" /> Save Matrix</button>}
+      </div>
+      {loading ? <div className="text-sm text-slate-400 p-4">Loading...</div> : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-200">
+                <th className="text-left py-2 px-3 text-[11px] font-bold text-slate-500 uppercase">Anomaly Type</th>
+                <th className="text-left py-2 px-3 text-[11px] font-bold text-slate-500 uppercase">Primary Escalation</th>
+                <th className="text-left py-2 px-3 text-[11px] font-bold text-slate-500 uppercase">Alternative</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {anomalyTypes.map(atype => (
+                <tr key={atype} className="hover:bg-slate-50">
+                  <td className="py-2 px-3 text-xs font-semibold text-slate-700">{atype.replace(/_/g, ' ')}</td>
+                  <td className="py-2 px-3">
+                    <select value={matrix[atype]?.primary || ''} onChange={e => updateCell(atype, 'primary', e.target.value)}
+                      className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:ring-2 focus:ring-accent-500">
+                      {roles.map(r => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                  </td>
+                  <td className="py-2 px-3">
+                    <select value={matrix[atype]?.secondary || ''} onChange={e => updateCell(atype, 'secondary', e.target.value)}
+                      className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:ring-2 focus:ring-accent-500">
+                      {roles.map(r => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -2502,6 +2846,9 @@ function SettingsPage() {
 
       {/* Confidence Weight Profiles */}
       <ConfidenceWeightsEditor policy={p} save={async (cw) => { await post('/api/policy', { confidence_weights: cw }); await load(); toast('Confidence weights saved', 'success'); }} />
+
+      {/* Escalation Matrix */}
+      <EscalationMatrixEditor />
 
       {/* History */}
       {history.length > 0 && (
@@ -3348,7 +3695,9 @@ function LandingPage({ onGo }) {
     { icon: FileText, title: 'Investigation Briefs', desc: 'Auto-generated narratives citing exact amounts, contract clauses, and vendor history.', tag: 'AI', color: '#4f46e5' },
     { icon: CheckCircle2, title: 'Plain English Anomalies', desc: 'Technical flags translated into one-sentence explanations with post-validated amounts.', tag: 'AI', color: '#4f46e5' },
     { icon: Eye, title: 'Pattern Insights', desc: 'Statistical analysis identifies recurring vendor issues meeting significance thresholds.', tag: 'AI + STATS', color: '#d97706' },
-    { icon: ClipboardList, title: 'Smart Case Routing', desc: 'Score team by expertise, workload, and authority. AI explains assignments.', tag: 'AI + ALGO', color: '#059669' },
+    { icon: ClipboardList, title: 'Smart Escalation Routing', desc: 'AI recommends the right person for every exception — AP Manager, Procurement, Legal, or Controller — based on anomaly type, amount, and authority matrix.', tag: 'AI + ALGO', color: '#059669' },
+    { icon: Shield, title: 'Complete Audit Trail', desc: 'Every action logged: who resolved it, what they did, when, and why. SOX-ready evidence trail from detection to closure.', tag: 'COMPLIANCE', color: '#dc2626' },
+    { icon: Brain, title: 'Self-Learning Intelligence', desc: 'Every resolve and dismiss trains the model. False positives auto-suppress. Severity scores adapt to your team\'s real-world decisions.', tag: 'AI + LEARN', color: '#6d28d9' },
     { icon: Settings, title: 'Natural Language Policy', desc: 'Configure AP rules in plain English. AI translates to parameters you preview.', tag: 'AI + HUMAN', color: '#0369a1' },
     { icon: Brain, title: 'Custom Fine-Tuning', desc: 'Your corrections train specialized adapters on vendor-specific layouts.', tag: 'AI + LEARN', color: '#6d28d9' },
   ];
@@ -3458,6 +3807,60 @@ function LandingPage({ onGo }) {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Closed-Loop Intelligence ── */}
+      <section className="px-6 pb-12">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-6">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-50 text-purple-600 text-[11px] font-semibold mb-3 tracking-wide">
+              <Brain className="w-3 h-3" /> CLOSED-LOOP INTELLIGENCE
+            </div>
+            <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">AI that learns from your team</h2>
+            <p className="text-sm text-slate-500 mt-2 max-w-xl mx-auto">Every analyst action trains the model. False positives disappear. Severity scores adapt. Your AP intelligence gets sharper with every invoice.</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-white rounded-2xl border border-slate-200/60 p-5">
+              <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center mb-3"><Check className="w-5 h-5 text-emerald-600" /></div>
+              <h3 className="text-sm font-bold text-slate-900 mb-1">Resolve → Model Learns</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">When analysts correct a PO or adjust payment, the resolution type and context become training data. The model learns which anomalies require real action.</p>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {['Corrected PO', 'Vendor Notified', 'Credit Note', 'Payment Adjusted'].map(t => (
+                  <span key={t} className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">{t}</span>
+                ))}
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl border border-slate-200/60 p-5">
+              <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center mb-3"><X className="w-5 h-5 text-slate-500" /></div>
+              <h3 className="text-sm font-bold text-slate-900 mb-1">Dismiss → Noise Suppressed</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">Repeated false positives for a vendor/anomaly combination are auto-suppressed. The model reduces severity for patterns your team consistently dismisses.</p>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {['Approved Exception', 'False Positive', 'Within Tolerance', 'Duplicate'].map(t => (
+                  <span key={t} className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{t}</span>
+                ))}
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl border border-slate-200/60 p-5">
+              <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center mb-3"><ClipboardList className="w-5 h-5 text-amber-600" /></div>
+              <h3 className="text-sm font-bold text-slate-900 mb-1">Escalate → Smart Routing</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">AI recommends the right person based on anomaly type, amount, and your authority matrix. Terms violations go to Procurement. Budget overruns go to Controller.</p>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {['AP Manager', 'Procurement', 'Controller', 'Legal'].map(t => (
+                  <span key={t} className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">{t}</span>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="mt-5 bg-gradient-to-r from-purple-50 to-blue-50 rounded-2xl border border-purple-100 p-5">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center flex-shrink-0"><Shield className="w-6 h-6 text-purple-600" /></div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 mb-1">Complete Audit Trail — SOX Ready</h3>
+                <p className="text-xs text-slate-500 leading-relaxed">Every action is logged with who, what, when, and why. From document upload to anomaly detection to analyst resolution — a complete chain of evidence for internal audit and regulatory compliance. No gaps, no manual reconciliation.</p>
+              </div>
             </div>
           </div>
         </div>
@@ -3890,7 +4293,7 @@ function AppShell() {
   const pages = {
     dashboard: Dashboard, documents: Documents, triage: Triage, cases: Cases,
     anomalies: Anomalies, matching: Matching, vendors: Vendors, contracts: Contracts,
-    settings: SettingsPage, training: Training, upload: UploadPage,
+    settings: SettingsPage, training: Training, upload: UploadPage, audit_trail: AuditTrail,
   };
   const Page = pages[s.tab] || Dashboard;
 

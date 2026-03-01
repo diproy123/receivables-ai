@@ -15,7 +15,7 @@ function parseHash() {
   if (!h) return {};
   const [tab, id] = h.split('/');
   if (tab === 'contracts' && id) return { tab: 'contracts', contractId: id };
-  if (['dashboard','documents','anomalies','matching','triage','cases','vendors','contracts'].includes(tab)) return { tab };
+  if (['dashboard','documents','anomalies','matching','triage','cases','vendors','contracts','audit_trail'].includes(tab)) return { tab };
   return {};
 }
 

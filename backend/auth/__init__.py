@@ -127,12 +127,12 @@ def get_role_from_request(request: Request) -> str:
         return DEFAULT_ROLE
     return role
 
-def get_user_display(request: Request) -> tuple:
-    """Get (name, email) for audit trail."""
+def get_user_display(request: Request) -> str:
+    """Get display name for audit trail."""
     user = _user_from_request(request)
     if user:
-        return user.get("name", "Unknown"), user.get("email", "")
-    return request.headers.get("X-User-Name", "System"), ""
+        return user.get("name", "Unknown")
+    return request.headers.get("X-User-Name", "System")
 
 # ============================================================
 # AUTHORITY
