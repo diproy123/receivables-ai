@@ -487,7 +487,7 @@ function Documents() {
    ANOMALIES
    ═══════════════════════════════════════════════════ */
 function Anomalies() {
-  const { s, toast, load } = useStore();
+  const { s, d, toast, load } = useStore();
   const anoms = s.anomalies || [];
   const [sel, setSel] = useState(null);
   const [notes, setNotes] = useState('');
@@ -592,9 +592,46 @@ function Anomalies() {
             {sel.contract_clause && (
               <div className="mb-4">
                 <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Contract Reference</div>
-                <div className="text-sm text-slate-700 bg-blue-50 border border-blue-100 rounded-xl p-3">{sel.contract_clause}</div>
+                <div className="text-sm text-slate-700 bg-blue-50 border border-blue-100 rounded-xl p-3">
+                  {sel.contract_clause}
+                </div>
               </div>
             )}
+
+            {/* Quick Navigation — View source documents */}
+            {(() => {
+              const allDocs = s.docs || [];
+              // Find the source document (PO or invoice)
+              const sourceDoc = allDocs.find(d => d.id === sel.invoiceId)
+                || allDocs.find(d => (d.invoiceNumber || d.poNumber || d.documentNumber) === sel.invoiceNumber);
+              // Find linked contract
+              const linkedContract = sel.contractId
+                ? allDocs.find(d => d.id === sel.contractId)
+                : (sourceDoc?.vendor ? allDocs.find(d => d.type === 'contract' && d.vendor && sourceDoc.vendor && d.vendor.toLowerCase().includes(sourceDoc.vendor.toLowerCase().split(' ')[0])) : null);
+
+              if (!sourceDoc && !linkedContract) return null;
+              return (
+                <div className="mb-4">
+                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Source Documents</div>
+                  <div className="flex gap-2 flex-wrap">
+                    {sourceDoc && (
+                      <button onClick={() => { d({ type: 'SEL', doc: sourceDoc }); }}
+                        className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 hover:border-accent-300 transition-all text-sm font-medium text-slate-700">
+                        <Eye className="w-3.5 h-3.5 text-accent-600" />
+                        View {sourceDoc.type === 'purchase_order' ? 'PO' : sourceDoc.type === 'invoice' ? 'Invoice' : 'Document'}: {sourceDoc.poNumber || sourceDoc.invoiceNumber || sourceDoc.documentNumber || sourceDoc.id}
+                      </button>
+                    )}
+                    {linkedContract && (
+                      <button onClick={() => { d({ type: 'TAB', tab: 'contracts' }); d({ type: 'SET', contractId: linkedContract.id }); }}
+                        className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 hover:border-blue-300 transition-all text-sm font-medium text-slate-700">
+                        <FileCheck className="w-3.5 h-3.5 text-blue-600" />
+                        View Contract: {linkedContract.contractNumber || linkedContract.id}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Detection Timestamp */}
             {sel.detectedAt && (
