@@ -495,11 +495,13 @@ function Anomalies() {
   const [tab, setTab] = useState('open');
   const [actionType, setActionType] = useState('');
   const [actionMode, setActionMode] = useState('');
+  const [sevFilter, setSevFilter] = useState('');
+  const [catFilter, setCatFilter] = useState('');
+  const [vendorFilter, setVendorFilter] = useState('');
+  const [sortBy, setSortBy] = useState('risk');
+  const [expandedInv, setExpandedInv] = useState(null);
 
-  // Reset to list when sidebar re-clicked
-  useEffect(() => { if (s.tab === 'anomalies') { setSel(null); setActionMode(''); setActionType(''); setNotes(''); } }, [s.tabKey]);
-
-  const filtered = tab === 'all' ? anoms : anoms.filter(a => a.status === tab);
+  useEffect(() => { if (s.tab === 'anomalies') { setSel(null); setActionMode(''); setActionType(''); setNotes(''); setExpandedInv(null); } }, [s.tabKey]);
 
   const resolveActions = [
     { value: 'corrected_po', label: 'Corrected PO / Document' },
@@ -557,57 +559,184 @@ function Anomalies() {
       amountAtRisk: anom.amount_at_risk || 0,
       assignedTo: route.primary,
     });
-    // Mark anomaly as escalated so it can't be escalated again
     await post(`/api/anomalies/${anom.id}/resolve`, { resolution: `[Escalated to ${route.primary}] Case created for investigation.` });
     await load(); setActionMode(''); toast(`Escalated to ${route.primary} — case created`, 'success');
   }
 
-  const openCount = anoms.filter(a => a.status === 'open').length;
-  const resolvedCount = anoms.filter(a => a.status === 'resolved').length;
+  // ── Categorize anomaly types ──
+  const contractTypes = ['CONTRACT_PRICE_DRIFT','CONTRACT_EXPIRY_WARNING','CONTRACT_OVER_UTILIZATION','CONTRACT_UNDERBILLING','VOLUME_COMMITMENT_GAP','CONTRACT_CURRENCY_MISMATCH'];
+  const deliveryTypes = ['CHRONIC_SHORT_SHIPMENT','PO_FULFILLMENT_STALE','SHORT_SHIPMENT','OVERBILLED_VS_RECEIVED','QUANTITY_RECEIVED_MISMATCH','UNRECEIPTED_INVOICE'];
+  function anomCategory(type) {
+    if (contractTypes.includes(type)) return 'contract';
+    if (deliveryTypes.includes(type)) return 'delivery';
+    return 'invoice';
+  }
+  const catLabel = { contract: 'Contract', delivery: 'Delivery', invoice: 'Invoice' };
+  const catColor = { contract: 'text-indigo-600 bg-indigo-50 border-indigo-200', delivery: 'text-blue-600 bg-blue-50 border-blue-200', invoice: 'text-amber-600 bg-amber-50 border-amber-200' };
+
+  // ── Filtering ──
+  let filtered = tab === 'all' ? anoms : anoms.filter(a => a.status === (tab === 'dismissed' ? 'dismissed' : tab));
+  if (sevFilter) filtered = filtered.filter(a => a.severity === sevFilter);
+  if (catFilter) filtered = filtered.filter(a => anomCategory(a.type) === catFilter);
+  if (vendorFilter) filtered = filtered.filter(a => a.vendor === vendorFilter);
+
+  // ── Summary stats ──
+  const openAnoms = anoms.filter(a => a.status === 'open');
+  const resolvedAnoms = anoms.filter(a => a.status !== 'open');
+  const totalRisk = openAnoms.reduce((s, a) => s + Math.abs(a.amount_at_risk || 0), 0);
+  const highCount = openAnoms.filter(a => a.severity === 'high').length;
+  const medCount = openAnoms.filter(a => a.severity === 'medium').length;
+  const lowCount = openAnoms.filter(a => a.severity === 'low').length;
+  const catCounts = { contract: 0, delivery: 0, invoice: 0 };
+  openAnoms.forEach(a => { catCounts[anomCategory(a.type)]++; });
+  const vendors = [...new Set(anoms.map(a => a.vendor).filter(Boolean))];
+
+  // ── Group by invoice ──
+  const groups = {};
+  filtered.forEach(a => {
+    const key = a.invoiceNumber || a.invoiceId || a.id;
+    if (!groups[key]) groups[key] = { key, invoiceNumber: a.invoiceNumber || a.invoiceId, vendor: a.vendor, anomalies: [], totalRisk: 0, highestSev: 'low' };
+    groups[key].anomalies.push(a);
+    groups[key].totalRisk += Math.abs(a.amount_at_risk || 0);
+    if (a.severity === 'high' || (a.severity === 'medium' && groups[key].highestSev === 'low')) groups[key].highestSev = a.severity;
+  });
+  let groupList = Object.values(groups);
+  if (sortBy === 'risk') groupList.sort((a, b) => b.totalRisk - a.totalRisk);
+  else if (sortBy === 'severity') groupList.sort((a, b) => { const o = { high: 3, medium: 2, low: 1 }; return (o[b.highestSev] || 0) - (o[a.highestSev] || 0); });
+  else if (sortBy === 'count') groupList.sort((a, b) => b.anomalies.length - a.anomalies.length);
 
   return (
     <div className="page-enter">
-      <PageHeader title="Anomalies" sub={`${openCount} open anomalies`} />
+      <PageHeader title="Anomalies" sub={`${openAnoms.length} open across ${Object.keys(groups).length} invoices`} />
 
-      {/* Tabs */}
-      <div className="flex gap-2 mb-4">
-        {[['open', `Open (${openCount})`], ['resolved', `Resolved (${resolvedCount})`], ['all', `All (${anoms.length})`]].map(([k, label]) =>
-          <button key={k} onClick={() => { setTab(k); setSel(null); }} className={cn('px-3 py-1.5 rounded-lg text-xs font-medium transition-all', tab === k ? 'bg-accent-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')}>{label}</button>
+      {/* ── Layer 1: Summary Dashboard Strip ── */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
+        <div className="card p-3 text-center">
+          <div className="text-2xl font-extrabold text-red-600">{$(totalRisk)}</div>
+          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">Total Risk</div>
+        </div>
+        <div className="card p-3 text-center cursor-pointer hover:ring-2 hover:ring-red-200 transition-all" onClick={() => { setSevFilter(sevFilter === 'high' ? '' : 'high'); setSel(null); }}>
+          <div className={cn("text-2xl font-extrabold", sevFilter === 'high' ? 'text-white' : 'text-red-600', sevFilter === 'high' && 'bg-red-600 -mx-3 -my-3 p-3 rounded-xl')}>{highCount}</div>
+          {sevFilter !== 'high' && <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">High Severity</div>}
+          {sevFilter === 'high' && <div className="text-[10px] font-bold text-red-100 uppercase tracking-wider mt-0.5">High (filtered)</div>}
+        </div>
+        <div className="card p-3 text-center cursor-pointer hover:ring-2 hover:ring-amber-200 transition-all" onClick={() => { setSevFilter(sevFilter === 'medium' ? '' : 'medium'); setSel(null); }}>
+          <div className="text-2xl font-extrabold text-amber-500">{medCount}</div>
+          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">Medium</div>
+        </div>
+        <div className="card p-3 text-center cursor-pointer hover:ring-2 hover:ring-green-200 transition-all" onClick={() => { setSevFilter(sevFilter === 'low' ? '' : 'low'); setSel(null); }}>
+          <div className="text-2xl font-extrabold text-emerald-500">{lowCount}</div>
+          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">Low</div>
+        </div>
+        <div className="card p-3 text-center">
+          <div className="text-2xl font-extrabold text-slate-700">{resolvedAnoms.length}</div>
+          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">Resolved</div>
+        </div>
+      </div>
+
+      {/* ── Layer 2: Filter Bar ── */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        {/* Status tabs */}
+        {[['open', `Open (${openAnoms.length})`], ['resolved', `Resolved (${resolvedAnoms.length})`], ['all', `All (${anoms.length})`]].map(([k, label]) =>
+          <button key={k} onClick={() => { setTab(k); setSel(null); setExpandedInv(null); }} className={cn('px-3 py-1.5 rounded-lg text-xs font-medium transition-all', tab === k ? 'bg-accent-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')}>{label}</button>
+        )}
+        <div className="w-px h-6 bg-slate-200 mx-1" />
+        {/* Category filters */}
+        {Object.entries(catCounts).filter(([, c]) => c > 0).map(([cat, count]) => (
+          <button key={cat} onClick={() => { setCatFilter(catFilter === cat ? '' : cat); setSel(null); }}
+            className={cn('px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all',
+              catFilter === cat ? catColor[cat] + ' border-current ring-1 ring-current' : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100')}>
+            {catLabel[cat]} ({count})
+          </button>
+        ))}
+        <div className="w-px h-6 bg-slate-200 mx-1" />
+        {/* Vendor filter */}
+        {vendors.length > 1 && (
+          <select value={vendorFilter} onChange={e => { setVendorFilter(e.target.value); setSel(null); }}
+            className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-600 bg-white focus:ring-2 focus:ring-accent-500">
+            <option value="">All Vendors</option>
+            {vendors.map(v => <option key={v} value={v}>{v}</option>)}
+          </select>
+        )}
+        {/* Sort */}
+        <select value={sortBy} onChange={e => setSortBy(e.target.value)}
+          className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-600 bg-white ml-auto focus:ring-2 focus:ring-accent-500">
+          <option value="risk">Sort: Highest Risk</option>
+          <option value="severity">Sort: Severity</option>
+          <option value="count">Sort: Most Anomalies</option>
+        </select>
+        {/* Clear filters */}
+        {(sevFilter || catFilter || vendorFilter) && (
+          <button onClick={() => { setSevFilter(''); setCatFilter(''); setVendorFilter(''); }} className="text-xs text-red-500 font-semibold hover:text-red-700">✕ Clear</button>
         )}
       </div>
 
+      {/* ── Layer 3: Invoice-Grouped List + Detail Panel ── */}
       <div className="flex gap-6">
-        {/* Table */}
-        <div className={cn('transition-all', sel ? 'w-1/2' : 'w-full')}>
-          <Table
-            cols={[
-              { label: 'Anomaly', render: r => <div><div className="font-semibold text-sm leading-snug">{r.description}</div><div className="text-xs text-slate-500 mt-0.5">{r.invoiceNumber} · {r.vendor}</div></div> },
-              { label: 'Severity', render: r => <Badge c={sevColor(r.severity) === 'err' ? 'err' : sevColor(r.severity) === 'warn' ? 'warn' : 'ok'}>{r.severity}</Badge> },
-              { label: 'Risk', right: true, mono: true, render: r => <span className={cn('font-semibold', r.amount_at_risk > 0 ? 'text-red-600' : 'text-slate-400')}>{$(Math.abs(r.amount_at_risk || 0))}</span> },
-              { label: 'Type', render: r => {
-                const isContract = ['CONTRACT_PRICE_DRIFT','CONTRACT_EXPIRY_WARNING','CONTRACT_OVER_UTILIZATION','CONTRACT_UNDERBILLING','VOLUME_COMMITMENT_GAP','CONTRACT_CURRENCY_MISMATCH'].includes(r.type);
-                const isDelivery = ['CHRONIC_SHORT_SHIPMENT','PO_FULFILLMENT_STALE','SHORT_SHIPMENT','OVERBILLED_VS_RECEIVED','QUANTITY_RECEIVED_MISMATCH'].includes(r.type);
-                return (
-                  <div className="flex items-center gap-1.5">
-                    {isContract && <span className="text-[11px] px-1.5 py-0.5 bg-indigo-100 text-indigo-600 font-bold rounded">CONTRACT</span>}
-                    {isDelivery && <span className="text-[11px] px-1.5 py-0.5 bg-blue-100 text-blue-600 font-bold rounded">DELIVERY</span>}
-                    <span className="text-xs text-slate-500">{(r.type || '').replace(/_/g, ' ')}</span>
+        <div className={cn('transition-all space-y-2', sel ? 'w-1/2' : 'w-full')}>
+          {groupList.length === 0 && (
+            <div className="card p-12 text-center text-slate-400 text-sm">No anomalies match your filters</div>
+          )}
+          {groupList.map(g => {
+            const isExpanded = expandedInv === g.key;
+            const sevBg = g.highestSev === 'high' ? 'border-l-red-500' : g.highestSev === 'medium' ? 'border-l-amber-400' : 'border-l-emerald-400';
+            return (
+              <div key={g.key} className={cn('card overflow-hidden border-l-4', sevBg)}>
+                {/* Invoice header row */}
+                <div className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-slate-50 transition-colors"
+                  onClick={() => setExpandedInv(isExpanded ? null : g.key)}>
+                  <div className="flex-shrink-0">
+                    {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
                   </div>
-                );
-              }},
-              { label: 'Status', render: r => (
-                <div className="flex items-center gap-1.5">
-                  <Badge c={r.status === 'open' ? 'warn' : r.status === 'resolved' ? 'ok' : 'muted'}>{r.status}</Badge>
-                  {r.suppressed && <span className="text-[10px] px-1.5 py-0.5 bg-purple-100 text-purple-600 font-bold rounded" title={r.suppressionReason}>⚡ SUPPRESSED</span>}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-slate-900">{g.invoiceNumber}</span>
+                      <span className="text-xs text-slate-500">·</span>
+                      <span className="text-xs text-slate-500">{g.vendor}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    <span className="text-[11px] px-2 py-0.5 bg-slate-100 text-slate-600 font-bold rounded-full">{g.anomalies.length} {g.anomalies.length === 1 ? 'anomaly' : 'anomalies'}</span>
+                    <Badge c={g.highestSev === 'high' ? 'err' : g.highestSev === 'medium' ? 'warn' : 'ok'}>{g.highestSev}</Badge>
+                    <span className={cn('text-sm font-bold tabular-nums', g.totalRisk > 0 ? 'text-red-600' : 'text-slate-400')}>{$(g.totalRisk)}</span>
+                  </div>
                 </div>
-              )},
-            ]}
-            rows={filtered}
-            onRow={r => setSel(r)}
-          />
+
+                {/* Expanded anomaly rows */}
+                {isExpanded && (
+                  <div className="border-t border-slate-100 divide-y divide-slate-50">
+                    {g.anomalies.map(a => {
+                      const cat = anomCategory(a.type);
+                      const isSelected = sel?.id === a.id;
+                      return (
+                        <div key={a.id}
+                          onClick={() => { setSel(a); setActionMode(''); setActionType(''); setNotes(''); }}
+                          className={cn('flex items-start gap-3 px-4 py-3 pl-10 cursor-pointer transition-colors',
+                            isSelected ? 'bg-accent-50 border-l-2 border-l-accent-500' : 'hover:bg-slate-50')}>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm text-slate-800 leading-snug">{a.description}</div>
+                            <div className="flex items-center gap-2 mt-1 flex-wrap">
+                              <span className={cn('text-[10px] px-1.5 py-0.5 font-bold rounded', catColor[cat])}>{catLabel[cat].toUpperCase()}</span>
+                              <span className="text-[11px] text-slate-400">{(a.type || '').replace(/_/g, ' ')}</span>
+                              {a.suppressed && <span className="text-[10px] px-1.5 py-0.5 bg-purple-100 text-purple-600 font-bold rounded">⚡ SUPPRESSED</span>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <Badge c={a.severity === 'high' ? 'err' : a.severity === 'medium' ? 'warn' : 'ok'}>{a.severity}</Badge>
+                            <span className={cn('text-sm font-semibold tabular-nums w-20 text-right', Math.abs(a.amount_at_risk || 0) > 0 ? 'text-red-600' : 'text-slate-400')}>{$(Math.abs(a.amount_at_risk || 0))}</span>
+                            <Badge c={a.status === 'open' ? 'warn' : a.status === 'resolved' ? 'ok' : 'muted'}>{a.status}</Badge>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
 
-        {/* Detail Panel */}
+        {/* ── Layer 4: Detail Panel ── */}
         {sel && (
           <div className="w-1/2 bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sticky top-24 self-start max-h-[calc(100vh-8rem)] overflow-y-auto">
             <div className="flex justify-between items-start mb-4">
@@ -615,6 +744,7 @@ function Anomalies() {
                 <div className="flex items-center gap-2 mb-1">
                   <Badge c={sevColor(sel.severity) === 'err' ? 'err' : sevColor(sel.severity) === 'warn' ? 'warn' : 'ok'}>{sel.severity}</Badge>
                   <span className="text-xs text-slate-500 font-mono">{(sel.type || '').replace(/_/g, ' ')}</span>
+                  <span className={cn('text-[10px] px-1.5 py-0.5 font-bold rounded', catColor[anomCategory(sel.type)])}>{catLabel[anomCategory(sel.type)].toUpperCase()}</span>
                 </div>
                 <h3 className="text-lg font-bold text-slate-900">{sel.invoiceNumber}</h3>
                 <div className="text-sm text-slate-500">{sel.vendor}</div>
@@ -627,6 +757,28 @@ function Anomalies() {
               </div>
               <button onClick={() => setSel(null)} className="p-1 hover:bg-slate-100 rounded-lg"><X className="w-4 h-4" /></button>
             </div>
+
+            {/* Sibling anomalies on same invoice */}
+            {(() => {
+              const siblings = filtered.filter(a => (a.invoiceNumber || a.invoiceId) === (sel.invoiceNumber || sel.invoiceId) && a.id !== sel.id);
+              if (siblings.length === 0) return null;
+              return (
+                <div className="mb-4 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Other anomalies on this invoice ({siblings.length})</div>
+                  <div className="space-y-1.5">
+                    {siblings.map(sib => (
+                      <div key={sib.id} onClick={() => { setSel(sib); setActionMode(''); setActionType(''); setNotes(''); }}
+                        className="flex items-center gap-2 p-2 rounded-lg bg-white border border-slate-100 cursor-pointer hover:border-accent-200 transition-all">
+                        <Badge c={sib.severity === 'high' ? 'err' : sib.severity === 'medium' ? 'warn' : 'ok'}>{sib.severity}</Badge>
+                        <span className="text-xs text-slate-700 flex-1 truncate">{(sib.type || '').replace(/_/g, ' ')}</span>
+                        <span className="text-xs font-semibold text-red-500">{$(Math.abs(sib.amount_at_risk || 0))}</span>
+                        <Badge c={sib.status === 'open' ? 'warn' : 'ok'}>{sib.status}</Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Full Description */}
             <div className="mb-4">
@@ -656,23 +808,18 @@ function Anomalies() {
             {sel.contract_clause && (
               <div className="mb-4">
                 <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Contract Reference</div>
-                <div className="text-sm text-slate-700 bg-blue-50 border border-blue-100 rounded-xl p-3">
-                  {sel.contract_clause}
-                </div>
+                <div className="text-sm text-slate-700 bg-blue-50 border border-blue-100 rounded-xl p-3">{sel.contract_clause}</div>
               </div>
             )}
 
             {/* Quick Navigation — View source documents */}
             {(() => {
               const allDocs = s.docs || [];
-              // Find the source document (PO or invoice)
-              const sourceDoc = allDocs.find(d => d.id === sel.invoiceId)
-                || allDocs.find(d => (d.invoiceNumber || d.poNumber || d.documentNumber) === sel.invoiceNumber);
-              // Find linked contract
+              const sourceDoc = allDocs.find(dd => dd.id === sel.invoiceId)
+                || allDocs.find(dd => (dd.invoiceNumber || dd.poNumber || dd.documentNumber) === sel.invoiceNumber);
               const linkedContract = sel.contractId
-                ? allDocs.find(d => d.id === sel.contractId)
-                : (sourceDoc?.vendor ? allDocs.find(d => d.type === 'contract' && d.vendor && sourceDoc.vendor && d.vendor.toLowerCase().includes(sourceDoc.vendor.toLowerCase().split(' ')[0])) : null);
-
+                ? allDocs.find(dd => dd.id === sel.contractId)
+                : (sourceDoc?.vendor ? allDocs.find(dd => dd.type === 'contract' && dd.vendor && sourceDoc.vendor && dd.vendor.toLowerCase().includes(sourceDoc.vendor.toLowerCase().split(' ')[0])) : null);
               if (!sourceDoc && !linkedContract) return null;
               return (
                 <div className="mb-4">
@@ -786,7 +933,6 @@ function Anomalies() {
                   </div>
                 )}
 
-                {/* Default — no mode selected yet */}
                 {!actionMode && (
                   <div className="text-center text-xs text-slate-400 py-4">Select an action above to proceed</div>
                 )}
