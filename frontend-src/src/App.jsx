@@ -470,12 +470,12 @@ function Documents() {
       </PageHeader>
       <Table
         cols={[
-          { label: 'Document', render: r => <div><div className="font-semibold text-slate-900">{r.invoiceNumber || r.poNumber || r.documentNumber || r.id}</div><div className="text-xs text-slate-500">{r.vendor}</div></div> },
-          { label: 'Type', render: r => <Badge c={docColor(r.type)}>{docLabel(r.type)}</Badge> },
-          { label: 'Amount', right: true, mono: true, render: r => r.type === 'contract' && (!r.amount || r.amount === 0) ? <span className="text-sm font-semibold text-blue-600">Rate Contract</span> : <span className="font-semibold">{$(r.amount, r.currency)}</span> },
-          { label: 'Date', render: r => <span className="text-slate-500">{date(r.issueDate || r.effectiveDate || r.startDate)}</span> },
-          { label: 'Confidence', render: r => <ConfidenceRing score={r.confidence || 0} /> },
-          { label: 'Status', render: r => <Badge c={r.status === 'paid' ? 'ok' : r.status === 'disputed' ? 'err' : r.status === 'approved' ? 'ok' : 'warn'}>{(r.status || '').replace(/_/g, ' ')}</Badge> },
+          { label: 'Document', render: r => <div><div className="font-semibold text-slate-900">{r.contractNumber || r.invoiceNumber || r.poNumber || r.grnNumber || r.documentNumber || r.id}</div><div className="text-xs text-slate-500">{r.vendor}</div></div> },
+          { label: 'Type', center: true, render: r => <Badge c={docColor(r.type)}>{docLabel(r.type)}</Badge> },
+          { label: 'Amount', center: true, mono: true, render: r => r.type === 'contract' && (!r.amount || r.amount === 0) ? <span className="text-sm font-semibold text-blue-600">Rate Contract</span> : <span className="font-semibold">{$(r.amount, r.currency)}</span> },
+          { label: 'Date', center: true, render: r => <span className="text-slate-500">{date(r.issueDate || r.effectiveDate || r.startDate)}</span> },
+          { label: 'Confidence', center: true, render: r => <ConfidenceRing score={r.confidence || 0} /> },
+          { label: 'Status', center: true, render: r => <Badge c={r.status === 'paid' ? 'ok' : r.status === 'disputed' ? 'err' : r.status === 'approved' ? 'ok' : 'warn'}>{(r.status || '').replace(/_/g, ' ')}</Badge> },
         ]}
         rows={docs}
         onRow={r => d({ type: 'SEL', doc: r })}
