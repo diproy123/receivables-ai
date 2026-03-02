@@ -68,7 +68,8 @@ from backend.auth import (
     _get_users, _save_users, get_current_user, get_optional_user,
     get_role_from_request, get_user_display, require_role,
     get_authority_limit, get_required_approver, security,
-    _user_from_request,
+    _user_from_request, get_user_vendor_scope, scope_by_vendor,
+    assign_vendors_to_user,
 )
 from backend.extraction import (
     extract_with_claude as _module_extract_with_claude,
@@ -254,11 +255,32 @@ async def get_me(user: dict = Depends(get_current_user)):
 
 @app.get("/api/auth/users")
 async def list_users(user: dict = Depends(get_current_user)):
-    if user["role"] not in ("cfo", "vp"): raise HTTPException(403, "Insufficient permissions to view users")
+    if AUTHORITY_MATRIX.get(user["role"], AUTHORITY_MATRIX[DEFAULT_ROLE])["level"] < 2:
+        raise HTTPException(403, "Manager+ required to view users")
     users = _get_users()
     return {"users": [{"id": u["id"], "email": u["email"], "name": u["name"], "role": u["role"],
         "roleTitle": AUTHORITY_MATRIX.get(u["role"], AUTHORITY_MATRIX[DEFAULT_ROLE])["title"],
-        "active": u.get("active", True), "createdAt": u.get("createdAt")} for u in users]}
+        "active": u.get("active", True), "createdAt": u.get("createdAt"),
+        "assignedVendors": u.get("assignedVendors", [])} for u in users]}
+
+@app.post("/api/auth/users/{user_id}/assign-vendors")
+async def assign_user_vendors(user_id: str, request: Request, admin: dict = Depends(get_current_user)):
+    """Assign vendor scope to an analyst. Manager+ only."""
+    if AUTHORITY_MATRIX.get(admin["role"], AUTHORITY_MATRIX[DEFAULT_ROLE])["level"] < 2:
+        raise HTTPException(403, "Manager+ required to assign vendors")
+    try: body = await request.json()
+    except: raise HTTPException(400, "Invalid JSON")
+    vendor_names = body.get("vendors", [])
+    if not isinstance(vendor_names, list):
+        raise HTTPException(400, "vendors must be a list of vendor names")
+    updated = assign_vendors_to_user(user_id, vendor_names)
+    if not updated: raise HTTPException(404, "User not found")
+    db = get_db()
+    db["activity_log"].append({"id": str(uuid.uuid4())[:8], "action": "vendor_assignment_updated",
+        "details": f"Assigned {len(vendor_names)} vendors to {updated['name']}: {', '.join(vendor_names) if vendor_names else 'full access'}",
+        "user": admin.get("name", "System"), "timestamp": datetime.now().isoformat()})
+    save_db(db)
+    return {"success": True, "user_id": user_id, "assignedVendors": vendor_names}
 
 @app.post("/api/auth/users/{user_id}/role")
 async def update_user_role(user_id: str, request: Request, admin: dict = Depends(get_current_user)):
@@ -1109,14 +1131,17 @@ async def manual_document_entry(request: Request):
     return {"success": True, "document": record, "new_matches": new_matches}
 
 @app.get("/api/documents")
-async def get_documents():
+async def get_documents(user: dict = Depends(get_optional_user)):
     db = get_db()
+    scope = get_user_vendor_scope(user)
     docs = db["invoices"] + db["purchase_orders"] + db.get("contracts", []) + db.get("goods_receipts", [])
+    docs = scope_by_vendor(docs, scope)
     return {"documents": sorted(docs, key=lambda x: x.get("extractedAt", ""), reverse=True), "total": len(docs)}
 
 @app.get("/api/invoices")
-async def get_invoices():
-    return {"invoices": get_db()["invoices"]}
+async def get_invoices(user: dict = Depends(get_optional_user)):
+    scope = get_user_vendor_scope(user)
+    return {"invoices": scope_by_vendor(get_db()["invoices"], scope)}
 
 @app.get("/api/purchase-orders")
 async def get_pos():
@@ -1238,9 +1263,10 @@ async def get_intelligence_report(request: Request):
     return generate_contract_intelligence_report(db)
 
 @app.get("/api/matches")
-async def get_matches():
+async def get_matches(user: dict = Depends(get_optional_user)):
     db = get_db()
-    matches = db["matches"]
+    scope = get_user_vendor_scope(user)
+    matches = scope_by_vendor(db["matches"], scope)
     three_way = sum(1 for m in matches if m.get("matchType") == "three_way")
     two_way = sum(1 for m in matches if m.get("matchType") == "two_way" or not m.get("matchType"))
     return {"matches": matches, "summary": {"total": len(matches),
@@ -1249,9 +1275,11 @@ async def get_matches():
         "three_way": three_way, "two_way": two_way}}
 
 @app.get("/api/anomalies")
-async def get_anomalies():
+async def get_anomalies(user: dict = Depends(get_optional_user)):
     db = get_db()
     an = db.get("anomalies", [])
+    scope = get_user_vendor_scope(user)
+    an = scope_by_vendor(an, scope)
     op = [a for a in an if a.get("status") == "open"]
     return {"anomalies": sorted(an, key=lambda x: x.get("detectedAt", ""), reverse=True),
         "summary": {"total": len(an), "open": len(op),
@@ -1581,9 +1609,10 @@ async def reject_match(mid: str):
 # F3: VENDOR RISK API
 # ============================================================
 @app.get("/api/vendors")
-async def get_vendors():
+async def get_vendors(user: dict = Depends(get_optional_user)):
     """List all vendors with risk scores, spend, anomaly data."""
     db = get_db()
+    scope = get_user_vendor_scope(user)
     profiles = db.get("vendor_profiles", [])
 
     # Rebuild any missing profiles
@@ -1604,6 +1633,13 @@ async def get_vendors():
 
     save_db(db)
     profiles = db.get("vendor_profiles", [])
+
+    # Scope vendor profiles: filter by vendor display name
+    if scope:
+        scope_lower = [v.lower() for v in scope]
+        scope_normalized = [normalize_vendor(v) for v in scope]
+        profiles = [p for p in profiles if p.get("vendorNormalized") in scope_normalized
+                    or (p.get("vendor") or "").lower() in scope_lower]
 
     return {"vendors": sorted(profiles, key=lambda x: x.get("riskScore", 0), reverse=True),
             "total": len(profiles),
@@ -1639,11 +1675,12 @@ async def refresh_vendor_profiles():
 # F1: TRIAGE API
 # ============================================================
 @app.get("/api/triage")
-async def get_triage_overview():
+async def get_triage_overview(user: dict = Depends(get_optional_user)):
     """Get triage overview: lane counts, auto-approve rate, blocked invoices."""
     db = get_db()
     decisions = db.get("triage_decisions", [])
-    invoices = db.get("invoices", [])
+    scope = get_user_vendor_scope(user)
+    invoices = scope_by_vendor(db.get("invoices", []), scope)
 
     # Build lane counts from invoice records (source of truth after edits)
     auto_approved = [i for i in invoices if i.get("triageLane") == "AUTO_APPROVE"]
@@ -1922,10 +1959,12 @@ async def edit_document_fields(did: str, request: Request, fields: str = Form(..
 # ============================================================
 
 @app.get("/api/cases")
-async def list_cases(request: Request, status: str = None, priority: str = None, assigned_to: str = None):
+async def list_cases(request: Request, status: str = None, priority: str = None, assigned_to: str = None,
+                     user: dict = Depends(get_optional_user)):
     """List all cases with optional filters."""
     db = get_db()
-    cases = db.get("cases", [])
+    scope = get_user_vendor_scope(user)
+    cases = scope_by_vendor(db.get("cases", []), scope)
     if status:
         cases = [c for c in cases if c["status"] == status]
     if priority:
@@ -2126,9 +2165,13 @@ def _compute_processing_speed(db):
     }
 
 @app.get("/api/dashboard")
-async def get_dashboard():
+async def get_dashboard(user: dict = Depends(get_optional_user)):
     db = get_db(); now = datetime.now()
-    unpaid = [i for i in db["invoices"] if i.get("status") not in ("paid",)]
+    scope = get_user_vendor_scope(user)
+    all_invoices = scope_by_vendor(db["invoices"], scope)
+    all_anomalies = scope_by_vendor(db.get("anomalies", []), scope)
+    all_matches = scope_by_vendor(db["matches"], scope)
+    unpaid = [i for i in all_invoices if i.get("status") not in ("paid",)]
     tar = sum(i["amount"] for i in unpaid)
     bk = {"current": 0, "1_30": 0, "31_60": 0, "61_90": 0, "90_plus": 0}
     bc = {"current": 0, "1_30": 0, "31_60": 0, "61_90": 0, "90_plus": 0}
@@ -2139,14 +2182,14 @@ async def get_dashboard():
         k = "current" if do <= 0 else "1_30" if do <= 30 else "31_60" if do <= 60 else "61_90" if do <= 90 else "90_plus"
         bk[k] += i["amount"]; bc[k] += 1
 
-    ad = db["invoices"] + db["purchase_orders"] + db.get("contracts", [])
+    ad = all_invoices + scope_by_vendor(db["purchase_orders"], scope) + scope_by_vendor(db.get("contracts", []), scope)
     ac = (sum(d.get("confidence", 0) for d in ad) / len(ad)) if ad else 0
-    oa = [a for a in db.get("anomalies", []) if a.get("status") == "open"]
+    oa = [a for a in all_anomalies if a.get("status") == "open"]
 
     # Vendor spend analysis — track display name + spend
     vendor_spend = {}
     vendor_display = {}  # normalized -> best display name
-    for inv in db["invoices"]:
+    for inv in all_invoices:
         v = normalize_vendor(inv.get("vendor", ""))
         vendor_spend[v] = vendor_spend.get(v, 0) + inv.get("amount", 0)
         # Keep the longest display name (most complete version)
@@ -2165,13 +2208,13 @@ async def get_dashboard():
 
     # Early payment savings (on pre-tax subtotal)
     epd_savings = 0
-    for i in db["invoices"]:
+    for i in all_invoices:
         epd = i.get("earlyPaymentDiscount")
         if epd and i.get("status") == "unpaid":
             epd_savings += (i.get("subtotal") or i["amount"]) * (epd.get("discount_percent", 0) / 100)
 
     # ── F1: Triage metrics ──
-    triaged_invoices = [i for i in db["invoices"] if i.get("triageLane")]
+    triaged_invoices = [i for i in all_invoices if i.get("triageLane")]
     triage_auto = [i for i in triaged_invoices if i.get("triageLane") == "AUTO_APPROVE"]
     triage_review = [i for i in triaged_invoices if i.get("triageLane") in ("REVIEW", "MANAGER_REVIEW", "VP_REVIEW", "CFO_REVIEW")]
     triage_blocked = [i for i in triaged_invoices if i.get("triageLane") == "BLOCK"]
@@ -2189,12 +2232,12 @@ async def get_dashboard():
     # Savings = only RESOLVED anomalies (confirmed and acted upon).
     # Open anomalies are unconfirmed risk, NOT savings.
     # Dismissed anomalies are false positives, NOT savings.
-    _resolved = [a for a in db.get("anomalies", []) if a.get("status") == "resolved"]
+    _resolved = [a for a in all_anomalies if a.get("status") == "resolved"]
     _savings_discovered = round(
         sum(_n(a.get("amount_at_risk")) for a in _resolved
             if _n(a.get("amount_at_risk")) > 0), 2)
     _processing_speed = _compute_processing_speed(db)
-    _total_invoices = len(db["invoices"])
+    _total_invoices = len(all_invoices)
 
     # ── React frontend reads dash.summary_bar for stat cards ──
     _summary_bar = {
@@ -2251,10 +2294,10 @@ async def get_dashboard():
         "invoice_count": _total_invoices, "po_count": len(db["purchase_orders"]),
         "grn_count": len(db.get("goods_receipts", [])),
         "contract_count": len(db.get("contracts", [])),
-        "auto_matched": sum(1 for m in db["matches"] if m["status"] == "auto_matched"),
-        "review_needed": sum(1 for m in db["matches"] if m["status"] == "review_needed"),
-        "three_way_matched": sum(1 for m in db["matches"] if m.get("matchType") == "three_way"),
-        "two_way_only": sum(1 for m in db["matches"] if m.get("matchType") != "three_way"),
+        "auto_matched": sum(1 for m in all_matches if m["status"] == "auto_matched"),
+        "review_needed": sum(1 for m in all_matches if m["status"] == "review_needed"),
+        "three_way_matched": sum(1 for m in all_matches if m.get("matchType") == "three_way"),
+        "two_way_only": sum(1 for m in all_matches if m.get("matchType") != "three_way"),
         "avg_confidence": round(ac, 1), "anomaly_count": len(oa),
         "total_risk": _total_risk, "high_severity": _high_severity,
         "savings_discovered": _savings_discovered,
@@ -2274,8 +2317,8 @@ async def get_dashboard():
             "early_payment_opportunities": round(epd_savings, 2),
         },
         "processing_speed": _processing_speed,
-        "over_invoiced_pos": sum(1 for m in db["matches"] if m.get("overInvoiced")),
-        "disputed_count": sum(1 for i in db["invoices"] if i.get("status") == "disputed"),
+        "over_invoiced_pos": sum(1 for m in all_matches if m.get("overInvoiced")),
+        "disputed_count": sum(1 for i in all_invoices if i.get("status") == "disputed"),
         "due_in_7_days": len(due_7d), "due_in_7_days_amount": round(sum(i["amount"] for i in due_7d), 2),
         "early_payment_savings": round(epd_savings, 2),
         "top_vendors": [{"vendor": vendor_display.get(v, v), "spend": round(s, 2)} for v, s in top_vendors],

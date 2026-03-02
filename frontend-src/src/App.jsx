@@ -130,6 +130,7 @@ function Sidebar() {
     ]},
     ...(lvl >= 1 ? [{ section: 'Configure', items: [
       { id: 'settings', label: 'AP Policy', icon: Settings },
+      { id: 'team', label: 'Team & Access', icon: Users },
       { id: 'training', label: 'Model Training', icon: Brain },
     ]}] : []),
   ];
@@ -2912,6 +2913,168 @@ function EscalationMatrixEditor() {
   );
 }
 
+/* ═══════════════════════════════════════════════════
+   TEAM & ACCESS MANAGEMENT
+   ═══════════════════════════════════════════════════ */
+function TeamManagement() {
+  const { s, toast, load } = useStore();
+  const [users, setUsers] = useState([]);
+  const [editUser, setEditUser] = useState(null);
+  const [selectedVendors, setSelectedVendors] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const allVendors = (s.vendors || []).map(v => v.vendor || v.vendorNormalized || '').filter(Boolean);
+
+  useEffect(() => { fetchUsers(); }, []);
+
+  async function fetchUsers() {
+    setLoading(true);
+    const r = await api('/api/auth/users');
+    if (r?.users) setUsers(r.users);
+    setLoading(false);
+  }
+
+  function startEdit(u) {
+    setEditUser(u);
+    setSelectedVendors(u.assignedVendors || []);
+  }
+
+  async function saveVendors() {
+    if (!editUser) return;
+    const r = await post(`/api/auth/users/${editUser.id}/assign-vendors`, { vendors: selectedVendors });
+    if (r?.success) {
+      toast(`Vendor scope updated for ${editUser.name}`, 'success');
+      setEditUser(null);
+      await fetchUsers();
+      await load();
+    } else {
+      toast('Failed to update vendor scope', 'danger');
+    }
+  }
+
+  function toggleVendor(v) {
+    setSelectedVendors(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]);
+  }
+
+  const analysts = users.filter(u => u.role === 'analyst');
+  const others = users.filter(u => u.role !== 'analyst');
+
+  return (
+    <div className="page-enter space-y-6">
+      <PageHeader title="Team & Access" sub="Manage analyst vendor assignments and data access scope" />
+
+      {/* Explanation card */}
+      <div className="card p-4 bg-amber-50 border-amber-200">
+        <div className="flex items-start gap-3">
+          <Shield className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <div className="text-sm font-bold text-amber-900">Segregation of Duties</div>
+            <div className="text-sm text-amber-800 mt-1">
+              AP Analysts see only data for their assigned vendors — invoices, anomalies, matches, and risk scores.
+              Managers and above have full visibility across all vendors. Unassigned analysts temporarily retain full access for backward compatibility.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="card p-12 text-center text-slate-400">Loading users...</div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Analysts with vendor scope */}
+          <div className="space-y-3">
+            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">AP Analysts — Vendor Scope</h3>
+            {analysts.length === 0 && (
+              <div className="card p-6 text-center text-slate-400 text-sm">No analysts registered yet</div>
+            )}
+            {analysts.map(u => (
+              <div key={u.id} className={cn("card p-4 transition-all", editUser?.id === u.id && "ring-2 ring-accent-500")}>
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <div className="text-sm font-bold text-slate-900">{u.name}</div>
+                    <div className="text-xs text-slate-500">{u.email}</div>
+                  </div>
+                  <button onClick={() => startEdit(u)} className="btn-o text-xs px-3 py-1">
+                    <Edit3 className="w-3 h-3" /> {editUser?.id === u.id ? 'Editing...' : 'Edit Scope'}
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {(u.assignedVendors || []).length > 0 ? (
+                    u.assignedVendors.map(v => (
+                      <span key={v} className="text-[11px] px-2 py-0.5 bg-accent-50 text-accent-700 rounded-full border border-accent-200 font-medium">{v}</span>
+                    ))
+                  ) : (
+                    <span className="text-[11px] px-2 py-0.5 bg-amber-50 text-amber-600 rounded-full border border-amber-200 font-medium">⚠ Full access (no vendors assigned)</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Vendor assignment editor */}
+          <div>
+            {editUser ? (
+              <div className="card p-5 sticky top-24">
+                <div className="flex justify-between items-center mb-4">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Assign Vendors to {editUser.name}</h3>
+                    <div className="text-xs text-slate-500 mt-0.5">{selectedVendors.length} of {allVendors.length} vendors selected</div>
+                  </div>
+                  <button onClick={() => setEditUser(null)} className="p-1 hover:bg-slate-100 rounded-lg"><X className="w-4 h-4" /></button>
+                </div>
+
+                {/* Quick actions */}
+                <div className="flex gap-2 mb-3">
+                  <button onClick={() => setSelectedVendors([...allVendors])} className="btn-o text-xs px-2 py-1">Select All</button>
+                  <button onClick={() => setSelectedVendors([])} className="btn-o text-xs px-2 py-1">Clear All</button>
+                </div>
+
+                {/* Vendor checkboxes */}
+                <div className="max-h-72 overflow-y-auto space-y-1 mb-4 border border-slate-100 rounded-xl p-2">
+                  {allVendors.length === 0 && (
+                    <div className="text-xs text-slate-400 text-center py-4">No vendors in system yet. Upload documents first.</div>
+                  )}
+                  {allVendors.map(v => (
+                    <label key={v} className={cn("flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors",
+                      selectedVendors.includes(v) ? "bg-accent-50" : "hover:bg-slate-50")}>
+                      <input type="checkbox" checked={selectedVendors.includes(v)} onChange={() => toggleVendor(v)}
+                        className="w-4 h-4 rounded border-slate-300 text-accent-600 focus:ring-accent-500" />
+                      <span className="text-sm text-slate-700">{v}</span>
+                    </label>
+                  ))}
+                </div>
+
+                <button onClick={saveVendors} className="btn-p text-sm px-4 py-2 w-full">
+                  <Check className="w-4 h-4" /> Save Vendor Assignment
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Managers & Leadership</h3>
+                {others.map(u => (
+                  <div key={u.id} className="card p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-sm font-bold text-slate-900">{u.name}</div>
+                        <div className="text-xs text-slate-500">{u.email}</div>
+                      </div>
+                      <Badge c="ok">{u.roleTitle || u.role}</Badge>
+                    </div>
+                    <div className="text-[11px] text-emerald-600 mt-1.5 font-medium">✓ Full visibility — all vendors</div>
+                  </div>
+                ))}
+                {others.length === 0 && (
+                  <div className="card p-6 text-center text-slate-400 text-sm">No managers/leadership registered</div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SettingsPage() {
   const { s, toast, load } = useStore();
   const p = s.policy || {};
@@ -4462,6 +4625,7 @@ function AppShell() {
     dashboard: Dashboard, documents: Documents, triage: Triage, cases: Cases,
     anomalies: Anomalies, matching: Matching, vendors: Vendors, contracts: Contracts,
     settings: SettingsPage, training: Training, upload: UploadPage, audit_trail: AuditTrail,
+    team: TeamManagement,
   };
   const Page = pages[s.tab] || Dashboard;
 

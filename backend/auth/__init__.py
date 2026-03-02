@@ -149,6 +149,43 @@ def get_required_approver(amount: float, currency: str = "USD") -> dict:
     return {"role": "cfo", "title": "CFO", "limit": get_authority_limit("cfo", currency)}
 
 # ============================================================
+# VENDOR-SCOPED DATA ACCESS
+# ============================================================
+def get_user_vendor_scope(user: dict) -> list:
+    """Return list of vendor names this user can see.
+    Empty list = full access (managers, VP, CFO, or unscoped analysts for backward compat).
+    Non-empty list = filter all data to these vendors only.
+    """
+    role = user.get("role", DEFAULT_ROLE)
+    # Manager+ sees everything
+    if AUTHORITY_MATRIX.get(role, AUTHORITY_MATRIX[DEFAULT_ROLE])["level"] >= 2:
+        return []
+    # Analyst: check assignedVendors
+    users = _get_users()
+    stored = next((u for u in users if u["id"] == user.get("id")), None)
+    if stored and stored.get("assignedVendors"):
+        return stored["assignedVendors"]
+    # No assignment yet = full access (backward compat during rollout)
+    return []
+
+def scope_by_vendor(records: list, vendor_scope: list, vendor_key: str = "vendor") -> list:
+    """Filter a list of records by vendor scope. Empty scope = no filter."""
+    if not vendor_scope:
+        return records
+    scope_lower = [v.lower() for v in vendor_scope]
+    return [r for r in records if (r.get(vendor_key) or "").lower() in scope_lower]
+
+def assign_vendors_to_user(user_id: str, vendor_names: list):
+    """Assign vendor scope to a user. Manager+ only."""
+    users = _get_users()
+    for u in users:
+        if u["id"] == user_id:
+            u["assignedVendors"] = vendor_names
+            _save_users(users)
+            return u
+    return None
+
+# ============================================================
 # RBAC DECORATOR
 # ============================================================
 def require_role(min_level: int):
