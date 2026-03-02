@@ -574,22 +574,38 @@ function Anomalies() {
   const catLabel = { contract: 'Contract', delivery: 'Delivery', invoice: 'Invoice' };
   const catColor = { contract: 'text-indigo-600 bg-indigo-50 border-indigo-200', delivery: 'text-blue-600 bg-blue-50 border-blue-200', invoice: 'text-amber-600 bg-amber-50 border-amber-200' };
 
-  // ── Filtering ──
-  let filtered = tab === 'all' ? anoms : anoms.filter(a => a.status === (tab === 'dismissed' ? 'dismissed' : tab));
+  // ── Filter pipeline: status first, then cross-filters ──
+  // Step 1: Apply status tab filter
+  const tabFiltered = tab === 'all' ? anoms : anoms.filter(a => a.status === (tab === 'dismissed' ? 'dismissed' : tab));
+
+  // Step 2: Apply cross-filters (sev/cat/vendor) on the tab-filtered set
+  let filtered = tabFiltered;
   if (sevFilter) filtered = filtered.filter(a => a.severity === sevFilter);
   if (catFilter) filtered = filtered.filter(a => anomCategory(a.type) === catFilter);
   if (vendorFilter) filtered = filtered.filter(a => a.vendor === vendorFilter);
 
-  // ── Summary stats ──
-  const openAnoms = anoms.filter(a => a.status === 'open');
-  const resolvedAnoms = anoms.filter(a => a.status !== 'open');
-  const totalRisk = openAnoms.reduce((s, a) => s + Math.abs(a.amount_at_risk || 0), 0);
-  const highCount = openAnoms.filter(a => a.severity === 'high').length;
-  const medCount = openAnoms.filter(a => a.severity === 'medium').length;
-  const lowCount = openAnoms.filter(a => a.severity === 'low').length;
+  // ── Summary stats: severity counts from tab-filtered; category counts from tab+sev filtered ──
+  const highCount = tabFiltered.filter(a => a.severity === 'high').length;
+  const medCount = tabFiltered.filter(a => a.severity === 'medium').length;
+  const lowCount = tabFiltered.filter(a => a.severity === 'low').length;
+  const tabSevFiltered = sevFilter ? tabFiltered.filter(a => a.severity === sevFilter) : tabFiltered;
   const catCounts = { contract: 0, delivery: 0, invoice: 0 };
-  openAnoms.forEach(a => { catCounts[anomCategory(a.type)]++; });
-  const vendors = [...new Set(anoms.map(a => a.vendor).filter(Boolean))];
+  tabSevFiltered.forEach(a => { catCounts[anomCategory(a.type)]++; });
+  const vendors = [...new Set(tabSevFiltered.map(a => a.vendor).filter(Boolean))];
+
+  // ── Global totals for tab badges: apply sev/cat/vendor across all statuses ──
+  const applyNonStatusFilters = (list) => {
+    let r = list;
+    if (sevFilter) r = r.filter(a => a.severity === sevFilter);
+    if (catFilter) r = r.filter(a => anomCategory(a.type) === catFilter);
+    if (vendorFilter) r = r.filter(a => a.vendor === vendorFilter);
+    return r;
+  };
+  const openAnoms = applyNonStatusFilters(anoms.filter(a => a.status === 'open'));
+  const resolvedAnoms = applyNonStatusFilters(anoms.filter(a => a.status !== 'open'));
+  const allFiltered = applyNonStatusFilters(anoms);
+  const totalRisk = openAnoms.reduce((s, a) => s + Math.abs(a.amount_at_risk || 0), 0);
+  const hasActiveFilters = !!(sevFilter || catFilter || vendorFilter);
 
   // ── Group by invoice ──
   const groups = {};
@@ -607,7 +623,11 @@ function Anomalies() {
 
   return (
     <div className="page-enter">
-      <PageHeader title="Anomalies" sub={`${openAnoms.length} open across ${Object.keys(groups).length} invoices`} />
+      <PageHeader title="Anomalies" sub={
+        hasActiveFilters
+          ? `${filtered.length} matching across ${Object.keys(groups).length} invoices${sevFilter ? ` · ${sevFilter} severity` : ''}${catFilter ? ` · ${catLabel[catFilter]}` : ''}${vendorFilter ? ` · ${vendorFilter}` : ''}`
+          : `${openAnoms.length} open across ${new Set(openAnoms.map(a => a.invoiceNumber || a.invoiceId || a.id)).size} invoices`
+      } />
 
       {/* ── Layer 1: Summary Dashboard Strip ── */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
@@ -617,16 +637,16 @@ function Anomalies() {
         </div>
         <div className="card p-3 text-center cursor-pointer hover:ring-2 hover:ring-red-200 transition-all" onClick={() => { setSevFilter(sevFilter === 'high' ? '' : 'high'); setSel(null); }}>
           <div className={cn("text-2xl font-extrabold", sevFilter === 'high' ? 'text-white' : 'text-red-600', sevFilter === 'high' && 'bg-red-600 -mx-3 -my-3 p-3 rounded-xl')}>{highCount}</div>
-          {sevFilter !== 'high' && <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">High Severity</div>}
           {sevFilter === 'high' && <div className="text-[10px] font-bold text-red-100 uppercase tracking-wider mt-0.5">High (filtered)</div>}
+          {sevFilter !== 'high' && <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">High Severity</div>}
         </div>
         <div className="card p-3 text-center cursor-pointer hover:ring-2 hover:ring-amber-200 transition-all" onClick={() => { setSevFilter(sevFilter === 'medium' ? '' : 'medium'); setSel(null); }}>
-          <div className="text-2xl font-extrabold text-amber-500">{medCount}</div>
-          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">Medium</div>
+          <div className={cn("text-2xl font-extrabold", sevFilter === 'medium' ? 'text-white bg-amber-500 -mx-3 -my-3 p-3 rounded-xl' : 'text-amber-500')}>{medCount}</div>
+          <div className={cn("text-[10px] font-bold uppercase tracking-wider mt-0.5", sevFilter === 'medium' ? 'text-amber-100' : 'text-slate-400')}>{sevFilter === 'medium' ? 'Medium (filtered)' : 'Medium'}</div>
         </div>
         <div className="card p-3 text-center cursor-pointer hover:ring-2 hover:ring-green-200 transition-all" onClick={() => { setSevFilter(sevFilter === 'low' ? '' : 'low'); setSel(null); }}>
-          <div className="text-2xl font-extrabold text-emerald-500">{lowCount}</div>
-          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">Low</div>
+          <div className={cn("text-2xl font-extrabold", sevFilter === 'low' ? 'text-white bg-emerald-500 -mx-3 -my-3 p-3 rounded-xl' : 'text-emerald-500')}>{lowCount}</div>
+          <div className={cn("text-[10px] font-bold uppercase tracking-wider mt-0.5", sevFilter === 'low' ? 'text-emerald-100' : 'text-slate-400')}>{sevFilter === 'low' ? 'Low (filtered)' : 'Low'}</div>
         </div>
         <div className="card p-3 text-center">
           <div className="text-2xl font-extrabold text-slate-700">{resolvedAnoms.length}</div>
@@ -637,7 +657,7 @@ function Anomalies() {
       {/* ── Layer 2: Filter Bar ── */}
       <div className="flex flex-wrap items-center gap-2 mb-4">
         {/* Status tabs */}
-        {[['open', `Open (${openAnoms.length})`], ['resolved', `Resolved (${resolvedAnoms.length})`], ['all', `All (${anoms.length})`]].map(([k, label]) =>
+        {[['open', `Open (${openAnoms.length})`], ['resolved', `Resolved (${resolvedAnoms.length})`], ['all', `All (${allFiltered.length})`]].map(([k, label]) =>
           <button key={k} onClick={() => { setTab(k); setSel(null); setExpandedInv(null); }} className={cn('px-3 py-1.5 rounded-lg text-xs font-medium transition-all', tab === k ? 'bg-accent-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')}>{label}</button>
         )}
         <div className="w-px h-6 bg-slate-200 mx-1" />
