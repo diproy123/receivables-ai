@@ -635,17 +635,16 @@ function Anomalies() {
           <div className="text-2xl font-extrabold text-red-600">{$(totalRisk)}</div>
           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">Total Risk</div>
         </div>
-        <div className="card p-3 text-center cursor-pointer hover:ring-2 hover:ring-red-200 transition-all" onClick={() => { setSevFilter(sevFilter === 'high' ? '' : 'high'); setSel(null); }}>
-          <div className={cn("text-2xl font-extrabold", sevFilter === 'high' ? 'text-white' : 'text-red-600', sevFilter === 'high' && 'bg-red-600 -mx-3 -my-3 p-3 rounded-xl')}>{highCount}</div>
-          {sevFilter === 'high' && <div className="text-[10px] font-bold text-red-100 uppercase tracking-wider mt-0.5">High (filtered)</div>}
-          {sevFilter !== 'high' && <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">High Severity</div>}
+        <div className={cn("card p-3 text-center cursor-pointer transition-all", sevFilter === 'high' ? 'bg-red-600 ring-2 ring-red-300' : 'hover:ring-2 hover:ring-red-200')} onClick={() => { setSevFilter(sevFilter === 'high' ? '' : 'high'); setSel(null); }}>
+          <div className={cn("text-2xl font-extrabold", sevFilter === 'high' ? 'text-white' : 'text-red-600')}>{highCount}</div>
+          <div className={cn("text-[10px] font-bold uppercase tracking-wider mt-0.5", sevFilter === 'high' ? 'text-red-100' : 'text-slate-400')}>{sevFilter === 'high' ? 'High (filtered)' : 'High Severity'}</div>
         </div>
-        <div className="card p-3 text-center cursor-pointer hover:ring-2 hover:ring-amber-200 transition-all" onClick={() => { setSevFilter(sevFilter === 'medium' ? '' : 'medium'); setSel(null); }}>
-          <div className={cn("text-2xl font-extrabold", sevFilter === 'medium' ? 'text-white bg-amber-500 -mx-3 -my-3 p-3 rounded-xl' : 'text-amber-500')}>{medCount}</div>
+        <div className={cn("card p-3 text-center cursor-pointer transition-all", sevFilter === 'medium' ? 'bg-amber-500 ring-2 ring-amber-300' : 'hover:ring-2 hover:ring-amber-200')} onClick={() => { setSevFilter(sevFilter === 'medium' ? '' : 'medium'); setSel(null); }}>
+          <div className={cn("text-2xl font-extrabold", sevFilter === 'medium' ? 'text-white' : 'text-amber-500')}>{medCount}</div>
           <div className={cn("text-[10px] font-bold uppercase tracking-wider mt-0.5", sevFilter === 'medium' ? 'text-amber-100' : 'text-slate-400')}>{sevFilter === 'medium' ? 'Medium (filtered)' : 'Medium'}</div>
         </div>
-        <div className="card p-3 text-center cursor-pointer hover:ring-2 hover:ring-green-200 transition-all" onClick={() => { setSevFilter(sevFilter === 'low' ? '' : 'low'); setSel(null); }}>
-          <div className={cn("text-2xl font-extrabold", sevFilter === 'low' ? 'text-white bg-emerald-500 -mx-3 -my-3 p-3 rounded-xl' : 'text-emerald-500')}>{lowCount}</div>
+        <div className={cn("card p-3 text-center cursor-pointer transition-all", sevFilter === 'low' ? 'bg-emerald-500 ring-2 ring-emerald-300' : 'hover:ring-2 hover:ring-green-200')} onClick={() => { setSevFilter(sevFilter === 'low' ? '' : 'low'); setSel(null); }}>
+          <div className={cn("text-2xl font-extrabold", sevFilter === 'low' ? 'text-white' : 'text-emerald-500')}>{lowCount}</div>
           <div className={cn("text-[10px] font-bold uppercase tracking-wider mt-0.5", sevFilter === 'low' ? 'text-emerald-100' : 'text-slate-400')}>{sevFilter === 'low' ? 'Low (filtered)' : 'Low'}</div>
         </div>
         <div className="card p-3 text-center">
