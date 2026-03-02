@@ -3733,7 +3733,10 @@ function LandingPage({ onGo }) {
         <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-600 to-red-500 shadow-lg shadow-red-200/60 flex items-center justify-center"><Shield className="w-4.5 h-4.5 text-white" /></div>
-            <span className="text-xl font-extrabold tracking-tight text-slate-900">AuditLens</span>
+            <div>
+              <div className="text-xl font-extrabold tracking-tight text-slate-900">AuditLens</div>
+              <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-[.15em]">AP Intelligence</div>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <button onClick={onGo} className="px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-900 transition-colors">Sign In</button>
