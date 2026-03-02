@@ -383,13 +383,67 @@ def save_db(db):
 
 
 # ============================================================
-# FILE STORAGE (unchanged)
+# FILE STORAGE — S3/R2 with local fallback
 # ============================================================
+_s3_client = None
+
+def _get_s3():
+    """Lazy-init S3 client. Returns None if S3 not configured."""
+    global _s3_client
+    from backend.config import USE_S3, S3_BUCKET, S3_REGION, S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY
+    if not USE_S3:
+        return None
+    if _s3_client is None:
+        try:
+            import boto3
+            kwargs = {
+                "service_name": "s3",
+                "region_name": S3_REGION,
+                "aws_access_key_id": S3_ACCESS_KEY,
+                "aws_secret_access_key": S3_SECRET_KEY,
+            }
+            if S3_ENDPOINT:
+                kwargs["endpoint_url"] = S3_ENDPOINT
+            _s3_client = boto3.client(**kwargs)
+        except ImportError:
+            print("[Storage] boto3 not installed — falling back to local filesystem")
+            return None
+        except Exception as e:
+            print(f"[Storage] S3 init failed: {e} — falling back to local filesystem")
+            return None
+    return _s3_client
+
+
 def save_uploaded_file(filename, content, content_type="application/octet-stream"):
+    """Save file to S3 if configured, otherwise local filesystem."""
+    from backend.config import USE_S3, S3_BUCKET, S3_PREFIX
+    s3 = _get_s3()
+    if s3:
+        try:
+            key = f"{S3_PREFIX}{filename}"
+            s3.put_object(Bucket=S3_BUCKET, Key=key, Body=content, ContentType=content_type)
+            print(f"[Storage] Saved to S3: {key}")
+            return
+        except Exception as e:
+            print(f"[Storage] S3 upload failed: {e} — saving locally")
+    # Local fallback
     (UPLOAD_DIR / filename).write_bytes(content)
 
 
 def load_uploaded_file(filename):
+    """Load file from S3 if configured, otherwise local filesystem.
+    Returns (path_or_bytes, exists). For S3, returns (bytes, True).
+    For local, returns (Path, bool)."""
+    from backend.config import USE_S3, S3_BUCKET, S3_PREFIX
+    s3 = _get_s3()
+    if s3:
+        try:
+            key = f"{S3_PREFIX}{filename}"
+            resp = s3.get_object(Bucket=S3_BUCKET, Key=key)
+            return resp["Body"].read(), True
+        except Exception:
+            pass  # Fall through to local check
+    # Local fallback
     path = UPLOAD_DIR / filename
     return path, path.exists()
 

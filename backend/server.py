@@ -196,12 +196,14 @@ app.add_middleware(RequestIdMiddleware)
 async def health_check_simple():
     """Simple health check for monitoring and load balancers."""
     from backend.db import DATABASE_URL
+    from backend.config import USE_S3, S3_BUCKET
     return {
         "status": "ok",
         "version": VERSION,
         "database": "postgresql" if DATABASE_URL else "sqlite",
         "llm": "connected" if USE_REAL_API else "no_api_key",
         "rag": "enabled" if RAG_ENABLED else "disabled",
+        "file_storage": f"s3://{S3_BUCKET}" if USE_S3 else "local (ephemeral)",
     }
 
 
@@ -3019,26 +3021,33 @@ async def export(request: Request):
 @app.get("/api/uploads/{filename}")
 async def serve_upload(filename: str):
     """Serve original uploaded file for verification panel."""
+    from fastapi.responses import Response
     # Path traversal protection
     if ".." in filename or "/" in filename or "\\" in filename:
         raise HTTPException(400, "Invalid filename")
+
+    ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    mt = {".pdf": "application/pdf", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+          ".png": "image/png", ".webp": "image/webp", ".tiff": "image/tiff"}.get(ext, "application/octet-stream")
+
+    # Try S3/R2 first, then local filesystem
+    result, exists = load_uploaded_file(filename)
+    if exists and result:
+        if isinstance(result, bytes):
+            # S3 returned raw bytes
+            return Response(content=result, media_type=mt,
+                            headers={"Content-Disposition": f'inline; filename="{filename}"'})
+        else:
+            # Local Path object
+            if result.exists() and result.resolve().is_relative_to(UPLOAD_DIR.resolve()):
+                return FileResponse(str(result), media_type=mt)
+
+    # Direct local check as final fallback
     fp = UPLOAD_DIR / filename
-    # Ensure resolved path is within uploads directory
     if fp.exists() and fp.resolve().is_relative_to(UPLOAD_DIR.resolve()):
-        ext = fp.suffix.lower()
-        mt = {".pdf": "application/pdf", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-              ".png": "image/png", ".webp": "image/webp", ".tiff": "image/tiff"}.get(ext, "application/octet-stream")
         return FileResponse(fp, media_type=mt)
 
-    # File not on disk — try persistent storage
-    path, exists = load_uploaded_file(filename)
-    if exists and path:
-        ext = path.suffix.lower()
-        mt = {".pdf": "application/pdf", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-              ".png": "image/png", ".webp": "image/webp"}.get(ext, "application/octet-stream")
-        return FileResponse(str(path), media_type=mt)
-
-    raise HTTPException(404, "File not found")
+    raise HTTPException(404, "File not found — original document lost after redeployment. Enable S3_BUCKET for persistent storage.")
 
 # ============================================================
 # FRONTEND (Vite build output: index.html + assets/)

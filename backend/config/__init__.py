@@ -34,6 +34,20 @@ SEED_DEMO = os.environ.get("SEED_DEMO", "false").lower() == "true"
 RESET_ON_START = os.environ.get("RESET_ON_START", "false").lower() == "true"
 
 # ============================================================
+# FILE STORAGE (S3 / R2 / Local)
+# ============================================================
+# If S3_BUCKET is set, files go to cloud object storage (survives redeployments).
+# Otherwise, files go to local UPLOAD_DIR (ephemeral on Railway).
+# Supports: AWS S3, Cloudflare R2, MinIO, any S3-compatible service.
+S3_BUCKET = os.environ.get("S3_BUCKET", "")
+S3_REGION = os.environ.get("S3_REGION", "auto")
+S3_ENDPOINT = os.environ.get("S3_ENDPOINT", "")  # Required for R2/MinIO
+S3_ACCESS_KEY = os.environ.get("S3_ACCESS_KEY", "") or os.environ.get("AWS_ACCESS_KEY_ID", "")
+S3_SECRET_KEY = os.environ.get("S3_SECRET_KEY", "") or os.environ.get("AWS_SECRET_ACCESS_KEY", "")
+S3_PREFIX = os.environ.get("S3_PREFIX", "uploads/")  # Key prefix in bucket
+USE_S3 = bool(S3_BUCKET and S3_ACCESS_KEY and S3_SECRET_KEY)
+
+# ============================================================
 # AUTH
 # ============================================================
 JWT_SECRET = os.environ.get("JWT_SECRET", os.urandom(32).hex())
