@@ -1112,43 +1112,128 @@ function Triage() {
   const role = s.user?.role || 'analyst';
   const lvl = RL[role] || 0;
   const myId = s.user?.id;
-
-  // ── Lane config — ordered by urgency: action-needed first, approved last ──
-  const allLanes = ['BLOCK', 'CFO_REVIEW', 'VP_REVIEW', 'MANAGER_REVIEW', 'REVIEW', 'AUTO_APPROVE'];
-  const lanes = lvl >= 1 ? allLanes : ['BLOCK', 'REVIEW', 'AUTO_APPROVE'];
-  // Always-visible lanes (show even when empty to avoid misleading binary view)
-  const alwaysShow = lvl >= 1 ? ['BLOCK', 'REVIEW', 'AUTO_APPROVE'] : ['BLOCK', 'REVIEW', 'AUTO_APPROVE'];
-  const laneIcons = { AUTO_APPROVE: CheckCircle2, BLOCK: XCircle, REVIEW: Eye, MANAGER_REVIEW: Eye, VP_REVIEW: Eye, CFO_REVIEW: Eye };
-  const bgMap = { AUTO_APPROVE: 'bg-emerald-50 border-b border-emerald-100', BLOCK: 'bg-red-50 border-b border-red-100', REVIEW: 'bg-blue-50 border-b border-blue-100', MANAGER_REVIEW: 'bg-amber-50 border-b border-amber-100', VP_REVIEW: 'bg-amber-50 border-b border-amber-100', CFO_REVIEW: 'bg-amber-50 border-b border-amber-100' };
-  const icMap = { AUTO_APPROVE: 'text-emerald-600', BLOCK: 'text-red-600', REVIEW: 'text-blue-600', MANAGER_REVIEW: 'text-amber-600', VP_REVIEW: 'text-amber-600', CFO_REVIEW: 'text-amber-600' };
-  const txtMap = { AUTO_APPROVE: 'text-emerald-900', BLOCK: 'text-red-900', REVIEW: 'text-blue-900', MANAGER_REVIEW: 'text-amber-900', VP_REVIEW: 'text-amber-900', CFO_REVIEW: 'text-amber-900' };
-
-  const [sel, setSel] = useState(null);
   const allAnoms = s.anomalies || [];
 
-  useEffect(() => { if (s.tab === 'triage') setSel(null); }, [s.tabKey]);
+  // ── View mode: worklist (analyst default) vs kanban (manager overview) ──
+  const [viewMode, setViewMode] = useState('worklist');
+  const [sel, setSel] = useState(null);
+  const [sortCol, setSortCol] = useState('priority');
+  const [sortAsc, setSortAsc] = useState(true);
+  const [laneFilter, setLaneFilter] = useState('ALL');
+  const [vendorFilter, setVendorFilter] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [checked, setChecked] = useState(new Set());
+  const [detailTab, setDetailTab] = useState('summary');
+  const tableRef = useRef(null);
+  const [focusIdx, setFocusIdx] = useState(-1);
 
-  const selAnoms = sel ? allAnoms.filter(a => a.invoiceId === sel.id || a.invoiceNumber === sel.invoiceNumber) : [];
-  const selLane = sel ? allLanes.find(l => (tri[l] || []).some(i => i.id === sel.id)) : null;
+  // ── Lane config ──
+  const allLanes = ['BLOCK','CFO_REVIEW','VP_REVIEW','MANAGER_REVIEW','REVIEW','AUTO_APPROVE'];
+  const lanes = lvl >= 1 ? allLanes : ['BLOCK','REVIEW','AUTO_APPROVE'];
+  const laneIcons = { AUTO_APPROVE: CheckCircle2, BLOCK: XCircle, REVIEW: Eye, MANAGER_REVIEW: Eye, VP_REVIEW: Eye, CFO_REVIEW: Eye };
+  const bgMap = { AUTO_APPROVE:'bg-emerald-50 border-b border-emerald-100', BLOCK:'bg-red-50 border-b border-red-100', REVIEW:'bg-blue-50 border-b border-blue-100', MANAGER_REVIEW:'bg-amber-50 border-b border-amber-100', VP_REVIEW:'bg-amber-50 border-b border-amber-100', CFO_REVIEW:'bg-amber-50 border-b border-amber-100' };
+  const icMap = { AUTO_APPROVE:'text-emerald-600', BLOCK:'text-red-600', REVIEW:'text-blue-600', MANAGER_REVIEW:'text-amber-600', VP_REVIEW:'text-amber-600', CFO_REVIEW:'text-amber-600' };
 
-  // ── Anomaly classification for detail panel ──
-  // Blocking anomalies: types that directly prevent payment
-  const BLOCKING_TYPES = new Set(['DUPLICATE_INVOICE', 'UNRECEIPTED_INVOICE', 'MISSING_PO', 'PRICE_VARIANCE', 'TERMS_VIOLATION', 'AMOUNT_SPIKE']);
-  // Contract-level anomalies: strategic, not invoice-actionable
-  const CONTRACT_TYPES = new Set(['VOLUME_COMMITMENT_GAP', 'CONTRACT_EXPIRY_WARNING', 'CONTRACT_PRICE_DRIFT', 'CONTRACT_OVER_UTILIZATION']);
-  // Informational: opportunities, not blockers
+  useEffect(() => { if (s.tab === 'triage') { setSel(null); setChecked(new Set()); } }, [s.tabKey]);
+
+  // ── Flatten all invoices from all lanes with lane tag ──
+  const allInvoices = allLanes.flatMap(lane =>
+    (tri[lane] || []).map(inv => ({ ...inv, _lane: lane }))
+  );
+
+  // ── Anomaly lookup per invoice (precompute) ──
+  const anomsByInv = {};
+  for (const a of allAnoms) {
+    const key = a.invoiceId || a.invoiceNumber;
+    if (!anomsByInv[key]) anomsByInv[key] = [];
+    anomsByInv[key].push(a);
+  }
+  const getAnoms = (inv) => [...(anomsByInv[inv.id] || []), ...(anomsByInv[inv.invoiceNumber] || [])].filter((a, i, arr) => arr.findIndex(b => b.id === a.id) === i);
+
+  // ── Priority scoring (P1=critical, P2=high, P3=medium, P4=low) ──
+  const BLOCKING_TYPES = new Set(['DUPLICATE_INVOICE','UNRECEIPTED_INVOICE','MISSING_PO','PRICE_VARIANCE','TERMS_VIOLATION','AMOUNT_SPIKE']);
+  const CONTRACT_TYPES = new Set(['VOLUME_COMMITMENT_GAP','CONTRACT_EXPIRY_WARNING','CONTRACT_PRICE_DRIFT','CONTRACT_OVER_UTILIZATION']);
   const INFO_TYPES = new Set(['EARLY_PAYMENT_DISCOUNT']);
 
+  function computePriority(inv) {
+    const anoms = getAnoms(inv);
+    const openBlocking = anoms.filter(a => a.status === 'open' && BLOCKING_TYPES.has(a.type));
+    const highSev = anoms.filter(a => a.severity === 'high' && a.status === 'open');
+    const amt = inv.amount || 0;
+
+    // Age in hours
+    const uploaded = inv.uploadedAt || inv.createdAt || inv.triageAt;
+    const ageHours = uploaded ? (Date.now() - new Date(uploaded).getTime()) / 3600000 : 0;
+
+    // SLA: default 48h for blocked, 72h for review
+    const slaHours = inv._lane === 'BLOCK' ? 48 : 72;
+    const slaRemaining = slaHours - ageHours;
+    const slaPct = Math.max(0, slaRemaining / slaHours);
+
+    // Score components (higher = more urgent)
+    let score = 0;
+    if (inv._isDuplicate) score += 50;
+    score += openBlocking.length * 15;
+    score += highSev.length * 10;
+    if (amt > 100000) score += 20;
+    else if (amt > 50000) score += 15;
+    else if (amt > 10000) score += 10;
+    else if (amt > 5000) score += 5;
+    if (slaRemaining < 0) score += 30; // SLA breached
+    else if (slaRemaining < 8) score += 20; // SLA warning
+    else if (slaRemaining < 24) score += 10;
+    if (inv._lane === 'BLOCK') score += 10;
+    if (inv.vendorRiskScore > 70) score += 10;
+
+    const level = score >= 50 ? 1 : score >= 30 ? 2 : score >= 15 ? 3 : 4;
+
+    return { score, level, ageHours, slaHours, slaRemaining, slaPct, openBlocking: openBlocking.length, totalAnoms: anoms.filter(a => a.status === 'open').length };
+  }
+
+  // Attach priority + enrichments
+  const enriched = allInvoices.map(inv => {
+    const pri = computePriority(inv);
+    return { ...inv, _pri: pri };
+  });
+
+  // ── Filtering ──
+  let filtered = enriched;
+  if (laneFilter !== 'ALL') filtered = filtered.filter(i => i._lane === laneFilter);
+  if (vendorFilter) filtered = filtered.filter(i => (i.vendor || '').toLowerCase().includes(vendorFilter.toLowerCase()));
+  if (searchTerm) {
+    const q = searchTerm.toLowerCase();
+    filtered = filtered.filter(i =>
+      (i.invoiceNumber || '').toLowerCase().includes(q) ||
+      (i.vendor || '').toLowerCase().includes(q) ||
+      (i.id || '').toLowerCase().includes(q)
+    );
+  }
+
+  // ── Sorting ──
+  const sortFns = {
+    priority: (a, b) => b._pri.score - a._pri.score,
+    invoice: (a, b) => (a.invoiceNumber || '').localeCompare(b.invoiceNumber || ''),
+    vendor: (a, b) => (a.vendor || '').localeCompare(b.vendor || ''),
+    amount: (a, b) => (b.amount || 0) - (a.amount || 0),
+    age: (a, b) => (b._pri.ageHours) - (a._pri.ageHours),
+    sla: (a, b) => (a._pri.slaRemaining) - (b._pri.slaRemaining),
+    lane: (a, b) => allLanes.indexOf(a._lane) - allLanes.indexOf(b._lane),
+    anomalies: (a, b) => (b._pri.totalAnoms) - (a._pri.totalAnoms),
+  };
+  const sorted = [...filtered].sort((a, b) => {
+    const fn = sortFns[sortCol] || sortFns.priority;
+    return sortAsc ? fn(a, b) : -fn(a, b);
+  });
+
+  // ── Selection helpers ──
+  const selAnoms = sel ? getAnoms(sel) : [];
+  const selLane = sel ? sel._lane : null;
   const blockingAnoms = selAnoms.filter(a => a.status === 'open' && (BLOCKING_TYPES.has(a.type) || a.severity === 'high'));
   const contractAnoms = selAnoms.filter(a => CONTRACT_TYPES.has(a.type));
   const infoAnoms = selAnoms.filter(a => INFO_TYPES.has(a.type));
-  const otherAnoms = selAnoms.filter(a => !BLOCKING_TYPES.has(a.type) && !CONTRACT_TYPES.has(a.type) && !INFO_TYPES.has(a.type) && a.severity !== 'high');
-
-  // Severity sort within each group: high → medium → low
+  const otherAnoms = selAnoms.filter(a => a.status === 'open' && !BLOCKING_TYPES.has(a.type) && !CONTRACT_TYPES.has(a.type) && !INFO_TYPES.has(a.type) && a.severity !== 'high');
   const sevOrd = { high: 0, medium: 1, low: 2 };
   const sortBySev = (arr) => [...arr].sort((a, b) => (sevOrd[a.severity] || 2) - (sevOrd[b.severity] || 2));
-
-  // ── Duplicate detection for contextual actions ──
   const hasDuplicate = selAnoms.some(a => a.type === 'DUPLICATE_INVOICE' && a.status === 'open');
   const hasUnreceipted = selAnoms.some(a => a.type === 'UNRECEIPTED_INVOICE' && a.status === 'open');
   const hasMissingPO = selAnoms.some(a => a.type === 'MISSING_PO' && a.status === 'open');
@@ -1159,48 +1244,147 @@ function Triage() {
   const isClaimed = (inv) => inv.claimedBy && inv.claimedBy !== myId;
   const canAction = (inv) => !inv.claimedBy || inv.claimedBy === myId || lvl >= 1;
 
+  // ── Actions ──
   async function claimInvoice(inv) {
-    const r = await post(`/api/invoices/${inv.id}/claim`, {});
-    if (r?.success) { toast('Invoice claimed — you can now action it', 'success'); await load(); }
-    else toast(r?.detail || 'Claim failed', 'danger');
+    const r = await post("/api/invoices/" + inv.id + "/claim", {});
+    if (r?.success) { toast("Invoice claimed", "success"); await load(); }
+    else toast(r?.detail || "Claim failed", "danger");
   }
   async function releaseInvoice(inv) {
-    const r = await post(`/api/invoices/${inv.id}/release`, {});
-    if (r?.success) { toast('Claim released', 'success'); await load(); setSel(null); }
-    else toast(r?.detail || 'Release failed', 'danger');
+    const r = await post("/api/invoices/" + inv.id + "/release", {});
+    if (r?.success) { toast("Claim released", "success"); await load(); setSel(null); }
+    else toast(r?.detail || "Release failed", "danger");
   }
   async function overrideApprove(inv, isDup) {
     const msg = isDup
-      ? `⚠ DUPLICATE WARNING: This invoice has been flagged as a duplicate. Approving will result in a payment of ${$(inv.amount, inv.currency)} to ${inv.vendor} that may already have been made.\n\nType "CONFIRM DUPLICATE OVERRIDE" to proceed:`
-      : 'Override reason — why should this be approved despite being blocked?';
+      ? "DUPLICATE WARNING: Approving will result in a second payment of " + $(inv.amount, inv.currency) + " to " + inv.vendor + ". Type CONFIRM DUPLICATE OVERRIDE to proceed:"
+      : "Override reason \u2014 why should this be approved despite being blocked?";
     const n = prompt(msg);
-    if (isDup && n !== 'CONFIRM DUPLICATE OVERRIDE') { if (n !== null) toast('Override cancelled — exact confirmation text required for duplicates', 'warning'); return; }
+    if (isDup && n !== "CONFIRM DUPLICATE OVERRIDE") { if (n !== null) toast("Override cancelled \u2014 exact text required", "warning"); return; }
     if (!isDup && !n?.trim()) return;
-    const reason = isDup ? `DUPLICATE OVERRIDE CONFIRMED: ${n}` : n.trim();
+    const reason = isDup ? "DUPLICATE OVERRIDE CONFIRMED: " + n : n.trim();
     const form = new FormData();
-    form.append('lane', 'AUTO_APPROVE');
-    form.append('reason', reason);
-    const resp = await fetch(`/api/invoices/${inv.id}/override-triage`, { method: 'POST', body: form, credentials: 'include' });
-    if (resp.ok) { await load(); setSel(null); toast('Invoice approved (override)', 'success'); }
-    else { toast('Override failed', 'error'); }
+    form.append("lane", "AUTO_APPROVE");
+    form.append("reason", reason);
+    const r = await postForm("/api/invoices/" + inv.id + "/override-triage", form);
+    if (r?.success) { await load(); setSel(null); toast("Invoice approved (override)", "success"); }
+    else toast(r?.detail || "Override failed", "danger");
   }
   async function escalateCase(inv) {
-    await post('/api/cases', { title: `Triage review: ${inv.invoiceNumber || inv.id}`, description: `Invoice ${inv.invoiceNumber} from ${inv.vendor} (${$(inv.amount, inv.currency)}) was routed to ${selLane}. Requires investigation.`, type: 'triage_escalation', priority: 'high', invoiceId: inv.id });
-    await load(); toast('Case created for investigation', 'success');
+    const r = await post("/api/cases", { title: "Triage review: " + (inv.invoiceNumber || inv.id), description: "Invoice " + inv.invoiceNumber + " from " + inv.vendor + " (" + $(inv.amount, inv.currency) + ") routed to " + (inv._lane || "BLOCK") + ". Requires investigation.", type: "triage_escalation", priority: "high", invoiceId: inv.id, vendor: inv.vendor, amountAtRisk: inv.amount, currency: inv.currency });
+    if (r?.success) { await load(); toast("Case " + (r.case?.id || "") + " created", "success"); }
+    else toast(r?.detail || "Case creation failed", "danger");
   }
   async function voidDuplicate(inv) {
-    if (!confirm(`Void duplicate invoice ${inv.invoiceNumber}?\n\nThis will mark it as disputed and remove it from the payment pipeline. The original invoice will remain active.`)) return;
+    if (!confirm("Void duplicate invoice " + inv.invoiceNumber + "? This will mark it as disputed and remove it from the payment pipeline.")) return;
+    const r = await post("/api/invoices/" + inv.id + "/mark-disputed", { reason: "Duplicate invoice voided by analyst" });
+    if (r?.success) {
+      await load(); setSel(null);
+      toast("Duplicate voided \u2014 " + (r.anomaliesResolved || 0) + " anomalies resolved", "success");
+    } else toast(r?.detail || "Void failed", "danger");
+  }
+  async function parkInvoice(inv) {
+    const d = prompt("Follow-up date (YYYY-MM-DD) and reason:\nExample: 2025-04-01 Awaiting GRN from warehouse");
+    if (!d?.trim()) return;
     const form = new FormData();
-    form.append('lane', 'BLOCK');
-    form.append('reason', 'VOIDED: Duplicate invoice — confirmed by analyst');
-    const resp = await fetch(`/api/invoices/${inv.id}/override-triage`, { method: 'POST', body: form, credentials: 'include' });
-    // Also mark status as disputed
-    await post(`/api/invoices/${inv.id}/mark-disputed`, { reason: 'Duplicate invoice voided' });
-    if (resp.ok) { await load(); setSel(null); toast('Duplicate voided — removed from pipeline', 'success'); }
-    else toast('Void failed', 'error');
+    form.append("lane", "BLOCK");
+    form.append("reason", "PARKED: " + d.trim());
+    const r = await postForm("/api/invoices/" + inv.id + "/override-triage", form);
+    if (r?.success) { await load(); setSel(null); toast("Invoice parked", "success"); }
+    else toast(r?.detail || "Park failed", "danger");
+  }
+  async function sendToVendor(inv) {
+    const reason = prompt("Query to send to vendor " + inv.vendor + ":");
+    if (!reason?.trim()) return;
+    const r = await post("/api/cases", { title: "Vendor Query: " + (inv.invoiceNumber || inv.id), description: "Vendor query for " + inv.invoiceNumber + ": " + reason.trim(), type: "vendor_query", priority: "medium", invoiceId: inv.id, vendor: inv.vendor, amountAtRisk: inv.amount, currency: inv.currency });
+    if (r?.success) {
+      // Also park the invoice pending vendor response
+      const form = new FormData();
+      form.append("lane", "BLOCK");
+      form.append("reason", "PENDING VENDOR: Query sent \u2014 " + reason.trim().substring(0, 80));
+      await postForm("/api/invoices/" + inv.id + "/override-triage", form);
+      await load(); setSel(null);
+      toast("Vendor query case created + invoice parked", "success");
+    } else toast(r?.detail || "Failed", "danger");
   }
 
-  // ── Render a classified anomaly card ──
+  // ── Batch actions ──
+  const toggleCheck = (id) => setChecked(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleAll = () => { if (checked.size === sorted.length) setChecked(new Set()); else setChecked(new Set(sorted.map(i => i.id))); };
+  const checkedInvs = sorted.filter(i => checked.has(i.id));
+
+  async function batchPark() {
+    const reason = prompt("Park " + checkedInvs.length + " invoices \u2014 reason:");
+    if (!reason?.trim()) return;
+    let ok = 0;
+    for (const inv of checkedInvs) {
+      const form = new FormData();
+      form.append("lane", "BLOCK");
+      form.append("reason", "PARKED (batch): " + reason.trim());
+      const r = await postForm("/api/invoices/" + inv.id + "/override-triage", form);
+      if (r?.success) ok++;
+    }
+    await load(); setChecked(new Set());
+    toast(ok + "/" + checkedInvs.length + " invoices parked", "success");
+  }
+  async function batchEscalate() {
+    if (!confirm("Create cases for " + checkedInvs.length + " invoices?")) return;
+    let ok = 0;
+    for (const inv of checkedInvs) {
+      const r = await post("/api/cases", { title: "Batch triage: " + (inv.invoiceNumber || inv.id), description: "Batch escalation from triage worklist.", type: "triage_escalation", priority: "high", invoiceId: inv.id, vendor: inv.vendor, amountAtRisk: inv.amount, currency: inv.currency });
+      if (r?.success) ok++;
+    }
+    await load(); setChecked(new Set());
+    toast(ok + " cases created", "success");
+  }
+
+  // ── Keyboard shortcuts ──
+  useEffect(() => {
+    function onKey(e) {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if (viewMode !== 'worklist') return;
+      const len = sorted.length;
+      if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); setFocusIdx(prev => { const next = Math.min(prev + 1, len - 1); if (sorted[next]) setSel(sorted[next]); return next; }); }
+      if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); setFocusIdx(prev => { const next = Math.max(prev - 1, 0); if (sorted[next]) setSel(sorted[next]); return next; }); }
+      if (e.key === 'Escape') { setSel(null); setFocusIdx(-1); }
+      if (sel && e.key === 'a' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); overrideApprove(sel, hasDuplicate); }
+      if (sel && e.key === 'e') { e.preventDefault(); escalateCase(sel); }
+      if (sel && e.key === 'c' && !sel.claimedBy) { e.preventDefault(); claimInvoice(sel); }
+      if (sel && e.key === 'p') { e.preventDefault(); parkInvoice(sel); }
+      if (e.key === 'x' && focusIdx >= 0 && sorted[focusIdx]) { e.preventDefault(); toggleCheck(sorted[focusIdx].id); }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
+  // ── Formatting helpers ──
+  function ageFmt(hours) {
+    if (hours < 1) return Math.round(hours * 60) + "m";
+    if (hours < 24) return Math.round(hours) + "h";
+    return Math.round(hours / 24) + "d " + Math.round(hours % 24) + "h";
+  }
+  function slaFmt(remaining) {
+    if (remaining <= 0) return "OVERDUE";
+    if (remaining < 1) return Math.round(remaining * 60) + "m left";
+    if (remaining < 24) return Math.round(remaining) + "h left";
+    return Math.round(remaining / 24) + "d left";
+  }
+  const priColors = { 1: 'bg-red-100 text-red-700 border-red-200', 2: 'bg-amber-100 text-amber-700 border-amber-200', 3: 'bg-blue-100 text-blue-700 border-blue-200', 4: 'bg-slate-100 text-slate-600 border-slate-200' };
+  const priLabels = { 1: 'P1', 2: 'P2', 3: 'P3', 4: 'P4' };
+
+  // ── Sort header helper ──
+  function SortHeader({ col, label, right }) {
+    const active = sortCol === col;
+    return (
+      <th onClick={() => { if (active) setSortAsc(!sortAsc); else { setSortCol(col); setSortAsc(true); } }}
+        className={cn("px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider cursor-pointer select-none hover:bg-slate-100 transition-colors",
+          right ? "text-right" : "text-left", active ? "text-accent-700 bg-slate-50" : "text-slate-500")}>
+        {label} {active && (sortAsc ? "\u2193" : "\u2191")}
+      </th>
+    );
+  }
+
+  // ── Anomaly card for detail ──
   function AnomalyCard({ a, dimmed }) {
     return (
       <div className={cn("rounded-xl p-3 border", dimmed ? "bg-slate-50/50 border-slate-100 opacity-60" : "bg-slate-50 border-slate-200")}>
@@ -1211,351 +1395,548 @@ function Triage() {
           {a.amount_at_risk > 0 && <span className="text-xs font-bold text-red-600 ml-auto">{$(a.amount_at_risk)}</span>}
         </div>
         <div className="text-sm text-slate-700">{a.description}</div>
-        {a.recommendation && <div className="text-xs text-amber-700 mt-1">→ {a.recommendation}</div>}
+        {a.recommendation && <div className="text-xs text-amber-700 mt-1">{"\u2192"} {a.recommendation}</div>}
       </div>
     );
   }
 
+  // ── Stats bar ──
+  const total = allInvoices.length;
+  const approved = (tri.AUTO_APPROVE || []).length;
+  const blocked = (tri.BLOCK || []).length;
+  const reviewCount = total - approved - blocked;
+  const autoRate = total > 0 ? Math.round(approved / total * 100) : 0;
+  const blockedAmt = (tri.BLOCK || []).reduce((s, i) => s + (i.amount || 0), 0);
+  const p1Count = enriched.filter(i => i._pri.level === 1).length;
+  const overdueCount = enriched.filter(i => i._pri.slaRemaining < 0).length;
+  const uniqueVendors = [...new Set(allInvoices.map(i => i.vendor).filter(Boolean))];
+
   return (
-    <div className="page-enter space-y-6">
-      <PageHeader title="Triage" sub="Policy-driven invoice routing">
-        {lvl >= 1 && (
-          <button onClick={async () => { const r = await post('/api/triage/retriage-all', {}); if (r?.success) { toast(`${r.retriaged} invoices retriaged`, 'success'); await load(); setSel(null); } else toast('Retriage failed', 'danger'); }} className="btn-o text-xs px-3 py-1.5"><RefreshCw className="w-3.5 h-3.5" /> Retriage All</button>
-        )}
-      </PageHeader>
-
-      {/* ── Auto-approve rate indicator ── */}
-      {(() => {
-        const total = allLanes.reduce((n, l) => n + (tri[l] || []).length, 0);
-        const approved = (tri.AUTO_APPROVE || []).length;
-        const rate = total > 0 ? Math.round(approved / total * 100) : 0;
-        if (total === 0) return null;
-        return (
-          <div className={cn("rounded-xl px-4 py-2.5 text-xs flex items-center gap-3",
-            rate >= 60 ? "bg-emerald-50 border border-emerald-100 text-emerald-700" :
-            rate >= 30 ? "bg-amber-50 border border-amber-100 text-amber-700" :
-            "bg-red-50 border border-red-100 text-red-700")}>
-            <span className="font-bold text-lg">{rate}%</span>
-            <span>auto-approve rate ({approved}/{total} invoices) {rate < 30 && '— review AP Policy thresholds'}</span>
-          </div>
-        );
-      })()}
-
-      <div className="flex gap-6">
-        <div className={cn('transition-all', sel ? 'w-1/2' : 'w-full')}>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {lanes.map(lane => {
-              const items = tri[lane] || [];
-              // Show lane if it has items OR is in always-show list
-              if (items.length === 0 && !alwaysShow.includes(lane)) return null;
-              const Ic = laneIcons[lane] || Eye;
-              return (
-                <div key={lane} className="card overflow-hidden">
-                  <div className={cn('px-5 py-3.5 flex items-center gap-3', bgMap[lane])}>
-                    <Ic className={cn('w-5 h-5', icMap[lane])} />
-                    <div className="flex-1"><div className={cn('text-sm font-bold', txtMap[lane])}>{laneLabel(lane)}</div></div>
-                    <span className={`badge badge-${laneColor(lane)}`}>{items.length}</span>
-                  </div>
-                  <div className="divide-y divide-slate-50 max-h-[320px] overflow-y-auto">
-                    {items.length === 0 && <div className="p-6 text-center text-sm text-slate-400">
-                      {lane === 'AUTO_APPROVE' ? 'No auto-approved invoices' :
-                       lane === 'BLOCK' ? 'No blocked invoices' : 'No invoices pending review'}
-                    </div>}
-                    {items.map(inv => (
-                      <div key={inv.id} onClick={() => setSel(inv)} className={cn('px-5 py-3 hover:bg-slate-50 transition-colors cursor-pointer',
-                        sel?.id === inv.id && 'bg-accent-50 ring-1 ring-accent-200',
-                        isClaimed(inv) && 'opacity-50')}>
-                        <div className="flex items-center justify-between">
-                          <div className="font-semibold text-sm">{inv.invoiceNumber || inv.id}</div>
-                          <span className="text-sm font-bold font-mono">{$(inv.amount, inv.currency)}</span>
-                        </div>
-                        <div className="flex items-center justify-between mt-0.5">
-                          <div className="text-xs text-slate-500">{inv.vendor} · {pct(inv.confidence)} conf</div>
-                          <div className="flex items-center gap-1.5">
-                            {inv._isDuplicate && (
-                              <span className="text-[10px] px-1.5 py-0.5 bg-red-100 text-red-600 font-bold rounded-full border border-red-200">DUP</span>
-                            )}
-                            {inv.claimedBy && (
-                              <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full font-medium",
-                                isMine(inv) ? "bg-accent-100 text-accent-700 border border-accent-200" : "bg-slate-200 text-slate-600")}>
-                                {isMine(inv) ? '● You' : inv.claimedByName || 'Claimed'}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
+    <div className="page-enter space-y-4">
+      <PageHeader title="Triage" sub="AP Invoice Processing Workbench">
+        <div className="flex items-center gap-2">
+          {lvl >= 1 && (
+            <button onClick={async () => { const r = await post('/api/triage/retriage-all', {}); if (r?.success) { toast(r.retriaged + " invoices retriaged", "success"); await load(); setSel(null); } else toast("Retriage failed", "danger"); }} className="btn-o text-xs px-3 py-1.5"><RefreshCw className="w-3.5 h-3.5" /> Retriage All</button>
+          )}
+          <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+            <button onClick={() => setViewMode('worklist')} className={cn("px-3 py-1.5 text-xs font-semibold transition-colors", viewMode === 'worklist' ? "bg-slate-800 text-white" : "bg-white text-slate-600 hover:bg-slate-50")}>Worklist</button>
+            <button onClick={() => setViewMode('kanban')} className={cn("px-3 py-1.5 text-xs font-semibold transition-colors", viewMode === 'kanban' ? "bg-slate-800 text-white" : "bg-white text-slate-600 hover:bg-slate-50")}>Kanban</button>
           </div>
         </div>
+      </PageHeader>
 
-        {/* ── Detail Panel ── */}
-        {sel && (
-          <div className="w-1/2 bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sticky top-24 self-start max-h-[calc(100vh-8rem)] overflow-y-auto">
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <h3 className="text-lg font-bold text-slate-900">{sel.invoiceNumber || sel.id}</h3>
-                <div className="text-sm text-slate-500">{sel.vendor}</div>
-              </div>
-              <button onClick={() => setSel(null)} className="p-1 hover:bg-slate-100 rounded-lg"><X className="w-4 h-4" /></button>
-            </div>
-
-            {/* ── Duplicate Warning (consolidated, single banner) ── */}
-            {(sel._isDuplicate || sel.possibleDuplicate) && (
-              <div className="rounded-xl p-3 mb-4 bg-red-50 border border-red-200">
-                <div className="flex items-center gap-2 text-sm font-semibold text-red-700">
-                  <AlertTriangle className="w-4 h-4" /> Duplicate Invoice — Do Not Process
-                </div>
-                <div className="text-xs text-red-600 mt-1">
-                  {sel.duplicateWarning || `${sel._duplicateCount || 2} records exist for ${sel.invoiceNumber} from ${sel.vendor}. Risk of double payment: ${$(sel.amount, sel.currency)}.`}
-                </div>
-              </div>
-            )}
-
-            {/* ── Claim Status ── */}
-            {sel.claimedBy && (
-              <div className={cn("rounded-xl p-3 mb-4 flex items-center justify-between",
-                isMine(sel) ? "bg-accent-50 border border-accent-200" : "bg-slate-100 border border-slate-200")}>
-                <div className="text-sm">
-                  {isMine(sel)
-                    ? <span className="font-semibold text-accent-700">You are working on this</span>
-                    : <span className="text-slate-600">Claimed by <strong>{sel.claimedByName}</strong></span>}
-                  {sel.claimedAt && <span className="text-xs text-slate-400 ml-2">({dateTime(sel.claimedAt)})</span>}
-                </div>
-                {(isMine(sel) || lvl >= 1) && (
-                  <button onClick={() => releaseInvoice(sel)} className="btn-o text-xs px-2 py-1">Release</button>
-                )}
-              </div>
-            )}
-
-            {/* ── Invoice Summary ── */}
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              <div className="bg-slate-50 rounded-xl p-3">
-                <div className="text-xs text-slate-500">Amount</div>
-                <div className="text-lg font-bold">{$(sel.amount, sel.currency)}</div>
-              </div>
-              <div className="bg-slate-50 rounded-xl p-3">
-                <div className="text-xs text-slate-500">Confidence</div>
-                <div className="text-lg font-bold">{pct(sel.confidence)}</div>
-              </div>
-            </div>
-
-            {/* ── PO Match ── */}
-            {(() => {
-              const match = (s.matches || []).find(m => m.invoiceId === sel.id);
-              const allDocs = s.docs || [];
-              const po = match ? allDocs.find(d => d.id === match.poId) : null;
-              const grn = match ? allDocs.find(d => d.type === 'goods_receipt' && (d.poReference === match.poNumber || d.poId === match.poId)) : null;
-              const hasMatch = match && po;
-              return (
-                <div className="mb-4">
-                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">PO Match</div>
-                  {hasMatch ? (
-                    <div className="rounded-xl border border-slate-200 overflow-hidden">
-                      <div className="flex items-center gap-0 text-xs font-bold bg-slate-50 px-4 py-2.5">
-                        <div className="flex items-center gap-1.5 text-emerald-700"><FileText className="w-3.5 h-3.5" /> Invoice</div>
-                        <div className={cn("mx-2 text-lg", match.matchScore >= 75 ? "text-emerald-500" : "text-amber-500")}>{match.matchScore >= 75 ? "↔" : "⇢"}</div>
-                        <div className="flex items-center gap-1.5 text-blue-700"><Link2 className="w-3.5 h-3.5" /> PO</div>
-                        <div className={cn("mx-2 text-lg", grn ? "text-emerald-500" : "text-slate-300")}>{grn ? "↔" : "·····"}</div>
-                        <div className={cn("flex items-center gap-1.5", grn ? "text-indigo-700" : "text-slate-400")}><ClipboardList className="w-3.5 h-3.5" /> GRN</div>
-                        <div className="ml-auto">
-                          <span className={cn("px-2 py-0.5 rounded-full text-[11px] font-bold",
-                            grn ? "bg-emerald-100 text-emerald-700" : match.matchScore >= 75 ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700")}>
-                            {grn ? "3-Way Match" : match.matchScore >= 75 ? "2-Way Match" : "Review Needed"}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="px-4 py-3 border-t border-slate-100">
-                        <div className="flex items-center justify-between mb-2">
-                          <div>
-                            <span className="text-sm font-bold text-slate-900">{match.poNumber}</span>
-                            <span className="text-xs text-slate-500 ml-2">{po.vendor}</span>
-                          </div>
-                          <ConfidenceRing score={match.matchScore || 0} />
-                        </div>
-                        <div className="grid grid-cols-3 gap-2 text-xs">
-                          <div><span className="text-slate-500">PO Value</span><div className="font-bold font-mono">{$(po.amount, po.currency)}</div></div>
-                          <div><span className="text-slate-500">Invoiced</span><div className={cn("font-bold font-mono", match.overInvoiced ? "text-red-600" : "text-slate-800")}>{$(match.poAlreadyInvoiced || 0)}</div></div>
-                          <div><span className="text-slate-500">Δ Amount</span><div className={cn("font-bold font-mono", (match.amountDifference || 0) > 0 ? "text-amber-600" : "text-emerald-600")}>{$f(match.amountDifference || 0)}</div></div>
-                        </div>
-                        {match.overInvoiced && (
-                          <div className="mt-2 px-2.5 py-1.5 rounded-lg bg-red-50 border border-red-100 text-xs text-red-700 font-medium">
-                            ⚠ Total invoiced exceeds PO value — requires review
-                          </div>
-                        )}
-                      </div>
-                      {grn && (
-                        <div className="px-4 py-2.5 border-t border-slate-100 bg-indigo-50/50">
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="font-semibold text-indigo-700">GRN: {grn.documentNumber || grn.grnNumber || grn.id}</span>
-                            <span className="text-slate-500">{date(grn.issueDate || grn.receivedDate)}</span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="rounded-xl border border-dashed border-slate-200 p-4 text-center text-xs text-slate-400">
-                      {sel.poReference
-                        ? <span>PO Ref: <span className="font-semibold text-slate-600">{sel.poReference}</span> — no matching PO found in system</span>
-                        : "No PO reference on invoice — unmatched"}
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-
-            {/* ── Triage Decision ── */}
-            <div className="mb-4">
-              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Triage Decision</div>
-              <div className={cn('rounded-xl p-3 text-sm font-medium',
-                selLane === 'BLOCK' ? 'bg-red-50 text-red-800 border border-red-100' :
-                selLane === 'AUTO_APPROVE' ? 'bg-emerald-50 text-emerald-800 border border-emerald-100' :
-                'bg-amber-50 text-amber-800 border border-amber-100'
-              )}>
-                {laneLabel(selLane)}
-              </div>
-              {(sel.triageReasons || []).length > 0 && (
-                <div className="mt-2 space-y-1">
-                  {sel.triageReasons.map((r, i) => (
-                    <div key={i} className={cn("text-xs rounded-lg px-3 py-1.5 border",
-                      r.startsWith('BLOCK') ? 'text-red-700 bg-red-50 border-red-100' :
-                      r.startsWith('ESCALATED') ? 'text-amber-700 bg-amber-50 border-amber-100' :
-                      r.startsWith('APPROVED') || r.startsWith('Passed') ? 'text-emerald-700 bg-emerald-50 border-emerald-100' :
-                      'text-slate-600 bg-slate-50 border-slate-100'
-                    )}>→ {r}</div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* ── Blocking Issues (must resolve before payment) ── */}
-            {sortBySev(blockingAnoms).length > 0 && (
-              <div className="mb-4">
-                <div className="text-xs font-semibold text-red-600 uppercase tracking-wider mb-2">
-                  Blocking Issues — {blockingAnoms.length} must be resolved
-                </div>
-                <div className="space-y-2">
-                  {sortBySev(blockingAnoms).map(a => <AnomalyCard key={a.id} a={a} />)}
-                </div>
-              </div>
-            )}
-
-            {/* ── Other open anomalies (non-blocking) ── */}
-            {sortBySev(otherAnoms).length > 0 && (
-              <div className="mb-4">
-                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Other Findings</div>
-                <div className="space-y-2">
-                  {sortBySev(otherAnoms).map(a => <AnomalyCard key={a.id} a={a} />)}
-                </div>
-              </div>
-            )}
-
-            {/* ── Contract-Level Insights (strategic, not invoice-blocking) ── */}
-            {contractAnoms.length > 0 && (
-              <div className="mb-4">
-                <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                  Contract-Level Insights <span className="font-normal">(vendor-wide, not specific to this invoice)</span>
-                </div>
-                <div className="space-y-2">
-                  {contractAnoms.map(a => <AnomalyCard key={a.id} a={a} dimmed />)}
-                </div>
-              </div>
-            )}
-
-            {/* ── Early Payment Discount (only on non-blocked invoices) ── */}
-            {infoAnoms.length > 0 && !isBlocked && (
-              <div className="mb-4">
-                <div className="text-xs font-semibold text-emerald-600 uppercase tracking-wider mb-2">Opportunities</div>
-                <div className="space-y-2">
-                  {infoAnoms.map(a => (
-                    <div key={a.id} className="rounded-xl p-3 bg-emerald-50 border border-emerald-100">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Badge c="ok">{a.severity}</Badge>
-                        <span className="text-xs text-emerald-600 font-mono">{(a.type || '').replace(/_/g, ' ')}</span>
-                        {a.amount_at_risk > 0 && <span className="text-xs font-bold text-emerald-700 ml-auto">{$(a.amount_at_risk)}</span>}
-                      </div>
-                      <div className="text-sm text-emerald-800">{a.description}</div>
-                      {a.recommendation && <div className="text-xs text-emerald-600 mt-1">→ {a.recommendation}</div>}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {/* EPD note when blocked */}
-            {infoAnoms.length > 0 && isBlocked && (
-              <div className="mb-4 text-xs text-slate-400 bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
-                Early payment discount available once blocking issues are resolved.
-              </div>
-            )}
-
-            {/* ── Contextual Actions ── */}
-            {selLane !== 'AUTO_APPROVE' && (
-              <div className="mt-6 pt-4 border-t border-slate-200">
-                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Actions</div>
-
-                {/* Not claimed — must claim first */}
-                {!sel.claimedBy && (
-                  <button onClick={() => claimInvoice(sel)} className="btn-p text-sm px-4 py-2 w-full mb-2">
-                    <Shield className="w-4 h-4" /> Claim & Work on This
-                  </button>
-                )}
-
-                {/* Claimed by me or manager+ — contextual buttons */}
-                {canAction(sel) && sel.claimedBy && (
-                  <div className="space-y-2">
-                    {/* Primary action based on blocking reason */}
-                    {hasDuplicate && (
-                      <button onClick={() => voidDuplicate(sel)} className="bg-red-600 hover:bg-red-700 text-white text-sm px-4 py-2.5 rounded-xl font-semibold w-full flex items-center justify-center gap-2 transition-all">
-                        <XCircle className="w-4 h-4" /> Void Duplicate — Remove from Pipeline
-                      </button>
-                    )}
-                    {hasUnreceipted && !hasDuplicate && (
-                      <button onClick={() => escalateCase(sel)} className="bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2.5 rounded-xl font-semibold w-full flex items-center justify-center gap-2 transition-all">
-                        <Send className="w-4 h-4" /> Request GRN — Escalate to Procurement
-                      </button>
-                    )}
-                    {hasMissingPO && !hasDuplicate && !hasUnreceipted && (
-                      <button onClick={() => escalateCase(sel)} className="bg-amber-600 hover:bg-amber-700 text-white text-sm px-4 py-2.5 rounded-xl font-semibold w-full flex items-center justify-center gap-2 transition-all">
-                        <Send className="w-4 h-4" /> Request PO — Route to Procurement
-                      </button>
-                    )}
-
-                    {/* Secondary actions */}
-                    <div className="flex gap-2">
-                      <button onClick={() => overrideApprove(sel, hasDuplicate)} className={cn("text-sm px-4 py-2 flex-1 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all border",
-                        hasDuplicate
-                          ? "border-red-200 text-red-600 hover:bg-red-50 bg-white"
-                          : "btn-p")}>
-                        <Check className="w-4 h-4" /> {hasDuplicate ? 'Override (Risky)' : 'Override & Approve'}
-                      </button>
-                      <button onClick={() => escalateCase(sel)} className="btn-g text-sm px-4 py-2 flex-1">
-                        <ClipboardList className="w-4 h-4" /> Create Case
-                      </button>
-                    </div>
-
-                    {/* Context warning for duplicate override */}
-                    {hasDuplicate && (
-                      <div className="text-[11px] text-red-500 text-center mt-1">
-                        Override requires typing exact confirmation text to prevent accidental double payment
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Claimed by someone else */}
-                {isClaimed(sel) && lvl < 1 && (
-                  <div className="text-xs text-slate-500 text-center mt-2 bg-slate-50 rounded-lg p-3">
-                    Claimed by <strong>{sel.claimedByName}</strong> — you cannot action this invoice until it is released.
-                  </div>
-                )}
-              </div>
-            )}
+      {/* ── Metrics strip ── */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className={cn("rounded-xl px-4 py-3 border", autoRate >= 60 ? "bg-emerald-50 border-emerald-100" : autoRate >= 30 ? "bg-amber-50 border-amber-100" : "bg-red-50 border-red-100")}>
+          <div className="text-2xl font-extrabold">{autoRate}%</div>
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Auto-Approve</div>
+        </div>
+        <div className="rounded-xl px-4 py-3 border bg-red-50 border-red-100">
+          <div className="text-2xl font-extrabold text-red-700">{blocked}</div>
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Blocked ({short(blockedAmt, 'USD')})</div>
+        </div>
+        <div className="rounded-xl px-4 py-3 border bg-blue-50 border-blue-100">
+          <div className="text-2xl font-extrabold text-blue-700">{reviewCount}</div>
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">In Review</div>
+        </div>
+        {p1Count > 0 && (
+          <div className="rounded-xl px-4 py-3 border bg-red-50 border-red-100 animate-pulse">
+            <div className="text-2xl font-extrabold text-red-700">{p1Count}</div>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-red-500">P1 Critical</div>
+          </div>
+        )}
+        {overdueCount > 0 && (
+          <div className="rounded-xl px-4 py-3 border bg-red-50 border-red-100">
+            <div className="text-2xl font-extrabold text-red-700">{overdueCount}</div>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-red-500">SLA Overdue</div>
           </div>
         )}
       </div>
+
+      {/* ══════════════ WORKLIST VIEW ══════════════ */}
+      {viewMode === 'worklist' && (
+        <div className="flex gap-4">
+          <div className={cn("transition-all", sel ? "w-1/2" : "w-full")}>
+
+            {/* ── Filters & Search ── */}
+            <div className="flex items-center gap-2 mb-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search invoices... (or press j/k to navigate)" className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent-300 focus:border-accent-400 outline-none" />
+              </div>
+              <select value={laneFilter} onChange={e => setLaneFilter(e.target.value)} className="text-xs border border-slate-200 rounded-lg px-3 py-2 bg-white">
+                <option value="ALL">All Lanes</option>
+                {lanes.map(l => <option key={l} value={l}>{laneLabel(l)} ({(tri[l] || []).length})</option>)}
+              </select>
+              {uniqueVendors.length > 1 && (
+                <select value={vendorFilter} onChange={e => setVendorFilter(e.target.value)} className="text-xs border border-slate-200 rounded-lg px-3 py-2 bg-white max-w-[160px]">
+                  <option value="">All Vendors</option>
+                  {uniqueVendors.sort().map(v => <option key={v} value={v}>{v}</option>)}
+                </select>
+              )}
+            </div>
+
+            {/* ── Batch action bar ── */}
+            {checked.size > 0 && (
+              <div className="flex items-center gap-2 mb-3 px-4 py-2.5 bg-accent-50 border border-accent-200 rounded-xl">
+                <span className="text-sm font-semibold text-accent-700">{checked.size} selected</span>
+                <div className="flex-1" />
+                <button onClick={batchPark} className="text-xs px-3 py-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 font-medium">Park All</button>
+                <button onClick={batchEscalate} className="text-xs px-3 py-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 font-medium">Escalate All</button>
+                <button onClick={() => setChecked(new Set())} className="text-xs px-2 py-1.5 text-slate-500 hover:text-slate-700"><X className="w-3.5 h-3.5" /></button>
+              </div>
+            )}
+
+            {/* ── Worklist table ── */}
+            <div ref={tableRef} className="card overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-slate-50/80 border-b border-slate-100">
+                      <th className="px-3 py-2.5 w-8"><input type="checkbox" checked={checked.size === sorted.length && sorted.length > 0} onChange={toggleAll} className="rounded" /></th>
+                      <SortHeader col="priority" label="Pri" />
+                      <SortHeader col="invoice" label="Invoice" />
+                      <SortHeader col="vendor" label="Vendor" />
+                      <SortHeader col="amount" label="Amount" right />
+                      <SortHeader col="lane" label="Lane" />
+                      <SortHeader col="anomalies" label="Issues" />
+                      <SortHeader col="age" label="Age" />
+                      <SortHeader col="sla" label="SLA" />
+                      <th className="px-3 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {sorted.map((inv, idx) => {
+                      const pri = inv._pri;
+                      return (
+                        <tr key={inv.id} onClick={() => { setSel(inv); setFocusIdx(idx); setDetailTab('summary'); }}
+                          className={cn("transition-colors cursor-pointer",
+                            sel?.id === inv.id ? "bg-accent-50 ring-1 ring-inset ring-accent-200" : focusIdx === idx ? "bg-slate-50" : "hover:bg-slate-50",
+                            isClaimed(inv) && "opacity-50")}>
+                          <td className="px-3 py-2" onClick={e => { e.stopPropagation(); toggleCheck(inv.id); }}>
+                            <input type="checkbox" checked={checked.has(inv.id)} readOnly className="rounded" />
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded border", priColors[pri.level])}>{priLabels[pri.level]}</span>
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="font-semibold text-slate-900">{inv.invoiceNumber || inv.id}</div>
+                          </td>
+                          <td className="px-3 py-2 text-slate-600 max-w-[140px] truncate">{inv.vendor}</td>
+                          <td className="px-3 py-2 text-right font-mono font-bold">{$(inv.amount, inv.currency)}</td>
+                          <td className="px-3 py-2">
+                            <span className={"badge badge-" + laneColor(inv._lane) + " text-[10px]"}>{laneLabel(inv._lane)}</span>
+                          </td>
+                          <td className="px-3 py-2">
+                            {pri.totalAnoms > 0 ? (
+                              <div className="flex items-center gap-1">
+                                <span className={cn("text-xs font-bold", pri.openBlocking > 0 ? "text-red-600" : "text-amber-600")}>{pri.totalAnoms}</span>
+                                {pri.openBlocking > 0 && <span className="w-1.5 h-1.5 rounded-full bg-red-500" />}
+                              </div>
+                            ) : <span className="text-xs text-slate-300">{"\u2014"}</span>}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-slate-500 font-mono">{ageFmt(pri.ageHours)}</td>
+                          <td className="px-3 py-2">
+                            <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded",
+                              pri.slaRemaining <= 0 ? "bg-red-100 text-red-700 animate-pulse" :
+                              pri.slaRemaining < 8 ? "bg-amber-100 text-amber-700" :
+                              "bg-slate-100 text-slate-500")}>{slaFmt(pri.slaRemaining)}</span>
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex items-center gap-1">
+                              {inv._isDuplicate && <span className="text-[9px] px-1 py-0.5 bg-red-100 text-red-600 font-bold rounded border border-red-200">DUP</span>}
+                              {inv.claimedBy && (
+                                <span className={cn("text-[9px] px-1 py-0.5 rounded font-medium",
+                                  isMine(inv) ? "bg-accent-100 text-accent-700" : "bg-slate-200 text-slate-500")}>
+                                  {isMine(inv) ? "\u25cf You" : "Claimed"}
+                                </span>
+                              )}
+                              {inv.status === 'disputed' && <span className="text-[9px] px-1 py-0.5 bg-slate-200 text-slate-500 font-bold rounded">VOID</span>}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {sorted.length === 0 && (
+                      <tr><td colSpan={10} className="px-4 py-12 text-center text-slate-400">
+                        {total === 0 ? "No invoices in triage queue" : "No invoices match current filters"}
+                      </td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {/* Keyboard shortcut legend */}
+              <div className="px-4 py-2 bg-slate-50 border-t border-slate-100 text-[10px] text-slate-400 flex items-center gap-4">
+                <span><kbd className="px-1 py-0.5 bg-white border border-slate-200 rounded text-[9px] font-mono">j</kbd>/<kbd className="px-1 py-0.5 bg-white border border-slate-200 rounded text-[9px] font-mono">k</kbd> navigate</span>
+                <span><kbd className="px-1 py-0.5 bg-white border border-slate-200 rounded text-[9px] font-mono">x</kbd> select</span>
+                <span><kbd className="px-1 py-0.5 bg-white border border-slate-200 rounded text-[9px] font-mono">c</kbd> claim</span>
+                <span><kbd className="px-1 py-0.5 bg-white border border-slate-200 rounded text-[9px] font-mono">a</kbd> approve</span>
+                <span><kbd className="px-1 py-0.5 bg-white border border-slate-200 rounded text-[9px] font-mono">e</kbd> escalate</span>
+                <span><kbd className="px-1 py-0.5 bg-white border border-slate-200 rounded text-[9px] font-mono">p</kbd> park</span>
+                <span><kbd className="px-1 py-0.5 bg-white border border-slate-200 rounded text-[9px] font-mono">Esc</kbd> close</span>
+              </div>
+            </div>
+          </div>
+
+          {/* ── DETAIL PANEL (worklist) ── */}
+          {sel && (
+            <div className="w-1/2 bg-white rounded-2xl border border-slate-200 shadow-sm sticky top-20 self-start max-h-[calc(100vh-7rem)] overflow-y-auto">
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-start">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded border", priColors[sel._pri?.level || 4])}>{priLabels[sel._pri?.level || 4]}</span>
+                    <h3 className="text-lg font-bold text-slate-900">{sel.invoiceNumber || sel.id}</h3>
+                  </div>
+                  <div className="text-sm text-slate-500 mt-0.5">{sel.vendor} {"\u00b7"} {$(sel.amount, sel.currency)}</div>
+                </div>
+                <button onClick={() => setSel(null)} className="p-1.5 hover:bg-slate-100 rounded-lg"><X className="w-4 h-4" /></button>
+              </div>
+
+              {/* Tabs */}
+              <div className="flex border-b border-slate-100 px-6">
+                {[['summary','Summary'],['match','PO Match'],['activity','Activity']].map(([k, label]) => (
+                  <button key={k} onClick={() => setDetailTab(k)}
+                    className={cn("px-4 py-2.5 text-xs font-semibold transition-colors border-b-2 -mb-px",
+                      detailTab === k ? "border-accent-500 text-accent-700" : "border-transparent text-slate-400 hover:text-slate-600")}>{label}</button>
+                ))}
+              </div>
+
+              <div className="p-6">
+                {/* ── TAB: Summary ── */}
+                {detailTab === 'summary' && (<>
+                  {/* Duplicate warning */}
+                  {(sel._isDuplicate || sel.possibleDuplicate) && (
+                    <div className="rounded-xl p-3 mb-4 bg-red-50 border border-red-200">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-red-700"><AlertTriangle className="w-4 h-4" /> Duplicate Invoice {"\u2014"} Do Not Process</div>
+                      <div className="text-xs text-red-600 mt-1">{sel.duplicateWarning || (sel._duplicateCount || 2) + " records exist. Risk: " + $(sel.amount, sel.currency) + " double payment."}</div>
+                    </div>
+                  )}
+
+                  {/* Claim status */}
+                  {sel.claimedBy && (
+                    <div className={cn("rounded-xl p-3 mb-4 flex items-center justify-between",
+                      isMine(sel) ? "bg-accent-50 border border-accent-200" : "bg-slate-100 border border-slate-200")}>
+                      <div className="text-sm">{isMine(sel) ? <span className="font-semibold text-accent-700">You are working on this</span> : <span className="text-slate-600">Claimed by <strong>{sel.claimedByName}</strong></span>}</div>
+                      {(isMine(sel) || lvl >= 1) && <button onClick={() => releaseInvoice(sel)} className="btn-o text-xs px-2 py-1">Release</button>}
+                    </div>
+                  )}
+
+                  {/* Invoice key metrics */}
+                  <div className="grid grid-cols-4 gap-2 mb-4">
+                    <div className="bg-slate-50 rounded-lg p-2.5"><div className="text-[10px] text-slate-500 uppercase">Amount</div><div className="text-sm font-bold">{$(sel.amount, sel.currency)}</div></div>
+                    <div className="bg-slate-50 rounded-lg p-2.5"><div className="text-[10px] text-slate-500 uppercase">Confidence</div><div className="text-sm font-bold">{pct(sel.confidence)}</div></div>
+                    <div className="bg-slate-50 rounded-lg p-2.5"><div className="text-[10px] text-slate-500 uppercase">Age</div><div className="text-sm font-bold">{ageFmt(sel._pri?.ageHours || 0)}</div></div>
+                    <div className={cn("rounded-lg p-2.5", (sel._pri?.slaRemaining || 99) <= 0 ? "bg-red-50" : "bg-slate-50")}><div className="text-[10px] text-slate-500 uppercase">SLA</div><div className={cn("text-sm font-bold", (sel._pri?.slaRemaining || 99) <= 0 && "text-red-600")}>{slaFmt(sel._pri?.slaRemaining || 0)}</div></div>
+                  </div>
+
+                  {/* Triage lane */}
+                  <div className="mb-4">
+                    <div className={cn("rounded-xl p-3 text-sm font-medium",
+                      selLane === 'BLOCK' ? "bg-red-50 text-red-800 border border-red-100" :
+                      selLane === 'AUTO_APPROVE' ? "bg-emerald-50 text-emerald-800 border border-emerald-100" :
+                      "bg-amber-50 text-amber-800 border border-amber-100")}>{laneLabel(selLane)}</div>
+                    {(sel.triageReasons || []).length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {sel.triageReasons.map((r, i) => (
+                          <div key={i} className={cn("text-xs rounded-lg px-3 py-1.5 border",
+                            r.startsWith('BLOCK') ? "text-red-700 bg-red-50 border-red-100" :
+                            r.startsWith('ESCALATED') ? "text-amber-700 bg-amber-50 border-amber-100" :
+                            r.startsWith('APPROVED') || r.startsWith('Passed') ? "text-emerald-700 bg-emerald-50 border-emerald-100" :
+                            "text-slate-600 bg-slate-50 border-slate-100"
+                          )}>{"\u2192"} {r}</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Blocking issues */}
+                  {sortBySev(blockingAnoms).length > 0 && (
+                    <div className="mb-4">
+                      <div className="text-xs font-semibold text-red-600 uppercase tracking-wider mb-2">Blocking Issues {"\u2014"} {blockingAnoms.length} must be resolved</div>
+                      <div className="space-y-2">{sortBySev(blockingAnoms).map(a => <AnomalyCard key={a.id} a={a} />)}</div>
+                    </div>
+                  )}
+                  {sortBySev(otherAnoms).length > 0 && (
+                    <div className="mb-4">
+                      <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Other Findings</div>
+                      <div className="space-y-2">{sortBySev(otherAnoms).map(a => <AnomalyCard key={a.id} a={a} />)}</div>
+                    </div>
+                  )}
+                  {contractAnoms.length > 0 && (
+                    <div className="mb-4">
+                      <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Contract-Level <span className="font-normal">(vendor-wide)</span></div>
+                      <div className="space-y-2">{contractAnoms.map(a => <AnomalyCard key={a.id} a={a} dimmed />)}</div>
+                    </div>
+                  )}
+                  {infoAnoms.length > 0 && !isBlocked && (
+                    <div className="mb-4">
+                      <div className="text-xs font-semibold text-emerald-600 uppercase tracking-wider mb-2">Opportunities</div>
+                      <div className="space-y-2">{infoAnoms.map(a => (
+                        <div key={a.id} className="rounded-xl p-3 bg-emerald-50 border border-emerald-100">
+                          <div className="flex items-center gap-2 mb-1"><Badge c="ok">{a.severity}</Badge><span className="text-xs text-emerald-600 font-mono">{(a.type || '').replace(/_/g, ' ')}</span></div>
+                          <div className="text-sm text-emerald-800">{a.description}</div>
+                        </div>
+                      ))}</div>
+                    </div>
+                  )}
+                  {infoAnoms.length > 0 && isBlocked && (
+                    <div className="mb-4 text-xs text-slate-400 bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">Early payment discount available once blocking issues resolved.</div>
+                  )}
+                </>)}
+
+                {/* ── TAB: PO Match ── */}
+                {detailTab === 'match' && (() => {
+                  const match = (s.matches || []).find(m => m.invoiceId === sel.id);
+                  const allDocs = s.docs || [];
+                  const po = match ? allDocs.find(d => d.id === match.poId) : null;
+                  const grn = match ? allDocs.find(d => d.type === 'goods_receipt' && (d.poReference === match.poNumber || d.poId === match.poId)) : null;
+                  const hasMatch = match && po;
+
+                  // Line-item detail if available
+                  const invLines = sel.lineItems || [];
+                  const poLines = po?.lineItems || [];
+
+                  return (<>
+                    {hasMatch ? (<>
+                      <div className="rounded-xl border border-slate-200 overflow-hidden mb-4">
+                        <div className="flex items-center text-xs font-bold bg-slate-50 px-4 py-2.5 gap-2">
+                          <span className="text-emerald-700">Invoice</span>
+                          <span className={match.matchScore >= 75 ? "text-emerald-500" : "text-amber-500"}>{match.matchScore >= 75 ? "\u2194" : "\u21a2"}</span>
+                          <span className="text-blue-700">PO {match.poNumber}</span>
+                          <span className={grn ? "text-emerald-500" : "text-slate-300"}>{grn ? "\u2194" : "\u00b7\u00b7\u00b7\u00b7\u00b7"}</span>
+                          <span className={grn ? "text-indigo-700" : "text-slate-400"}>GRN</span>
+                          <span className="ml-auto"><span className={cn("px-2 py-0.5 rounded-full text-[11px] font-bold",
+                            grn ? "bg-emerald-100 text-emerald-700" : match.matchScore >= 75 ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700")}>
+                            {grn ? "3-Way Match" : match.matchScore >= 75 ? "2-Way Match" : "Review"}</span></span>
+                        </div>
+                        <div className="px-4 py-3 border-t border-slate-100">
+                          <div className="grid grid-cols-3 gap-2 text-xs">
+                            <div><span className="text-slate-500">PO Value</span><div className="font-bold font-mono">{$(po.amount, po.currency)}</div></div>
+                            <div><span className="text-slate-500">Invoiced</span><div className={cn("font-bold font-mono", match.overInvoiced && "text-red-600")}>{$(match.poAlreadyInvoiced || 0)}</div></div>
+                            <div><span className="text-slate-500">{"\u0394"} Amount</span><div className={cn("font-bold font-mono", (match.amountDifference || 0) > 0 ? "text-amber-600" : "text-emerald-600")}>{$f(match.amountDifference || 0)}</div></div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Line-item reconciliation */}
+                      {(invLines.length > 0 || poLines.length > 0) && (
+                        <div className="mb-4">
+                          <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Line-Item Reconciliation</div>
+                          <div className="card overflow-hidden">
+                            <table className="w-full text-xs">
+                              <thead><tr className="bg-slate-50 border-b border-slate-100">
+                                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500">Line</th>
+                                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500">Description</th>
+                                <th className="px-3 py-2 text-right text-[10px] font-semibold text-slate-500">Inv Qty</th>
+                                <th className="px-3 py-2 text-right text-[10px] font-semibold text-slate-500">PO Qty</th>
+                                <th className="px-3 py-2 text-right text-[10px] font-semibold text-slate-500">Inv Price</th>
+                                <th className="px-3 py-2 text-right text-[10px] font-semibold text-slate-500">PO Price</th>
+                                <th className="px-3 py-2 text-right text-[10px] font-semibold text-slate-500">{"\u0394"}</th>
+                              </tr></thead>
+                              <tbody className="divide-y divide-slate-50">
+                                {invLines.map((line, li) => {
+                                  const poLine = poLines[li] || {};
+                                  const priceDiff = (line.unitPrice || 0) - (poLine.unitPrice || 0);
+                                  return (
+                                    <tr key={li} className={priceDiff !== 0 ? "bg-amber-50/50" : ""}>
+                                      <td className="px-3 py-1.5 font-mono">{li + 1}</td>
+                                      <td className="px-3 py-1.5 text-slate-700 max-w-[120px] truncate">{line.description || line.item || "\u2014"}</td>
+                                      <td className="px-3 py-1.5 text-right font-mono">{line.quantity || "\u2014"}</td>
+                                      <td className="px-3 py-1.5 text-right font-mono">{poLine.quantity || "\u2014"}</td>
+                                      <td className="px-3 py-1.5 text-right font-mono">{line.unitPrice ? $f(line.unitPrice) : "\u2014"}</td>
+                                      <td className="px-3 py-1.5 text-right font-mono">{poLine.unitPrice ? $f(poLine.unitPrice) : "\u2014"}</td>
+                                      <td className={cn("px-3 py-1.5 text-right font-mono font-bold", priceDiff > 0 ? "text-red-600" : priceDiff < 0 ? "text-emerald-600" : "text-slate-300")}>{priceDiff !== 0 ? $f(priceDiff) : "\u2014"}</td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+                      {invLines.length === 0 && poLines.length === 0 && (
+                        <div className="text-xs text-slate-400 bg-slate-50 rounded-lg px-3 py-3 text-center border border-slate-100">
+                          Line-item detail not available for this invoice. Summary-level match shown above.
+                        </div>
+                      )}
+                    </>) : (
+                      <div className="rounded-xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-400">
+                        {sel.poReference ? <span>PO Ref: <span className="font-semibold text-slate-600">{sel.poReference}</span> {"\u2014"} no matching PO found</span> : "No PO reference on invoice \u2014 unmatched"}
+                      </div>
+                    )}
+                  </>);
+                })()}
+
+                {/* ── TAB: Activity ── */}
+                {detailTab === 'activity' && (() => {
+                  const cases = (s.casesData || []).filter(c => c.invoiceId === sel.id);
+                  const overrides = sel.triageOverride ? [{
+                    action: "Triage Override",
+                    by: sel.triageOverrideBy || "System",
+                    at: sel.triageOverrideAt,
+                    detail: sel.triageOverrideReason || "Manual override"
+                  }] : [];
+                  const claimEvents = sel.claimedBy ? [{
+                    action: "Claimed",
+                    by: sel.claimedByName || sel.claimedBy,
+                    at: sel.claimedAt,
+                    detail: "Invoice claimed for investigation"
+                  }] : [];
+                  const allEvents = [...overrides, ...claimEvents].sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
+                  return (<>
+                    {/* Linked cases */}
+                    {cases.length > 0 && (
+                      <div className="mb-4">
+                        <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Linked Cases ({cases.length})</div>
+                        <div className="space-y-2">
+                          {cases.map(c => (
+                            <div key={c.id} className="rounded-lg border border-slate-200 p-3">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-xs font-bold text-slate-700">{c.id}</span>
+                                <Badge c={c.status === 'open' ? 'warn' : c.status === 'resolved' ? 'ok' : 'muted'}>{c.status}</Badge>
+                              </div>
+                              <div className="text-sm text-slate-600">{c.title}</div>
+                              {c.assignedTo && <div className="text-xs text-slate-400 mt-1">Assigned: {c.assignedTo}</div>}
+                              {(c.notes || []).length > 0 && (
+                                <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
+                                  {c.notes.slice(-3).map((n, ni) => (
+                                    <div key={ni} className="text-xs text-slate-500"><span className="font-medium">{n.by || "System"}</span>: {n.text} <span className="text-slate-300 ml-1">{date(n.at)}</span></div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Event trail */}
+                    {allEvents.length > 0 && (
+                      <div className="mb-4">
+                        <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Audit Trail</div>
+                        <div className="space-y-2">
+                          {allEvents.map((ev, ei) => (
+                            <div key={ei} className="flex gap-3 text-xs">
+                              <div className="w-1.5 h-1.5 rounded-full bg-slate-300 mt-1.5 shrink-0" />
+                              <div><span className="font-semibold text-slate-700">{ev.action}</span> by {ev.by} <span className="text-slate-400">{dateTime(ev.at)}</span><div className="text-slate-500 mt-0.5">{ev.detail}</div></div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {cases.length === 0 && allEvents.length === 0 && (
+                      <div className="text-sm text-slate-400 text-center py-8">No activity recorded for this invoice yet.</div>
+                    )}
+                  </>);
+                })()}
+
+                {/* ── ACTIONS (always visible at bottom) ── */}
+                {selLane !== 'AUTO_APPROVE' && (
+                  <div className="mt-6 pt-4 border-t border-slate-200">
+                    <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Actions</div>
+                    {!sel.claimedBy && (
+                      <button onClick={() => claimInvoice(sel)} className="btn-p text-sm px-4 py-2 w-full mb-2"><Shield className="w-4 h-4" /> Claim & Work on This</button>
+                    )}
+                    {canAction(sel) && sel.claimedBy && (
+                      <div className="space-y-2">
+                        {hasDuplicate && (
+                          <button onClick={() => voidDuplicate(sel)} className="bg-red-600 hover:bg-red-700 text-white text-sm px-4 py-2.5 rounded-xl font-semibold w-full flex items-center justify-center gap-2"><XCircle className="w-4 h-4" /> Void Duplicate</button>
+                        )}
+                        {hasUnreceipted && !hasDuplicate && (
+                          <button onClick={() => { const r = post("/api/cases", { title: "Request GRN: " + sel.invoiceNumber, description: "GRN needed for " + sel.invoiceNumber + " from " + sel.vendor, type: "grn_request", priority: "high", invoiceId: sel.id, vendor: sel.vendor }); r.then(async res => { if (res?.success) { await load(); toast("GRN request sent to Procurement", "success"); } else toast("Failed", "danger"); }); }} className="bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2.5 rounded-xl font-semibold w-full flex items-center justify-center gap-2"><Send className="w-4 h-4" /> Request GRN</button>
+                        )}
+                        <div className="grid grid-cols-2 gap-2">
+                          <button onClick={() => overrideApprove(sel, hasDuplicate)} className={cn("text-sm px-3 py-2 rounded-xl font-semibold flex items-center justify-center gap-1.5 border transition-all",
+                            hasDuplicate ? "border-red-200 text-red-600 hover:bg-red-50 bg-white" : "btn-p")}>
+                            <Check className="w-3.5 h-3.5" /> {hasDuplicate ? "Override (Risk)" : "Approve"}
+                          </button>
+                          <button onClick={() => escalateCase(sel)} className="btn-g text-sm px-3 py-2"><ClipboardList className="w-3.5 h-3.5" /> Case</button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button onClick={() => parkInvoice(sel)} className="text-sm px-3 py-2 rounded-xl font-semibold flex items-center justify-center gap-1.5 border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all">
+                            <Clock className="w-3.5 h-3.5" /> Park
+                          </button>
+                          <button onClick={() => sendToVendor(sel)} className="text-sm px-3 py-2 rounded-xl font-semibold flex items-center justify-center gap-1.5 border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all">
+                            <Send className="w-3.5 h-3.5" /> Query Vendor
+                          </button>
+                        </div>
+                        {hasDuplicate && <div className="text-[10px] text-red-500 text-center">Override requires exact confirmation text</div>}
+                      </div>
+                    )}
+                    {isClaimed(sel) && lvl < 1 && (
+                      <div className="text-xs text-slate-500 text-center bg-slate-50 rounded-lg p-3">Claimed by <strong>{sel.claimedByName}</strong> {"\u2014"} release required to action.</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ══════════════ KANBAN VIEW ══════════════ */}
+      {viewMode === 'kanban' && (
+        <div className="flex gap-6">
+          <div className={cn("transition-all", sel ? "w-1/2" : "w-full")}>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {lanes.map(lane => {
+                const items = tri[lane] || [];
+                const Ic = laneIcons[lane] || Eye;
+                return (
+                  <div key={lane} className="card overflow-hidden">
+                    <div className={cn("px-5 py-3.5 flex items-center gap-3", bgMap[lane])}>
+                      <Ic className={cn("w-5 h-5", icMap[lane])} />
+                      <div className="flex-1"><div className={cn("text-sm font-bold")}>{laneLabel(lane)}</div></div>
+                      <span className={"badge badge-" + laneColor(lane)}>{items.length}</span>
+                    </div>
+                    <div className="divide-y divide-slate-50 max-h-[400px] overflow-y-auto">
+                      {items.length === 0 && <div className="p-6 text-center text-sm text-slate-400">Empty</div>}
+                      {items.map(inv => {
+                        const pri = computePriority(inv);
+                        return (
+                          <div key={inv.id} onClick={() => setSel({ ...inv, _lane: lane, _pri: pri })} className={cn("px-4 py-3 hover:bg-slate-50 transition-colors cursor-pointer",
+                            sel?.id === inv.id && "bg-accent-50 ring-1 ring-accent-200")}>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className={cn("text-[9px] font-bold px-1 py-0.5 rounded border", priColors[pri.level])}>{priLabels[pri.level]}</span>
+                                <span className="font-semibold text-sm">{inv.invoiceNumber || inv.id}</span>
+                              </div>
+                              <span className="text-sm font-bold font-mono">{$(inv.amount, inv.currency)}</span>
+                            </div>
+                            <div className="flex items-center justify-between mt-1">
+                              <div className="text-xs text-slate-500">{inv.vendor}</div>
+                              <div className="flex items-center gap-1">
+                                <span className={cn("text-[9px] font-mono", pri.slaRemaining <= 0 ? "text-red-500 font-bold" : "text-slate-400")}>{slaFmt(pri.slaRemaining)}</span>
+                                {inv._isDuplicate && <span className="text-[9px] px-1 bg-red-100 text-red-600 font-bold rounded">DUP</span>}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Kanban detail reuses same detail panel logic — simplified */}
+          {sel && viewMode === 'kanban' && (
+            <div className="w-1/2 bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sticky top-24 self-start max-h-[calc(100vh-8rem)] overflow-y-auto">
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">{sel.invoiceNumber || sel.id}</h3>
+                  <div className="text-sm text-slate-500">{sel.vendor} {"\u00b7"} {$(sel.amount, sel.currency)}</div>
+                </div>
+                <button onClick={() => setSel(null)} className="p-1 hover:bg-slate-100 rounded-lg"><X className="w-4 h-4" /></button>
+              </div>
+              <div className="text-xs text-slate-400">Switch to Worklist view for full investigation panel with PO match, line-item reconciliation, and activity trail.</div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
