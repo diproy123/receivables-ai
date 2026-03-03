@@ -84,24 +84,32 @@ def triage_invoice(invoice: dict, anomalies: list, db: dict,
     effective_risk = min(100, risk_score + contract_factor["risk_adjustment"])
 
     # Filter anomalies for THIS invoice
+    # Contract-level anomalies are strategic (vendor-wide), not invoice-blocking
+    CONTRACT_LEVEL_TYPES = {"VOLUME_COMMITMENT_GAP", "CONTRACT_EXPIRY_WARNING", "CONTRACT_PRICE_DRIFT", "CONTRACT_OVER_UTILIZATION"}
     has_invoice_ids = any(a.get("invoiceId") for a in anomalies)
     if has_invoice_ids:
         inv_anomalies = [a for a in anomalies
                          if a.get("invoiceId") == inv_id
                          and a.get("status", "open") == "open"
-                         and a.get("type") != "EARLY_PAYMENT_DISCOUNT"]
+                         and a.get("type") != "EARLY_PAYMENT_DISCOUNT"
+                         and a.get("type") not in CONTRACT_LEVEL_TYPES]
         epd_anomalies = [a for a in anomalies
                          if a.get("invoiceId") == inv_id and a.get("type") == "EARLY_PAYMENT_DISCOUNT"]
+        contract_anomalies = [a for a in anomalies
+                              if a.get("invoiceId") == inv_id and a.get("type") in CONTRACT_LEVEL_TYPES]
     else:
         inv_anomalies = [a for a in anomalies
                          if a.get("status", "open") == "open"
-                         and a.get("type") != "EARLY_PAYMENT_DISCOUNT"]
+                         and a.get("type") != "EARLY_PAYMENT_DISCOUNT"
+                         and a.get("type") not in CONTRACT_LEVEL_TYPES]
         epd_anomalies = [a for a in anomalies if a.get("type") == "EARLY_PAYMENT_DISCOUNT"]
+        contract_anomalies = [a for a in anomalies if a.get("type") in CONTRACT_LEVEL_TYPES]
 
     high_anomalies = [a for a in inv_anomalies if a.get("severity") == "high"]
     medium_anomalies = [a for a in inv_anomalies if a.get("severity") == "medium"]
     low_anomalies = [a for a in inv_anomalies if a.get("severity") == "low"]
     # Risk: use MAX single anomaly risk (not sum — multiple anomalies often flag same dollars)
+    # Only count invoice-level anomalies in risk (not contract-level)
     risk_amounts = [a.get("amount_at_risk", 0) for a in inv_anomalies if a.get("amount_at_risk", 0) > 0]
     max_single_risk = max(risk_amounts) if risk_amounts else 0
     total_risk_amount = min(sum(risk_amounts), inv_amount) if inv_amount > 0 else sum(risk_amounts)
@@ -276,6 +284,7 @@ def triage_invoice(invoice: dict, anomalies: list, db: dict,
             "low": len(low_anomalies),
             "totalRisk": round(total_risk_amount, 2),
             "hasEPD": len(epd_anomalies) > 0,
+            "contractLevel": len(contract_anomalies),
         },
         "matchQuality": match_score,
         "triageAt": datetime.now().isoformat(),

@@ -1113,9 +1113,11 @@ function Triage() {
   const lvl = RL[role] || 0;
   const myId = s.user?.id;
 
-  // Lane visibility by role: analysts see their queues + review, managers see all
-  const allLanes = ['AUTO_APPROVE', 'REVIEW', 'MANAGER_REVIEW', 'VP_REVIEW', 'CFO_REVIEW', 'BLOCK'];
-  const lanes = lvl >= 1 ? allLanes : ['AUTO_APPROVE', 'REVIEW', 'BLOCK'];
+  // ── Lane config — ordered by urgency: action-needed first, approved last ──
+  const allLanes = ['BLOCK', 'CFO_REVIEW', 'VP_REVIEW', 'MANAGER_REVIEW', 'REVIEW', 'AUTO_APPROVE'];
+  const lanes = lvl >= 1 ? allLanes : ['BLOCK', 'REVIEW', 'AUTO_APPROVE'];
+  // Always-visible lanes (show even when empty to avoid misleading binary view)
+  const alwaysShow = lvl >= 1 ? ['BLOCK', 'REVIEW', 'AUTO_APPROVE'] : ['BLOCK', 'REVIEW', 'AUTO_APPROVE'];
   const laneIcons = { AUTO_APPROVE: CheckCircle2, BLOCK: XCircle, REVIEW: Eye, MANAGER_REVIEW: Eye, VP_REVIEW: Eye, CFO_REVIEW: Eye };
   const bgMap = { AUTO_APPROVE: 'bg-emerald-50 border-b border-emerald-100', BLOCK: 'bg-red-50 border-b border-red-100', REVIEW: 'bg-blue-50 border-b border-blue-100', MANAGER_REVIEW: 'bg-amber-50 border-b border-amber-100', VP_REVIEW: 'bg-amber-50 border-b border-amber-100', CFO_REVIEW: 'bg-amber-50 border-b border-amber-100' };
   const icMap = { AUTO_APPROVE: 'text-emerald-600', BLOCK: 'text-red-600', REVIEW: 'text-blue-600', MANAGER_REVIEW: 'text-amber-600', VP_REVIEW: 'text-amber-600', CFO_REVIEW: 'text-amber-600' };
@@ -1129,7 +1131,30 @@ function Triage() {
   const selAnoms = sel ? allAnoms.filter(a => a.invoiceId === sel.id || a.invoiceNumber === sel.invoiceNumber) : [];
   const selLane = sel ? allLanes.find(l => (tri[l] || []).some(i => i.id === sel.id)) : null;
 
-  // Claim helpers
+  // ── Anomaly classification for detail panel ──
+  // Blocking anomalies: types that directly prevent payment
+  const BLOCKING_TYPES = new Set(['DUPLICATE_INVOICE', 'UNRECEIPTED_INVOICE', 'MISSING_PO', 'PRICE_VARIANCE', 'TERMS_VIOLATION', 'AMOUNT_SPIKE']);
+  // Contract-level anomalies: strategic, not invoice-actionable
+  const CONTRACT_TYPES = new Set(['VOLUME_COMMITMENT_GAP', 'CONTRACT_EXPIRY_WARNING', 'CONTRACT_PRICE_DRIFT', 'CONTRACT_OVER_UTILIZATION']);
+  // Informational: opportunities, not blockers
+  const INFO_TYPES = new Set(['EARLY_PAYMENT_DISCOUNT']);
+
+  const blockingAnoms = selAnoms.filter(a => a.status === 'open' && (BLOCKING_TYPES.has(a.type) || a.severity === 'high'));
+  const contractAnoms = selAnoms.filter(a => CONTRACT_TYPES.has(a.type));
+  const infoAnoms = selAnoms.filter(a => INFO_TYPES.has(a.type));
+  const otherAnoms = selAnoms.filter(a => !BLOCKING_TYPES.has(a.type) && !CONTRACT_TYPES.has(a.type) && !INFO_TYPES.has(a.type) && a.severity !== 'high');
+
+  // Severity sort within each group: high → medium → low
+  const sevOrd = { high: 0, medium: 1, low: 2 };
+  const sortBySev = (arr) => [...arr].sort((a, b) => (sevOrd[a.severity] || 2) - (sevOrd[b.severity] || 2));
+
+  // ── Duplicate detection for contextual actions ──
+  const hasDuplicate = selAnoms.some(a => a.type === 'DUPLICATE_INVOICE' && a.status === 'open');
+  const hasUnreceipted = selAnoms.some(a => a.type === 'UNRECEIPTED_INVOICE' && a.status === 'open');
+  const hasMissingPO = selAnoms.some(a => a.type === 'MISSING_PO' && a.status === 'open');
+  const isBlocked = selLane === 'BLOCK';
+
+  // ── Claim helpers ──
   const isMine = (inv) => inv.claimedBy === myId;
   const isClaimed = (inv) => inv.claimedBy && inv.claimedBy !== myId;
   const canAction = (inv) => !inv.claimedBy || inv.claimedBy === myId || lvl >= 1;
@@ -1144,20 +1169,51 @@ function Triage() {
     if (r?.success) { toast('Claim released', 'success'); await load(); setSel(null); }
     else toast(r?.detail || 'Release failed', 'danger');
   }
-  async function overrideApprove(inv) {
-    const n = prompt('Override reason — why should this be approved despite being blocked?');
-    if (n?.trim()) {
-      const form = new FormData();
-      form.append('lane', 'AUTO_APPROVE');
-      form.append('reason', n.trim());
-      const resp = await fetch(`/api/invoices/${inv.id}/override-triage`, { method: 'POST', body: form, credentials: 'include' });
-      if (resp.ok) { await load(); setSel(null); toast('Invoice approved (override)', 'success'); }
-      else { toast('Override failed', 'error'); }
-    }
+  async function overrideApprove(inv, isDup) {
+    const msg = isDup
+      ? `⚠ DUPLICATE WARNING: This invoice has been flagged as a duplicate. Approving will result in a payment of ${$(inv.amount, inv.currency)} to ${inv.vendor} that may already have been made.\n\nType "CONFIRM DUPLICATE OVERRIDE" to proceed:`
+      : 'Override reason — why should this be approved despite being blocked?';
+    const n = prompt(msg);
+    if (isDup && n !== 'CONFIRM DUPLICATE OVERRIDE') { if (n !== null) toast('Override cancelled — exact confirmation text required for duplicates', 'warning'); return; }
+    if (!isDup && !n?.trim()) return;
+    const reason = isDup ? `DUPLICATE OVERRIDE CONFIRMED: ${n}` : n.trim();
+    const form = new FormData();
+    form.append('lane', 'AUTO_APPROVE');
+    form.append('reason', reason);
+    const resp = await fetch(`/api/invoices/${inv.id}/override-triage`, { method: 'POST', body: form, credentials: 'include' });
+    if (resp.ok) { await load(); setSel(null); toast('Invoice approved (override)', 'success'); }
+    else { toast('Override failed', 'error'); }
   }
   async function escalateCase(inv) {
     await post('/api/cases', { title: `Triage review: ${inv.invoiceNumber || inv.id}`, description: `Invoice ${inv.invoiceNumber} from ${inv.vendor} (${$(inv.amount, inv.currency)}) was routed to ${selLane}. Requires investigation.`, type: 'triage_escalation', priority: 'high', invoiceId: inv.id });
     await load(); toast('Case created for investigation', 'success');
+  }
+  async function voidDuplicate(inv) {
+    if (!confirm(`Void duplicate invoice ${inv.invoiceNumber}?\n\nThis will mark it as disputed and remove it from the payment pipeline. The original invoice will remain active.`)) return;
+    const form = new FormData();
+    form.append('lane', 'BLOCK');
+    form.append('reason', 'VOIDED: Duplicate invoice — confirmed by analyst');
+    const resp = await fetch(`/api/invoices/${inv.id}/override-triage`, { method: 'POST', body: form, credentials: 'include' });
+    // Also mark status as disputed
+    await post(`/api/invoices/${inv.id}/mark-disputed`, { reason: 'Duplicate invoice voided' });
+    if (resp.ok) { await load(); setSel(null); toast('Duplicate voided — removed from pipeline', 'success'); }
+    else toast('Void failed', 'error');
+  }
+
+  // ── Render a classified anomaly card ──
+  function AnomalyCard({ a, dimmed }) {
+    return (
+      <div className={cn("rounded-xl p-3 border", dimmed ? "bg-slate-50/50 border-slate-100 opacity-60" : "bg-slate-50 border-slate-200")}>
+        <div className="flex items-center gap-2 mb-1">
+          <Badge c={sevColor(a.severity) === 'err' ? 'err' : sevColor(a.severity) === 'warn' ? 'warn' : 'ok'}>{a.severity}</Badge>
+          <span className="text-xs text-slate-500 font-mono">{(a.type || '').replace(/_/g, ' ')}</span>
+          {a.status !== 'open' && <Badge c="muted">{a.status}</Badge>}
+          {a.amount_at_risk > 0 && <span className="text-xs font-bold text-red-600 ml-auto">{$(a.amount_at_risk)}</span>}
+        </div>
+        <div className="text-sm text-slate-700">{a.description}</div>
+        {a.recommendation && <div className="text-xs text-amber-700 mt-1">→ {a.recommendation}</div>}
+      </div>
+    );
   }
 
   return (
@@ -1167,12 +1223,31 @@ function Triage() {
           <button onClick={async () => { const r = await post('/api/triage/retriage-all', {}); if (r?.success) { toast(`${r.retriaged} invoices retriaged`, 'success'); await load(); setSel(null); } else toast('Retriage failed', 'danger'); }} className="btn-o text-xs px-3 py-1.5"><RefreshCw className="w-3.5 h-3.5" /> Retriage All</button>
         )}
       </PageHeader>
+
+      {/* ── Auto-approve rate indicator ── */}
+      {(() => {
+        const total = allLanes.reduce((n, l) => n + (tri[l] || []).length, 0);
+        const approved = (tri.AUTO_APPROVE || []).length;
+        const rate = total > 0 ? Math.round(approved / total * 100) : 0;
+        if (total === 0) return null;
+        return (
+          <div className={cn("rounded-xl px-4 py-2.5 text-xs flex items-center gap-3",
+            rate >= 60 ? "bg-emerald-50 border border-emerald-100 text-emerald-700" :
+            rate >= 30 ? "bg-amber-50 border border-amber-100 text-amber-700" :
+            "bg-red-50 border border-red-100 text-red-700")}>
+            <span className="font-bold text-lg">{rate}%</span>
+            <span>auto-approve rate ({approved}/{total} invoices) {rate < 30 && '— review AP Policy thresholds'}</span>
+          </div>
+        );
+      })()}
+
       <div className="flex gap-6">
         <div className={cn('transition-all', sel ? 'w-1/2' : 'w-full')}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {lanes.map(lane => {
               const items = tri[lane] || [];
-              if (items.length === 0 && lane !== 'AUTO_APPROVE' && lane !== 'BLOCK') return null;
+              // Show lane if it has items OR is in always-show list
+              if (items.length === 0 && !alwaysShow.includes(lane)) return null;
               const Ic = laneIcons[lane] || Eye;
               return (
                 <div key={lane} className="card overflow-hidden">
@@ -1182,7 +1257,10 @@ function Triage() {
                     <span className={`badge badge-${laneColor(lane)}`}>{items.length}</span>
                   </div>
                   <div className="divide-y divide-slate-50 max-h-[320px] overflow-y-auto">
-                    {items.length === 0 && <div className="p-6 text-center text-sm text-slate-500">No invoices</div>}
+                    {items.length === 0 && <div className="p-6 text-center text-sm text-slate-400">
+                      {lane === 'AUTO_APPROVE' ? 'No auto-approved invoices' :
+                       lane === 'BLOCK' ? 'No blocked invoices' : 'No invoices pending review'}
+                    </div>}
                     {items.map(inv => (
                       <div key={inv.id} onClick={() => setSel(inv)} className={cn('px-5 py-3 hover:bg-slate-50 transition-colors cursor-pointer',
                         sel?.id === inv.id && 'bg-accent-50 ring-1 ring-accent-200',
@@ -1195,7 +1273,7 @@ function Triage() {
                           <div className="text-xs text-slate-500">{inv.vendor} · {pct(inv.confidence)} conf</div>
                           <div className="flex items-center gap-1.5">
                             {inv._isDuplicate && (
-                              <span className="text-[10px] px-1.5 py-0.5 bg-red-100 text-red-600 font-bold rounded-full border border-red-200">DUPLICATE</span>
+                              <span className="text-[10px] px-1.5 py-0.5 bg-red-100 text-red-600 font-bold rounded-full border border-red-200">DUP</span>
                             )}
                             {inv.claimedBy && (
                               <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full font-medium",
@@ -1214,7 +1292,7 @@ function Triage() {
           </div>
         </div>
 
-        {/* Detail Panel */}
+        {/* ── Detail Panel ── */}
         {sel && (
           <div className="w-1/2 bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sticky top-24 self-start max-h-[calc(100vh-8rem)] overflow-y-auto">
             <div className="flex justify-between items-start mb-4">
@@ -1225,30 +1303,19 @@ function Triage() {
               <button onClick={() => setSel(null)} className="p-1 hover:bg-slate-100 rounded-lg"><X className="w-4 h-4" /></button>
             </div>
 
-            {/* Duplicate Invoice Warning */}
-            {sel._isDuplicate && (
-              <div className="rounded-xl p-3 mb-4 bg-red-50 border border-red-200">
-                <div className="flex items-center gap-2 text-sm font-semibold text-red-700">
-                  <AlertTriangle className="w-4 h-4" /> Duplicate Invoice Detected
-                </div>
-                <div className="text-xs text-red-600 mt-1">
-                  {sel._duplicateCount} records exist with invoice number <strong>{sel.invoiceNumber}</strong> from <strong>{sel.vendor}</strong>.
-                  Do not process until confirmed — risk of double payment.
-                </div>
-              </div>
-            )}
-
-            {/* Duplicate Warning Banner */}
+            {/* ── Duplicate Warning (consolidated, single banner) ── */}
             {(sel._isDuplicate || sel.possibleDuplicate) && (
               <div className="rounded-xl p-3 mb-4 bg-red-50 border border-red-200">
-                <div className="text-sm font-semibold text-red-700 flex items-center gap-1.5"><AlertTriangle className="w-4 h-4" /> Duplicate Invoice Detected</div>
-                <div className="text-xs text-red-600 mt-0.5">
-                  {sel.duplicateWarning || `Invoice ${sel.invoiceNumber} appears ${sel._duplicateCount || 2}× in the system. Verify before processing.`}
+                <div className="flex items-center gap-2 text-sm font-semibold text-red-700">
+                  <AlertTriangle className="w-4 h-4" /> Duplicate Invoice — Do Not Process
+                </div>
+                <div className="text-xs text-red-600 mt-1">
+                  {sel.duplicateWarning || `${sel._duplicateCount || 2} records exist for ${sel.invoiceNumber} from ${sel.vendor}. Risk of double payment: ${$(sel.amount, sel.currency)}.`}
                 </div>
               </div>
             )}
 
-            {/* Claim Status Banner — Triage */}
+            {/* ── Claim Status ── */}
             {sel.claimedBy && (
               <div className={cn("rounded-xl p-3 mb-4 flex items-center justify-between",
                 isMine(sel) ? "bg-accent-50 border border-accent-200" : "bg-slate-100 border border-slate-200")}>
@@ -1264,7 +1331,7 @@ function Triage() {
               </div>
             )}
 
-            {/* Invoice Summary */}
+            {/* ── Invoice Summary ── */}
             <div className="grid grid-cols-2 gap-3 mb-4">
               <div className="bg-slate-50 rounded-xl p-3">
                 <div className="text-xs text-slate-500">Amount</div>
@@ -1276,7 +1343,7 @@ function Triage() {
               </div>
             </div>
 
-            {/* PO Match */}
+            {/* ── PO Match ── */}
             {(() => {
               const match = (s.matches || []).find(m => m.invoiceId === sel.id);
               const allDocs = s.docs || [];
@@ -1340,7 +1407,7 @@ function Triage() {
               );
             })()}
 
-            {/* Triage Decision + Blocking Reasons */}
+            {/* ── Triage Decision ── */}
             <div className="mb-4">
               <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Triage Decision</div>
               <div className={cn('rounded-xl p-3 text-sm font-medium',
@@ -1349,55 +1416,136 @@ function Triage() {
                 'bg-amber-50 text-amber-800 border border-amber-100'
               )}>
                 {laneLabel(selLane)}
-                {sel.triageReason && <div className="text-xs mt-1 opacity-75">{sel.triageReason}</div>}
               </div>
               {(sel.triageReasons || []).length > 0 && (
                 <div className="mt-2 space-y-1">
                   {sel.triageReasons.map((r, i) => (
-                    <div key={i} className="text-xs text-red-700 bg-red-50 rounded-lg px-3 py-1.5 border border-red-100">→ {r}</div>
+                    <div key={i} className={cn("text-xs rounded-lg px-3 py-1.5 border",
+                      r.startsWith('BLOCK') ? 'text-red-700 bg-red-50 border-red-100' :
+                      r.startsWith('ESCALATED') ? 'text-amber-700 bg-amber-50 border-amber-100' :
+                      r.startsWith('APPROVED') || r.startsWith('Passed') ? 'text-emerald-700 bg-emerald-50 border-emerald-100' :
+                      'text-slate-600 bg-slate-50 border-slate-100'
+                    )}>→ {r}</div>
                   ))}
                 </div>
               )}
             </div>
 
-            {/* Linked Anomalies */}
-            {selAnoms.length > 0 && (
+            {/* ── Blocking Issues (must resolve before payment) ── */}
+            {sortBySev(blockingAnoms).length > 0 && (
               <div className="mb-4">
-                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Anomalies ({selAnoms.length})</div>
+                <div className="text-xs font-semibold text-red-600 uppercase tracking-wider mb-2">
+                  Blocking Issues — {blockingAnoms.length} must be resolved
+                </div>
                 <div className="space-y-2">
-                  {selAnoms.map(a => (
-                    <div key={a.id} className="bg-slate-50 rounded-xl p-3">
+                  {sortBySev(blockingAnoms).map(a => <AnomalyCard key={a.id} a={a} />)}
+                </div>
+              </div>
+            )}
+
+            {/* ── Other open anomalies (non-blocking) ── */}
+            {sortBySev(otherAnoms).length > 0 && (
+              <div className="mb-4">
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Other Findings</div>
+                <div className="space-y-2">
+                  {sortBySev(otherAnoms).map(a => <AnomalyCard key={a.id} a={a} />)}
+                </div>
+              </div>
+            )}
+
+            {/* ── Contract-Level Insights (strategic, not invoice-blocking) ── */}
+            {contractAnoms.length > 0 && (
+              <div className="mb-4">
+                <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                  Contract-Level Insights <span className="font-normal">(vendor-wide, not specific to this invoice)</span>
+                </div>
+                <div className="space-y-2">
+                  {contractAnoms.map(a => <AnomalyCard key={a.id} a={a} dimmed />)}
+                </div>
+              </div>
+            )}
+
+            {/* ── Early Payment Discount (only on non-blocked invoices) ── */}
+            {infoAnoms.length > 0 && !isBlocked && (
+              <div className="mb-4">
+                <div className="text-xs font-semibold text-emerald-600 uppercase tracking-wider mb-2">Opportunities</div>
+                <div className="space-y-2">
+                  {infoAnoms.map(a => (
+                    <div key={a.id} className="rounded-xl p-3 bg-emerald-50 border border-emerald-100">
                       <div className="flex items-center gap-2 mb-1">
-                        <Badge c={sevColor(a.severity) === 'err' ? 'err' : sevColor(a.severity) === 'warn' ? 'warn' : 'ok'}>{a.severity}</Badge>
-                        <span className="text-xs text-slate-500 font-mono">{(a.type || '').replace(/_/g, ' ')}</span>
-                        {a.amount_at_risk > 0 && <span className="text-xs font-bold text-red-600 ml-auto">{$(a.amount_at_risk)}</span>}
+                        <Badge c="ok">{a.severity}</Badge>
+                        <span className="text-xs text-emerald-600 font-mono">{(a.type || '').replace(/_/g, ' ')}</span>
+                        {a.amount_at_risk > 0 && <span className="text-xs font-bold text-emerald-700 ml-auto">{$(a.amount_at_risk)}</span>}
                       </div>
-                      <div className="text-sm text-slate-700">{a.description}</div>
-                      {a.recommendation && <div className="text-xs text-amber-700 mt-1">→ {a.recommendation}</div>}
+                      <div className="text-sm text-emerald-800">{a.description}</div>
+                      {a.recommendation && <div className="text-xs text-emerald-600 mt-1">→ {a.recommendation}</div>}
                     </div>
                   ))}
                 </div>
               </div>
             )}
+            {/* EPD note when blocked */}
+            {infoAnoms.length > 0 && isBlocked && (
+              <div className="mb-4 text-xs text-slate-400 bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+                Early payment discount available once blocking issues are resolved.
+              </div>
+            )}
 
-            {/* Actions — claim-aware */}
+            {/* ── Contextual Actions ── */}
             {selLane !== 'AUTO_APPROVE' && (
               <div className="mt-6 pt-4 border-t border-slate-200">
-                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Actions</div>
-                {/* Not claimed — show Claim button */}
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Actions</div>
+
+                {/* Not claimed — must claim first */}
                 {!sel.claimedBy && (
                   <button onClick={() => claimInvoice(sel)} className="btn-p text-sm px-4 py-2 w-full mb-2">
                     <Shield className="w-4 h-4" /> Claim & Work on This
                   </button>
                 )}
-                {/* Claimed by me or manager+ — show action buttons */}
+
+                {/* Claimed by me or manager+ — contextual buttons */}
                 {canAction(sel) && sel.claimedBy && (
-                  <div className="flex gap-2">
-                    <button onClick={() => overrideApprove(sel)} className="btn-p text-sm px-4 py-2 flex-1"><Check className="w-4 h-4" /> Override & Approve</button>
-                    <button onClick={() => escalateCase(sel)} className="btn-g text-sm px-4 py-2 flex-1"><ClipboardList className="w-4 h-4" /> Create Case</button>
+                  <div className="space-y-2">
+                    {/* Primary action based on blocking reason */}
+                    {hasDuplicate && (
+                      <button onClick={() => voidDuplicate(sel)} className="bg-red-600 hover:bg-red-700 text-white text-sm px-4 py-2.5 rounded-xl font-semibold w-full flex items-center justify-center gap-2 transition-all">
+                        <XCircle className="w-4 h-4" /> Void Duplicate — Remove from Pipeline
+                      </button>
+                    )}
+                    {hasUnreceipted && !hasDuplicate && (
+                      <button onClick={() => escalateCase(sel)} className="bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2.5 rounded-xl font-semibold w-full flex items-center justify-center gap-2 transition-all">
+                        <Send className="w-4 h-4" /> Request GRN — Escalate to Procurement
+                      </button>
+                    )}
+                    {hasMissingPO && !hasDuplicate && !hasUnreceipted && (
+                      <button onClick={() => escalateCase(sel)} className="bg-amber-600 hover:bg-amber-700 text-white text-sm px-4 py-2.5 rounded-xl font-semibold w-full flex items-center justify-center gap-2 transition-all">
+                        <Send className="w-4 h-4" /> Request PO — Route to Procurement
+                      </button>
+                    )}
+
+                    {/* Secondary actions */}
+                    <div className="flex gap-2">
+                      <button onClick={() => overrideApprove(sel, hasDuplicate)} className={cn("text-sm px-4 py-2 flex-1 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all border",
+                        hasDuplicate
+                          ? "border-red-200 text-red-600 hover:bg-red-50 bg-white"
+                          : "btn-p")}>
+                        <Check className="w-4 h-4" /> {hasDuplicate ? 'Override (Risky)' : 'Override & Approve'}
+                      </button>
+                      <button onClick={() => escalateCase(sel)} className="btn-g text-sm px-4 py-2 flex-1">
+                        <ClipboardList className="w-4 h-4" /> Create Case
+                      </button>
+                    </div>
+
+                    {/* Context warning for duplicate override */}
+                    {hasDuplicate && (
+                      <div className="text-[11px] text-red-500 text-center mt-1">
+                        Override requires typing exact confirmation text to prevent accidental double payment
+                      </div>
+                    )}
                   </div>
                 )}
-                {/* Claimed by someone else — analyst blocked */}
+
+                {/* Claimed by someone else */}
                 {isClaimed(sel) && lvl < 1 && (
                   <div className="text-xs text-slate-500 text-center mt-2 bg-slate-50 rounded-lg p-3">
                     Claimed by <strong>{sel.claimedByName}</strong> — you cannot action this invoice until it is released.

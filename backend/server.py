@@ -2272,6 +2272,52 @@ async def override_triage(iid: str, request: Request, lane: str = Form(...), rea
             return {"success": True, "invoice": i}
     raise HTTPException(404)
 
+@app.post("/api/invoices/{iid}/mark-disputed")
+async def mark_invoice_disputed(iid: str, request: Request):
+    """Mark an invoice as disputed (e.g. voided duplicate). Sets status to 'disputed' which is terminal."""
+    body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+    _user = _user_from_request(request)
+    _by = _user.get("name", "System") if _user else "System"
+    reason = body.get("reason", "Disputed by analyst")
+
+    db = get_db()
+    for i in db["invoices"]:
+        if i["id"] == iid:
+            old_status = i.get("status", "unpaid")
+            i["status"] = "disputed"
+            i["disputedAt"] = datetime.now().isoformat()
+            i["disputedBy"] = _by
+            i["disputedReason"] = reason
+            i["triageLane"] = "BLOCK"
+            i["triageReasons"] = [f"VOIDED: {reason}"]
+
+            # Also resolve any open anomalies on this invoice
+            resolved_count = 0
+            for a in db.get("anomalies", []):
+                if a.get("invoiceId") == iid and a.get("status") == "open":
+                    a["status"] = "resolved"
+                    a["resolvedAt"] = datetime.now().isoformat()
+                    a["resolvedBy"] = _by
+                    a["resolutionNote"] = f"Auto-resolved: invoice voided ({reason})"
+                    resolved_count += 1
+
+            db["activity_log"].append({
+                "id": str(uuid.uuid4())[:8],
+                "action": "invoice_disputed",
+                "documentId": iid,
+                "documentNumber": i.get("invoiceNumber", ""),
+                "vendor": i.get("vendor", ""),
+                "amount": i.get("amount", 0),
+                "reason": reason,
+                "oldStatus": old_status,
+                "anomaliesResolved": resolved_count,
+                "timestamp": datetime.now().isoformat(),
+                "performedBy": _by,
+            })
+            save_db(db)
+            return {"success": True, "invoice": i, "anomaliesResolved": resolved_count}
+    raise HTTPException(404, "Invoice not found")
+
 @app.post("/api/documents/{did}/edit-fields")
 async def edit_document_fields(did: str, request: Request, fields: str = Form(...)):
     """Edit extracted fields. Expects JSON string of field:value pairs.
