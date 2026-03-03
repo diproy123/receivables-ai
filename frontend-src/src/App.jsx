@@ -1113,13 +1113,13 @@ function Triage() {
   const lvl = RL[role] || 0;
   const myId = s.user?.id;
 
-  // Lane visibility by role: analysts see their queues, managers see all
-  const allLanes = ['AUTO_APPROVE', 'MANAGER_REVIEW', 'VP_REVIEW', 'CFO_REVIEW', 'BLOCK'];
-  const lanes = lvl >= 1 ? allLanes : ['AUTO_APPROVE', 'BLOCK'];
-  const laneIcons = { AUTO_APPROVE: CheckCircle2, BLOCK: XCircle, MANAGER_REVIEW: Eye, VP_REVIEW: Eye, CFO_REVIEW: Eye };
-  const bgMap = { AUTO_APPROVE: 'bg-emerald-50 border-b border-emerald-100', BLOCK: 'bg-red-50 border-b border-red-100', MANAGER_REVIEW: 'bg-amber-50 border-b border-amber-100', VP_REVIEW: 'bg-amber-50 border-b border-amber-100', CFO_REVIEW: 'bg-amber-50 border-b border-amber-100' };
-  const icMap = { AUTO_APPROVE: 'text-emerald-600', BLOCK: 'text-red-600', MANAGER_REVIEW: 'text-amber-600', VP_REVIEW: 'text-amber-600', CFO_REVIEW: 'text-amber-600' };
-  const txtMap = { AUTO_APPROVE: 'text-emerald-900', BLOCK: 'text-red-900', MANAGER_REVIEW: 'text-amber-900', VP_REVIEW: 'text-amber-900', CFO_REVIEW: 'text-amber-900' };
+  // Lane visibility by role: analysts see their queues + review, managers see all
+  const allLanes = ['AUTO_APPROVE', 'REVIEW', 'MANAGER_REVIEW', 'VP_REVIEW', 'CFO_REVIEW', 'BLOCK'];
+  const lanes = lvl >= 1 ? allLanes : ['AUTO_APPROVE', 'REVIEW', 'BLOCK'];
+  const laneIcons = { AUTO_APPROVE: CheckCircle2, BLOCK: XCircle, REVIEW: Eye, MANAGER_REVIEW: Eye, VP_REVIEW: Eye, CFO_REVIEW: Eye };
+  const bgMap = { AUTO_APPROVE: 'bg-emerald-50 border-b border-emerald-100', BLOCK: 'bg-red-50 border-b border-red-100', REVIEW: 'bg-blue-50 border-b border-blue-100', MANAGER_REVIEW: 'bg-amber-50 border-b border-amber-100', VP_REVIEW: 'bg-amber-50 border-b border-amber-100', CFO_REVIEW: 'bg-amber-50 border-b border-amber-100' };
+  const icMap = { AUTO_APPROVE: 'text-emerald-600', BLOCK: 'text-red-600', REVIEW: 'text-blue-600', MANAGER_REVIEW: 'text-amber-600', VP_REVIEW: 'text-amber-600', CFO_REVIEW: 'text-amber-600' };
+  const txtMap = { AUTO_APPROVE: 'text-emerald-900', BLOCK: 'text-red-900', REVIEW: 'text-blue-900', MANAGER_REVIEW: 'text-amber-900', VP_REVIEW: 'text-amber-900', CFO_REVIEW: 'text-amber-900' };
 
   const [sel, setSel] = useState(null);
   const allAnoms = s.anomalies || [];
@@ -1162,7 +1162,11 @@ function Triage() {
 
   return (
     <div className="page-enter space-y-6">
-      <PageHeader title="Triage" sub="Policy-driven invoice routing" />
+      <PageHeader title="Triage" sub="Policy-driven invoice routing">
+        {lvl >= 1 && (
+          <button onClick={async () => { const r = await post('/api/triage/retriage-all', {}); if (r?.success) { toast(`${r.retriaged} invoices retriaged`, 'success'); await load(); setSel(null); } else toast('Retriage failed', 'danger'); }} className="btn-o text-xs px-3 py-1.5"><RefreshCw className="w-3.5 h-3.5" /> Retriage All</button>
+        )}
+      </PageHeader>
       <div className="flex gap-6">
         <div className={cn('transition-all', sel ? 'w-1/2' : 'w-full')}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1189,12 +1193,17 @@ function Triage() {
                         </div>
                         <div className="flex items-center justify-between mt-0.5">
                           <div className="text-xs text-slate-500">{inv.vendor} · {pct(inv.confidence)} conf</div>
-                          {inv.claimedBy && (
-                            <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full font-medium",
-                              isMine(inv) ? "bg-accent-100 text-accent-700 border border-accent-200" : "bg-slate-200 text-slate-600")}>
-                              {isMine(inv) ? '● You' : inv.claimedByName || 'Claimed'}
-                            </span>
-                          )}
+                          <div className="flex items-center gap-1.5">
+                            {inv._isDuplicate && (
+                              <span className="text-[10px] px-1.5 py-0.5 bg-red-100 text-red-600 font-bold rounded-full border border-red-200">DUPLICATE</span>
+                            )}
+                            {inv.claimedBy && (
+                              <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full font-medium",
+                                isMine(inv) ? "bg-accent-100 text-accent-700 border border-accent-200" : "bg-slate-200 text-slate-600")}>
+                                {isMine(inv) ? '● You' : inv.claimedByName || 'Claimed'}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -1216,7 +1225,30 @@ function Triage() {
               <button onClick={() => setSel(null)} className="p-1 hover:bg-slate-100 rounded-lg"><X className="w-4 h-4" /></button>
             </div>
 
-            {/* Claim Status Banner */}
+            {/* Duplicate Invoice Warning */}
+            {sel._isDuplicate && (
+              <div className="rounded-xl p-3 mb-4 bg-red-50 border border-red-200">
+                <div className="flex items-center gap-2 text-sm font-semibold text-red-700">
+                  <AlertTriangle className="w-4 h-4" /> Duplicate Invoice Detected
+                </div>
+                <div className="text-xs text-red-600 mt-1">
+                  {sel._duplicateCount} records exist with invoice number <strong>{sel.invoiceNumber}</strong> from <strong>{sel.vendor}</strong>.
+                  Do not process until confirmed — risk of double payment.
+                </div>
+              </div>
+            )}
+
+            {/* Duplicate Warning Banner */}
+            {(sel._isDuplicate || sel.possibleDuplicate) && (
+              <div className="rounded-xl p-3 mb-4 bg-red-50 border border-red-200">
+                <div className="text-sm font-semibold text-red-700 flex items-center gap-1.5"><AlertTriangle className="w-4 h-4" /> Duplicate Invoice Detected</div>
+                <div className="text-xs text-red-600 mt-0.5">
+                  {sel.duplicateWarning || `Invoice ${sel.invoiceNumber} appears ${sel._duplicateCount || 2}× in the system. Verify before processing.`}
+                </div>
+              </div>
+            )}
+
+            {/* Claim Status Banner — Triage */}
             {sel.claimedBy && (
               <div className={cn("rounded-xl p-3 mb-4 flex items-center justify-between",
                 isMine(sel) ? "bg-accent-50 border border-accent-200" : "bg-slate-100 border border-slate-200")}>
@@ -3752,13 +3784,15 @@ function UploadPage() {
             amount: r.amount || doc.amount,
             currency: r.currency || doc.currency || 'USD',
             invoiceNumber: r.invoiceNumber || doc.invoiceNumber || doc.poNumber || doc.contractNumber || doc.documentNumber,
+            duplicateWarning: r.duplicateWarning,
           });
         }
       } catch (err) { res.push({ name: file.name, ok: false, error: 'Upload failed: ' + (err.message || 'network error') }); }
     }
     setResults(res); setUploading(false); setProcStep(-1); await load();
     const ok = res.filter(r => r.ok).length;
-    if (ok) toast(`${ok} document${ok > 1 ? 's' : ''} extracted`, 'success');
+    const dupes = res.filter(r => r.ok && r.duplicateWarning).length;
+    if (ok) toast(`${ok} document${ok > 1 ? 's' : ''} extracted${dupes ? ` (${dupes} possible duplicate${dupes > 1 ? 's' : ''})` : ''}`, dupes ? 'warning' : 'success');
   }
 
   async function manualSave(e) {
@@ -3924,8 +3958,12 @@ function UploadPage() {
                   )}
                 </div>
                 {r.ok && r.type && <Badge c={docColor(r.type)}>{docLabel(r.type)}</Badge>}
+                {r.ok && r.duplicateWarning && <Badge c="err">⚠ DUPLICATE</Badge>}
                 {r.ok && r.confidence != null && <span className="font-mono text-sm font-semibold text-emerald-700">{pct(r.confidence)}</span>}
               </div>
+              {r.duplicateWarning && (
+                <div className="text-xs text-red-600 mt-1 px-3 pb-2">{r.duplicateWarning}</div>
+              )}
             </div>
           ))}</div>
         </div>
@@ -4105,6 +4143,7 @@ function DocModal() {
             <Badge c={docColor(doc.type)}>{docLabel(doc.type)}</Badge>
             <span className="text-lg font-bold">{doc.invoiceNumber || doc.poNumber || doc.contractNumber || doc.id}</span>
             {doc.triageLane && <Badge c={laneColor(doc.triageLane)}>{laneLabel(doc.triageLane)}</Badge>}
+            {(doc.possibleDuplicate || doc._isDuplicate) && <Badge c="err">⚠ DUPLICATE</Badge>}
             {doc.manuallyVerified && <Badge c="ok">✓ Verified</Badge>}
             {hasFile && (
               <div className="flex gap-1 ml-2">

@@ -753,6 +753,21 @@ async def upload_document(request: Request, file: UploadFile = File(...), docume
              "credit_note": "invoices", "debit_note": "invoices", "goods_receipt": "goods_receipts"}
     record["uploadedBy"] = _upload_by
     record["uploadedByEmail"] = _upload_email
+
+    # ── DUPLICATE GUARD: Check if same invoiceNumber + vendor already exists ──
+    if record["type"] == "invoice":
+        inv_num = (record.get("invoiceNumber") or "").strip()
+        inv_vendor = normalize_vendor(record.get("vendor", ""))
+        existing = db.get("invoices", [])
+        dupes = [e for e in existing
+                 if (e.get("invoiceNumber") or "").strip() == inv_num and inv_num
+                 and normalize_vendor(e.get("vendor", "")) == inv_vendor]
+        if dupes:
+            record["possibleDuplicate"] = True
+            record["duplicateOf"] = dupes[0]["id"]
+            record["duplicateWarning"] = f"Invoice {inv_num} from {record.get('vendor','')} already exists (uploaded {dupes[0].get('extractedAt','')[:10]})"
+            print(f"[Upload] DUPLICATE WARNING: {inv_num} from {record.get('vendor','')} — matches existing {dupes[0]['id']}")
+
     db[store.get(record["type"], "invoices")].append(record)
 
     db["activity_log"].append({"id": str(uuid.uuid4())[:8], "action": "document_uploaded",
@@ -1054,6 +1069,7 @@ async def upload_document(request: Request, file: UploadFile = File(...), docume
     return {"success": True, "document": record, "new_matches": new_matches,
         "new_anomalies": new_anomalies, "extraction_source": extracted.get("_source", "unknown"),
         "triage": triage_result, "processing_time": _timings,
+        "duplicateWarning": record.get("duplicateWarning"),
         # ── Top-level fields for React frontend (BUG 6 fix) ──
         # Upload result card reads k.type, k.confidence directly (not k.document.type)
         "type": record.get("type"),
@@ -2117,36 +2133,48 @@ async def get_triage_overview(user: dict = Depends(get_optional_user)):
 
     # Build lane counts from invoice records (source of truth after edits)
     auto_approved = [i for i in invoices if i.get("triageLane") == "AUTO_APPROVE"]
-    review = [i for i in invoices if i.get("triageLane") in ("REVIEW", "MANAGER_REVIEW", "VP_REVIEW", "CFO_REVIEW")]
+    analyst_review = [i for i in invoices if i.get("triageLane") == "REVIEW"]
     manager_review = [i for i in invoices if i.get("triageLane") == "MANAGER_REVIEW"]
     vp_review = [i for i in invoices if i.get("triageLane") == "VP_REVIEW"]
     cfo_review = [i for i in invoices if i.get("triageLane") == "CFO_REVIEW"]
     blocked = [i for i in invoices if i.get("triageLane") == "BLOCK"]
     untriaged = [i for i in invoices if not i.get("triageLane")]
-    total_triaged = len(auto_approved) + len(review) + len(blocked)
+    all_review = analyst_review + manager_review + vp_review + cfo_review
+    total_triaged = len(auto_approved) + len(all_review) + len(blocked)
+
+    # ── Duplicate detection: flag invoices with same number+vendor ──
+    from collections import Counter
+    inv_keys = Counter((i.get("invoiceNumber", ""), i.get("vendor", "")) for i in invoices if i.get("invoiceNumber"))
+    duplicates = {k for k, v in inv_keys.items() if v > 1}
+    if duplicates:
+        for i in invoices:
+            key = (i.get("invoiceNumber", ""), i.get("vendor", ""))
+            if key in duplicates:
+                i["_isDuplicate"] = True
+                i["_duplicateCount"] = inv_keys[key]
 
     # React frontend (bU component) reads triageData["AUTO_APPROVE"] etc. as invoice arrays
     return {
         # ── Lane-keyed invoice arrays for React Triage page ──
         "AUTO_APPROVE": auto_approved,
-        "MANAGER_REVIEW": manager_review if manager_review else review,
+        "REVIEW": analyst_review,
+        "MANAGER_REVIEW": manager_review,
         "VP_REVIEW": vp_review,
         "CFO_REVIEW": cfo_review,
         "BLOCK": blocked,
-        "REVIEW": review,
         # ── Legacy structured response ──
         "summary": {
             "totalInvoices": len(invoices),
             "totalTriaged": total_triaged,
             "autoApproved": len(auto_approved),
-            "review": len(review),
+            "review": len(all_review),
             "blocked": len(blocked),
             "untriaged": len(untriaged),
             "autoApproveRate": round(len(auto_approved) / max(total_triaged, 1) * 100, 1),
             "blockRate": round(len(blocked) / max(total_triaged, 1) * 100, 1),
             "autoApprovedAmount": round(sum(i.get("amount", 0) for i in auto_approved), 2),
             "blockedAmount": round(sum(i.get("amount", 0) for i in blocked), 2),
-            "reviewAmount": round(sum(i.get("amount", 0) for i in review), 2),
+            "reviewAmount": round(sum(i.get("amount", 0) for i in all_review), 2),
         },
         "blocked": [{
             "invoiceId": i["id"],
@@ -2160,6 +2188,24 @@ async def get_triage_overview(user: dict = Depends(get_optional_user)):
         } for i in blocked],
         "decisions": sorted(decisions, key=lambda x: x.get("triageAt", ""), reverse=True)[:20],
     }
+
+@app.post("/api/triage/retriage-all")
+async def retriage_all_invoices(user: dict = Depends(get_current_user)):
+    """Re-run triage engine on all invoices. Manager+ only. Fixes stale triage reasons."""
+    if AUTHORITY_MATRIX.get(user["role"], AUTHORITY_MATRIX[DEFAULT_ROLE])["level"] < 2:
+        raise HTTPException(403, "Manager+ required")
+    db = get_db()
+    count = 0
+    for inv in db.get("invoices", []):
+        try:
+            triage = triage_invoice(inv, db.get("anomalies", []), db, role=user["role"])
+            store_triage_decision(inv["id"], triage, db)
+            apply_triage_action(inv, triage, db, performed_by=user.get("name", "Manager"))
+            count += 1
+        except Exception:
+            pass
+    save_db(db)
+    return {"success": True, "retriaged": count}
 
 @app.post("/api/invoices/{iid}/retriage")
 async def retriage_invoice(iid: str, request: Request):
@@ -3437,9 +3483,21 @@ async def seed_demo(request: Request):
                            "createdBy": "System (seed)", "createdAt": datetime.now().isoformat()})
             existing_normalized.add(normalized)
     db["vendor_master"] = master
+
+    # ── Re-triage all invoices with current engine (replaces stale seeded reasons) ──
+    retriage_count = 0
+    for inv in db.get("invoices", []):
+        try:
+            triage = triage_invoice(inv, db.get("anomalies", []), db, role="cfo")
+            store_triage_decision(inv["id"], triage, db)
+            apply_triage_action(inv, triage, db, performed_by="System (seed retriage)")
+            retriage_count += 1
+        except Exception as e:
+            print(f"[Seed] Retriage failed for {inv.get('id')}: {e}")
+
     save_db(db)
     total = sum(len(v) for v in db.values() if isinstance(v, list))
-    return {"success": True, "message": f"Demo data seeded ({total} records)"}
+    return {"success": True, "message": f"Demo data seeded ({total} records, {retriage_count} invoices retriaged)"}
 
 
 @app.post("/api/import")

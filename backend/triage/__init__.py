@@ -101,7 +101,12 @@ def triage_invoice(invoice: dict, anomalies: list, db: dict,
     high_anomalies = [a for a in inv_anomalies if a.get("severity") == "high"]
     medium_anomalies = [a for a in inv_anomalies if a.get("severity") == "medium"]
     low_anomalies = [a for a in inv_anomalies if a.get("severity") == "low"]
-    total_risk_amount = sum(a.get("amount_at_risk", 0) for a in inv_anomalies if a.get("amount_at_risk", 0) > 0)
+    # Risk: use MAX single anomaly risk (not sum — multiple anomalies often flag same dollars)
+    risk_amounts = [a.get("amount_at_risk", 0) for a in inv_anomalies if a.get("amount_at_risk", 0) > 0]
+    max_single_risk = max(risk_amounts) if risk_amounts else 0
+    total_risk_amount = min(sum(risk_amounts), inv_amount) if inv_amount > 0 else sum(risk_amounts)
+    # For blocking decision, use the net exposure (capped at invoice amount)
+    net_risk = min(max_single_risk, inv_amount) if inv_amount > 0 else max_single_risk
 
     # Match quality
     match = None
@@ -129,11 +134,14 @@ def triage_invoice(invoice: dict, anomalies: list, db: dict,
         block = True
         reasons.append("BLOCK: PO over-invoiced — cumulative invoices exceed PO amount")
 
-    # B3: Duplicate invoice
+    # B3: Duplicate invoice (from anomaly engine OR upload-time dedup)
     dup_anomalies = [a for a in inv_anomalies if a.get("type") == "DUPLICATE_INVOICE"]
     if dup_anomalies:
         block = True
         reasons.append(f"BLOCK: Potential duplicate invoice detected (confidence: {dup_anomalies[0].get('description', '').split('Confidence: ')[-1] if 'Confidence:' in (dup_anomalies[0].get('description', '')) else 'high'})")
+    elif invoice.get("possibleDuplicate"):
+        block = True
+        reasons.append(f"BLOCK: Duplicate upload — same invoice number and vendor already exists in system (ref: {invoice.get('duplicateOf', '?')})")
 
     # B4: High-risk vendor WITH anomalies (includes contract health adjustment)
     if effective_risk >= TRIAGE_BLOCK_MIN_RISK_SCORE and inv_anomalies:
@@ -145,11 +153,11 @@ def triage_invoice(invoice: dict, anomalies: list, db: dict,
         block = True
         reasons.append(f"BLOCK: Low extraction confidence ({confidence:.0f}%) — data unreliable")
 
-    # B6: Risk amount exceeds 20% of invoice
-    if inv_amount > 0 and total_risk_amount > inv_amount * 0.20:
+    # B6: Net risk exposure exceeds 20% of invoice
+    if inv_amount > 0 and net_risk > inv_amount * 0.20:
         block = True
-        risk_pct = (total_risk_amount / inv_amount) * 100
-        reasons.append(f"BLOCK: At-risk amount is {risk_pct:.0f}% of invoice total")
+        risk_pct = (net_risk / inv_amount) * 100
+        reasons.append(f"BLOCK: Net at-risk exposure {currency_symbol(invoice.get('currency', 'USD'))}{net_risk:,.2f} ({risk_pct:.0f}% of invoice) across {len(risk_amounts)} anomal{'y' if len(risk_amounts)==1 else 'ies'}")
 
     if block:
         lane = "BLOCK"
@@ -231,6 +239,21 @@ def triage_invoice(invoice: dict, anomalies: list, db: dict,
                 types = list(set(a.get("type", "?") for a in medium_anomalies))
                 reasons.append(f"Medium anomalies: {', '.join(t.replace('_',' ') for t in types)}")
             triage_confidence = max(40, 70 - len(approve_fails) * 10)
+
+            # ── Authority-based escalation: route REVIEW to the right approval level ──
+            inv_currency = invoice.get("currency", "USD")
+            analyst_limit = get_authority_limit("analyst", inv_currency)
+            manager_limit = get_authority_limit("manager", inv_currency)
+            vp_limit = get_authority_limit("vp", inv_currency)
+            if inv_amount > vp_limit:
+                lane = "CFO_REVIEW"
+                reasons.insert(0, f"ESCALATED: Amount {currency_symbol(inv_currency)}{inv_amount:,.0f} exceeds VP authority ({currency_symbol(inv_currency)}{vp_limit:,.0f})")
+            elif inv_amount > manager_limit:
+                lane = "VP_REVIEW"
+                reasons.insert(0, f"ESCALATED: Amount {currency_symbol(inv_currency)}{inv_amount:,.0f} exceeds Manager authority ({currency_symbol(inv_currency)}{manager_limit:,.0f})")
+            elif inv_amount > analyst_limit:
+                lane = "MANAGER_REVIEW"
+                reasons.insert(0, f"ESCALATED: Amount {currency_symbol(inv_currency)}{inv_amount:,.0f} exceeds Analyst authority ({currency_symbol(inv_currency)}{analyst_limit:,.0f})")
 
     return {
         "lane": lane,
