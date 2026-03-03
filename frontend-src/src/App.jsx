@@ -1345,14 +1345,56 @@ function Cases() {
    VENDORS
    ═══════════════════════════════════════════════════ */
 function Vendors() {
-  const { s } = useStore();
+  const { s, toast } = useStore();
   const vendors = s.vendors || [];
   const [sel, setSel] = useState(null);
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [showMaster, setShowMaster] = useState(false);
+  const [vendorMaster, setVendorMaster] = useState([]);
+  const [newVendorName, setNewVendorName] = useState('');
+  const [newVendorCode, setNewVendorCode] = useState('');
+  const [masterLoading, setMasterLoading] = useState(false);
+
+  const role = s.user?.role || 'analyst';
+  const isManager = RL[role] >= 1;
 
   // Reset to list when sidebar re-clicked
   useEffect(() => { if (s.tab === 'vendors') { setSel(null); setDetail(null); } }, [s.tabKey]);
+
+  async function fetchMaster() {
+    setMasterLoading(true);
+    const r = await api('/api/vendor-master');
+    if (r?.vendors) setVendorMaster(r.vendors);
+    setMasterLoading(false);
+  }
+
+  async function addVendor() {
+    if (!newVendorName.trim()) { toast('Vendor name required', 'warning'); return; }
+    const r = await post('/api/vendor-master', { name: newVendorName.trim(), code: newVendorCode.trim() || null });
+    if (r?.success) {
+      toast(`${newVendorName.trim()} added to Vendor Master`, 'success');
+      setNewVendorName(''); setNewVendorCode('');
+      await fetchMaster();
+    } else {
+      toast(r?.detail || 'Failed to add vendor', 'danger');
+    }
+  }
+
+  async function removeVendor(id, name) {
+    if (!confirm(`Remove "${name}" from the Vendor Master? This does not delete their documents or anomalies.`)) return;
+    const r = await api(`/api/vendor-master/${id}`, { method: 'DELETE' });
+    if (r?.success) { toast(`${name} removed`, 'success'); await fetchMaster(); }
+    else toast('Failed to remove', 'danger');
+  }
+
+  async function syncMaster() {
+    const r = await post('/api/vendor-master/sync', {});
+    if (r?.success) { toast(`Synced — ${r.added} new vendors added (${r.total} total)`, 'success'); await fetchMaster(); }
+    else toast('Sync failed', 'danger');
+  }
+
+  useEffect(() => { if (showMaster) fetchMaster(); }, [showMaster]);
 
   async function viewVendor(v) {
     setSel(v);
@@ -1388,7 +1430,63 @@ function Vendors() {
 
   return (
     <div className="page-enter">
-      <PageHeader title="Vendors" sub={`${vendors.length} vendors tracked`} />
+      <PageHeader title="Vendors" sub={`${vendors.length} vendors tracked`}>
+        {isManager && (
+          <button onClick={() => setShowMaster(!showMaster)} className={cn("btn-o text-xs", showMaster && "bg-accent-50 border-accent-300")}>
+            <Database className="w-3.5 h-3.5" /> {showMaster ? 'Hide' : 'Manage'} Vendor Master
+          </button>
+        )}
+      </PageHeader>
+
+      {/* ── Vendor Master Management (Manager+ only) ── */}
+      {showMaster && isManager && (
+        <div className="card p-5 mb-5 border-l-4 border-l-accent-500">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">Vendor Master</h3>
+              <div className="text-xs text-slate-500 mt-0.5">Canonical vendor register — {vendorMaster.length} vendors. Add vendors here before documents arrive, or sync from uploaded documents.</div>
+            </div>
+            <button onClick={syncMaster} className="btn-o text-xs px-3 py-1.5">
+              <RefreshCw className="w-3 h-3" /> Sync from Documents
+            </button>
+          </div>
+
+          {/* Add new vendor */}
+          <div className="flex gap-2 mb-3">
+            <input value={newVendorName} onChange={e => setNewVendorName(e.target.value)} placeholder="Vendor name (e.g. Acme Corp)"
+              className="inp flex-1 text-sm" onKeyDown={e => e.key === 'Enter' && addVendor()} />
+            <input value={newVendorCode} onChange={e => setNewVendorCode(e.target.value)} placeholder="Code (optional)"
+              className="inp w-32 text-sm font-mono" onKeyDown={e => e.key === 'Enter' && addVendor()} />
+            <button onClick={addVendor} className="btn-p text-xs px-3">Add</button>
+          </div>
+
+          {/* Master list */}
+          {masterLoading ? (
+            <div className="text-xs text-slate-400 text-center py-4">Loading...</div>
+          ) : (
+            <div className="max-h-48 overflow-y-auto space-y-1">
+              {vendorMaster.map(v => (
+                <div key={v.id} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-slate-800 font-medium">{v.name}</span>
+                    {v.code && <span className="text-[10px] px-1.5 py-0.5 bg-slate-200 text-slate-500 rounded font-mono">{v.code}</span>}
+                    <span className="text-[10px] text-slate-400">({v.normalized})</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-slate-400">{v.createdBy}</span>
+                    <button onClick={() => removeVendor(v.id, v.name)} className="p-1 hover:bg-red-50 rounded text-slate-400 hover:text-red-500 transition-colors">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {vendorMaster.length === 0 && (
+                <div className="text-xs text-slate-400 text-center py-4">No vendors in master. Add manually above or click "Sync from Documents" to import from uploaded invoices/POs.</div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex gap-6">
         <div className={cn('transition-all', sel ? 'w-1/2' : 'w-full')}>
@@ -2920,19 +3018,24 @@ function TeamManagement() {
   const { s, toast, load } = useStore();
   const [users, setUsers] = useState([]);
   const [editUser, setEditUser] = useState(null);
-  const [selectedVendors, setSelectedVendors] = useState([]);
+  const [selectedVendors, setSelectedVendors] = useState([]); // stores normalized keys
   const [loading, setLoading] = useState(true);
+  const [vendorMaster, setVendorMaster] = useState([]);
 
-  const allVendors = (s.vendors || []).map(v => v.vendor || v.vendorNormalized || '').filter(Boolean);
+  useEffect(() => { fetchAll(); }, []);
 
-  useEffect(() => { fetchUsers(); }, []);
-
-  async function fetchUsers() {
+  async function fetchAll() {
     setLoading(true);
-    const r = await api('/api/auth/users');
-    if (r?.users) setUsers(r.users);
+    const [uRes, vmRes] = await Promise.all([
+      api('/api/auth/users'),
+      api('/api/vendor-master'),
+    ]);
+    if (uRes?.users) setUsers(uRes.users);
+    if (vmRes?.vendors) setVendorMaster(vmRes.vendors);
     setLoading(false);
   }
+
+  const masterLookup = Object.fromEntries(vendorMaster.map(v => [v.normalized, v.name]));
 
   function startEdit(u) {
     setEditUser(u);
@@ -2941,19 +3044,20 @@ function TeamManagement() {
 
   async function saveVendors() {
     if (!editUser) return;
+    // Send normalized names — backend stores them as-is
     const r = await post(`/api/auth/users/${editUser.id}/assign-vendors`, { vendors: selectedVendors });
     if (r?.success) {
       toast(`Vendor scope updated for ${editUser.name}`, 'success');
       setEditUser(null);
-      await fetchUsers();
+      await fetchAll();
       await load();
     } else {
       toast('Failed to update vendor scope', 'danger');
     }
   }
 
-  function toggleVendor(v) {
-    setSelectedVendors(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]);
+  function toggleVendor(normalizedKey) {
+    setSelectedVendors(prev => prev.includes(normalizedKey) ? prev.filter(x => x !== normalizedKey) : [...prev, normalizedKey]);
   }
 
   const analysts = users.filter(u => u.role === 'analyst');
@@ -2971,7 +3075,7 @@ function TeamManagement() {
             <div className="text-sm font-bold text-amber-900">Segregation of Duties</div>
             <div className="text-sm text-amber-800 mt-1">
               AP Analysts see only data for their assigned vendors — invoices, anomalies, matches, and risk scores.
-              Managers and above have full visibility across all vendors. Unassigned analysts temporarily retain full access for backward compatibility.
+              Managers and above have full visibility across all vendors. Vendor list is sourced from the <strong>Vendor Master</strong> — manage it in Master Data → Vendors.
             </div>
           </div>
         </div>
@@ -2999,9 +3103,9 @@ function TeamManagement() {
                   </button>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  {(u.assignedVendors || []).length > 0 ? (
-                    u.assignedVendors.map(v => (
-                      <span key={v} className="text-[11px] px-2 py-0.5 bg-accent-50 text-accent-700 rounded-full border border-accent-200 font-medium">{v}</span>
+                  {(u.assignedVendorNames || u.assignedVendors || []).length > 0 ? (
+                    (u.assignedVendorNames || u.assignedVendors || []).map((v, i) => (
+                      <span key={i} className="text-[11px] px-2 py-0.5 bg-accent-50 text-accent-700 rounded-full border border-accent-200 font-medium">{v}</span>
                     ))
                   ) : (
                     <span className="text-[11px] px-2 py-0.5 bg-amber-50 text-amber-600 rounded-full border border-amber-200 font-medium">⚠ Full access (no vendors assigned)</span>
@@ -3018,28 +3122,29 @@ function TeamManagement() {
                 <div className="flex justify-between items-center mb-4">
                   <div>
                     <h3 className="text-sm font-bold text-slate-900">Assign Vendors to {editUser.name}</h3>
-                    <div className="text-xs text-slate-500 mt-0.5">{selectedVendors.length} of {allVendors.length} vendors selected</div>
+                    <div className="text-xs text-slate-500 mt-0.5">{selectedVendors.length} of {vendorMaster.length} vendors selected</div>
                   </div>
                   <button onClick={() => setEditUser(null)} className="p-1 hover:bg-slate-100 rounded-lg"><X className="w-4 h-4" /></button>
                 </div>
 
                 {/* Quick actions */}
                 <div className="flex gap-2 mb-3">
-                  <button onClick={() => setSelectedVendors([...allVendors])} className="btn-o text-xs px-2 py-1">Select All</button>
+                  <button onClick={() => setSelectedVendors(vendorMaster.map(v => v.normalized))} className="btn-o text-xs px-2 py-1">Select All</button>
                   <button onClick={() => setSelectedVendors([])} className="btn-o text-xs px-2 py-1">Clear All</button>
                 </div>
 
-                {/* Vendor checkboxes */}
+                {/* Vendor checkboxes — keyed by normalized, displayed by name */}
                 <div className="max-h-72 overflow-y-auto space-y-1 mb-4 border border-slate-100 rounded-xl p-2">
-                  {allVendors.length === 0 && (
-                    <div className="text-xs text-slate-400 text-center py-4">No vendors in system yet. Upload documents first.</div>
+                  {vendorMaster.length === 0 && (
+                    <div className="text-xs text-slate-400 text-center py-4">No vendors in Vendor Master. Add them in Master Data → Vendors, or upload documents.</div>
                   )}
-                  {allVendors.map(v => (
-                    <label key={v} className={cn("flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors",
-                      selectedVendors.includes(v) ? "bg-accent-50" : "hover:bg-slate-50")}>
-                      <input type="checkbox" checked={selectedVendors.includes(v)} onChange={() => toggleVendor(v)}
+                  {vendorMaster.map(v => (
+                    <label key={v.id} className={cn("flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors",
+                      selectedVendors.includes(v.normalized) ? "bg-accent-50" : "hover:bg-slate-50")}>
+                      <input type="checkbox" checked={selectedVendors.includes(v.normalized)} onChange={() => toggleVendor(v.normalized)}
                         className="w-4 h-4 rounded border-slate-300 text-accent-600 focus:ring-accent-500" />
-                      <span className="text-sm text-slate-700">{v}</span>
+                      <span className="text-sm text-slate-700">{v.name}</span>
+                      {v.code && <span className="text-[10px] text-slate-400 font-mono ml-auto">{v.code}</span>}
                     </label>
                   ))}
                 </div>

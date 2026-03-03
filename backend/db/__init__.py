@@ -47,6 +47,7 @@ EMPTY_DB = {
     "active_finetune_job": None, "together_files": [],
     "api_keys": [], "webhooks": [],
     "lifecycle_alerts": [], "_lifecycle_meta": {},
+    "vendor_master": [],
 }
 
 

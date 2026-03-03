@@ -107,10 +107,17 @@ async def get_current_user(request: Request) -> dict:
     raise HTTPException(401, "Authentication required")
 
 async def get_optional_user(request: Request) -> dict:
-    """Dependency: return user if authenticated, else default."""
+    """Dependency: return user if authenticated, else default.
+    When AUTH_ENABLED, ignores X-User-Role header to prevent privilege spoofing.
+    """
     user = _user_from_request(request)
     if user:
         return user
+    # When auth is enabled, always return default analyst role — don't trust headers
+    if AUTH_ENABLED:
+        return {"id": "anonymous", "email": "", "name": "Anonymous",
+                "role": DEFAULT_ROLE, "authenticated": False}
+    # Auth disabled: allow header-based role selection (dev/demo mode)
     role = request.headers.get("X-User-Role", DEFAULT_ROLE).lower()
     if role not in AUTHORITY_MATRIX:
         role = DEFAULT_ROLE
@@ -152,15 +159,19 @@ def get_required_approver(amount: float, currency: str = "USD") -> dict:
 # VENDOR-SCOPED DATA ACCESS
 # ============================================================
 def get_user_vendor_scope(user: dict) -> list:
-    """Return list of vendor names this user can see.
+    """Return list of normalized vendor names this user can see.
     Empty list = full access (managers, VP, CFO, or unscoped analysts for backward compat).
     Non-empty list = filter all data to these vendors only.
+    Special: ["__NONE__"] = no access at all (unauthenticated users when auth is enabled).
     """
+    # When auth is enabled, unauthenticated users get NO data
+    if AUTH_ENABLED and not user.get("authenticated", False):
+        return ["__NONE__"]
     role = user.get("role", DEFAULT_ROLE)
     # Manager+ sees everything
     if AUTHORITY_MATRIX.get(role, AUTHORITY_MATRIX[DEFAULT_ROLE])["level"] >= 2:
         return []
-    # Analyst: check assignedVendors
+    # Analyst: check assignedVendors (stored as normalized names)
     users = _get_users()
     stored = next((u for u in users if u["id"] == user.get("id")), None)
     if stored and stored.get("assignedVendors"):
@@ -169,18 +180,23 @@ def get_user_vendor_scope(user: dict) -> list:
     return []
 
 def scope_by_vendor(records: list, vendor_scope: list, vendor_key: str = "vendor") -> list:
-    """Filter a list of records by vendor scope. Empty scope = no filter."""
+    """Filter a list of records by vendor scope. Empty scope = no filter.
+    Uses normalize_vendor on both sides so 'GoldPak Industries Ltd.' matches 'goldpak industries'.
+    """
     if not vendor_scope:
         return records
-    scope_lower = [v.lower() for v in vendor_scope]
-    return [r for r in records if (r.get(vendor_key) or "").lower() in scope_lower]
+    from backend.vendor import normalize_vendor
+    scope_normalized = set(normalize_vendor(v) for v in vendor_scope)
+    return [r for r in records if normalize_vendor(r.get(vendor_key) or "") in scope_normalized]
 
 def assign_vendors_to_user(user_id: str, vendor_names: list):
-    """Assign vendor scope to a user. Manager+ only."""
+    """Assign vendor scope to a user. Stores normalized names. Manager+ only."""
+    from backend.vendor import normalize_vendor
+    normalized = [normalize_vendor(v) for v in vendor_names if normalize_vendor(v)]
     users = _get_users()
     for u in users:
         if u["id"] == user_id:
-            u["assignedVendors"] = vendor_names
+            u["assignedVendors"] = normalized
             _save_users(users)
             return u
     return None

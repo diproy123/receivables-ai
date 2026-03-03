@@ -2,7 +2,7 @@
 AuditLens — Vendor Intelligence
 Vendor normalization, fuzzy matching, risk scoring, profile management.
 """
-import re, math
+import re, math, uuid
 from collections import defaultdict
 from difflib import SequenceMatcher
 from datetime import datetime
@@ -274,6 +274,17 @@ def update_vendor_profile(vendor_name: str, db: dict) -> dict:
     else:
         profiles.append(profile)
     db["vendor_profiles"] = profiles
+
+    # Auto-populate vendor master if not already present
+    normalized = normalize_vendor(vendor_name)
+    if normalized:
+        master = db.get("vendor_master", [])
+        if not any(m.get("normalized") == normalized for m in master):
+            master.append({"id": str(uuid.uuid4())[:8], "name": vendor_name,
+                           "normalized": normalized, "code": None, "status": "active",
+                           "createdBy": "System (auto)", "createdAt": datetime.now().isoformat()})
+            db["vendor_master"] = master
+
     return profile
 
 

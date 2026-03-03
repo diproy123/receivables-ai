@@ -258,14 +258,25 @@ async def list_users(user: dict = Depends(get_current_user)):
     if AUTHORITY_MATRIX.get(user["role"], AUTHORITY_MATRIX[DEFAULT_ROLE])["level"] < 2:
         raise HTTPException(403, "Manager+ required to view users")
     users = _get_users()
-    return {"users": [{"id": u["id"], "email": u["email"], "name": u["name"], "role": u["role"],
-        "roleTitle": AUTHORITY_MATRIX.get(u["role"], AUTHORITY_MATRIX[DEFAULT_ROLE])["title"],
-        "active": u.get("active", True), "createdAt": u.get("createdAt"),
-        "assignedVendors": u.get("assignedVendors", [])} for u in users]}
+    db = get_db()
+    master = db.get("vendor_master", [])
+    master_lookup = {m["normalized"]: m["name"] for m in master}
+    result = []
+    for u in users:
+        assigned = u.get("assignedVendors", [])
+        # Resolve normalized → display names
+        vendor_display = [master_lookup.get(nv, nv) for nv in assigned]
+        result.append({"id": u["id"], "email": u["email"], "name": u["name"], "role": u["role"],
+            "roleTitle": AUTHORITY_MATRIX.get(u["role"], AUTHORITY_MATRIX[DEFAULT_ROLE])["title"],
+            "active": u.get("active", True), "createdAt": u.get("createdAt"),
+            "assignedVendors": assigned, "assignedVendorNames": vendor_display})
+    return {"users": result}
 
 @app.post("/api/auth/users/{user_id}/assign-vendors")
 async def assign_user_vendors(user_id: str, request: Request, admin: dict = Depends(get_current_user)):
-    """Assign vendor scope to an analyst. Manager+ only."""
+    """Assign vendor scope to an analyst. Manager+ only.
+    Accepts either display names or normalized names — both are normalized before storage.
+    """
     if AUTHORITY_MATRIX.get(admin["role"], AUTHORITY_MATRIX[DEFAULT_ROLE])["level"] < 2:
         raise HTTPException(403, "Manager+ required to assign vendors")
     try: body = await request.json()
@@ -275,12 +286,19 @@ async def assign_user_vendors(user_id: str, request: Request, admin: dict = Depe
         raise HTTPException(400, "vendors must be a list of vendor names")
     updated = assign_vendors_to_user(user_id, vendor_names)
     if not updated: raise HTTPException(404, "User not found")
+    stored_normalized = updated.get("assignedVendors", [])
+    # Resolve display names from vendor master for the audit log
     db = get_db()
+    master = db.get("vendor_master", [])
+    display_names = []
+    for nv in stored_normalized:
+        entry = next((m for m in master if m.get("normalized") == nv), None)
+        display_names.append(entry["name"] if entry else nv)
     db["activity_log"].append({"id": str(uuid.uuid4())[:8], "action": "vendor_assignment_updated",
-        "details": f"Assigned {len(vendor_names)} vendors to {updated['name']}: {', '.join(vendor_names) if vendor_names else 'full access'}",
+        "details": f"Assigned {len(stored_normalized)} vendors to {updated['name']}: {', '.join(display_names) if display_names else 'full access'}",
         "user": admin.get("name", "System"), "timestamp": datetime.now().isoformat()})
     save_db(db)
-    return {"success": True, "user_id": user_id, "assignedVendors": vendor_names}
+    return {"success": True, "user_id": user_id, "assignedVendors": stored_normalized}
 
 @app.post("/api/auth/users/{user_id}/role")
 async def update_user_role(user_id: str, request: Request, admin: dict = Depends(get_current_user)):
@@ -1606,6 +1624,92 @@ async def reject_match(mid: str):
     db = get_db(); db["matches"] = [m for m in db["matches"] if m["id"] != mid]; save_db(db); return {"success": True}
 
 # ============================================================
+# VENDOR MASTER — Canonical vendor register
+# ============================================================
+@app.get("/api/vendor-master")
+async def get_vendor_master(user: dict = Depends(get_current_user)):
+    """Return the canonical vendor master list. Requires authentication."""
+    db = get_db()
+    master = db.get("vendor_master", [])
+    return {"vendors": sorted(master, key=lambda v: v.get("name", "")), "total": len(master)}
+
+@app.post("/api/vendor-master")
+async def add_vendor_to_master(request: Request, user: dict = Depends(get_current_user)):
+    """Add a vendor to the master. Manager+ only."""
+    if AUTHORITY_MATRIX.get(user["role"], AUTHORITY_MATRIX[DEFAULT_ROLE])["level"] < 2:
+        raise HTTPException(403, "Manager+ required to manage vendor master")
+    try: body = await request.json()
+    except: raise HTTPException(400, "Invalid JSON")
+    name = (body.get("name") or "").strip()
+    code = (body.get("code") or "").strip()
+    if not name: raise HTTPException(400, "Vendor name required")
+    db = get_db()
+    master = db.get("vendor_master", [])
+    normalized = normalize_vendor(name)
+    if any(m["normalized"] == normalized for m in master):
+        raise HTTPException(409, f"Vendor '{name}' already exists in master (normalized: {normalized})")
+    entry = {"id": str(uuid.uuid4())[:8], "name": name, "normalized": normalized,
+             "code": code or None, "status": "active",
+             "createdBy": user.get("name", "System"), "createdAt": datetime.now().isoformat()}
+    master.append(entry)
+    db["vendor_master"] = master
+    db["activity_log"].append({"id": str(uuid.uuid4())[:8], "action": "vendor_master_added",
+        "details": f"Added '{name}'{(' (code: ' + code + ')') if code else ''} to vendor master",
+        "user": user.get("name", "System"), "timestamp": datetime.now().isoformat()})
+    save_db(db)
+    return {"success": True, "vendor": entry}
+
+@app.delete("/api/vendor-master/{vendor_id}")
+async def remove_vendor_from_master(vendor_id: str, user: dict = Depends(get_current_user)):
+    """Remove a vendor from the master. Manager+ only. Cascades to analyst assignments."""
+    if AUTHORITY_MATRIX.get(user["role"], AUTHORITY_MATRIX[DEFAULT_ROLE])["level"] < 2:
+        raise HTTPException(403, "Manager+ required to manage vendor master")
+    db = get_db()
+    master = db.get("vendor_master", [])
+    entry = next((m for m in master if m["id"] == vendor_id), None)
+    if not entry: raise HTTPException(404, "Vendor not found in master")
+    removed_normalized = entry.get("normalized", "")
+    master.remove(entry)
+    db["vendor_master"] = master
+    # Cascade: remove from analyst assignedVendors
+    users = _get_users()
+    affected = 0
+    for u in users:
+        av = u.get("assignedVendors", [])
+        if removed_normalized in av:
+            u["assignedVendors"] = [v for v in av if v != removed_normalized]
+            affected += 1
+    if affected:
+        _save_users(users)
+    db["activity_log"].append({"id": str(uuid.uuid4())[:8], "action": "vendor_master_removed",
+        "details": f"Removed '{entry['name']}' from vendor master" + (f" (unassigned from {affected} analysts)" if affected else ""),
+        "user": user.get("name", "System"), "timestamp": datetime.now().isoformat()})
+    save_db(db)
+    return {"success": True, "affectedAnalysts": affected}
+
+@app.post("/api/vendor-master/sync")
+async def sync_vendor_master(user: dict = Depends(get_current_user)):
+    """Auto-populate vendor master from existing vendor profiles. Manager+ only."""
+    if AUTHORITY_MATRIX.get(user["role"], AUTHORITY_MATRIX[DEFAULT_ROLE])["level"] < 2:
+        raise HTTPException(403, "Manager+ required")
+    db = get_db()
+    master = db.get("vendor_master", [])
+    existing_normalized = {m["normalized"] for m in master}
+    profiles = db.get("vendor_profiles", [])
+    added = 0
+    for p in profiles:
+        normalized = p.get("vendorNormalized") or normalize_vendor(p.get("vendor", ""))
+        if normalized and normalized not in existing_normalized:
+            master.append({"id": str(uuid.uuid4())[:8], "name": p.get("vendor", normalized),
+                           "normalized": normalized, "code": None, "status": "active",
+                           "createdBy": "System (auto-sync)", "createdAt": datetime.now().isoformat()})
+            existing_normalized.add(normalized)
+            added += 1
+    db["vendor_master"] = master
+    save_db(db)
+    return {"success": True, "added": added, "total": len(master)}
+
+# ============================================================
 # F3: VENDOR RISK API
 # ============================================================
 @app.get("/api/vendors")
@@ -1634,12 +1738,11 @@ async def get_vendors(user: dict = Depends(get_optional_user)):
     save_db(db)
     profiles = db.get("vendor_profiles", [])
 
-    # Scope vendor profiles: filter by vendor display name
+    # Scope vendor profiles: filter by normalized vendor name
     if scope:
-        scope_lower = [v.lower() for v in scope]
-        scope_normalized = [normalize_vendor(v) for v in scope]
-        profiles = [p for p in profiles if p.get("vendorNormalized") in scope_normalized
-                    or (p.get("vendor") or "").lower() in scope_lower]
+        from backend.vendor import normalize_vendor as _nv
+        scope_normalized = set(_nv(v) for v in scope)
+        profiles = [p for p in profiles if p.get("vendorNormalized", "") in scope_normalized]
 
     return {"vendors": sorted(profiles, key=lambda x: x.get("riskScore", 0), reverse=True),
             "total": len(profiles),
@@ -2993,6 +3096,18 @@ async def seed_demo(request: Request):
         })
     _seed_demo_data()
     db = get_db()
+    # Auto-populate vendor_master from seeded vendor_profiles
+    master = db.get("vendor_master", [])
+    existing_normalized = {m.get("normalized") for m in master}
+    for p in db.get("vendor_profiles", []):
+        normalized = p.get("vendorNormalized") or normalize_vendor(p.get("vendor", ""))
+        if normalized and normalized not in existing_normalized:
+            master.append({"id": str(uuid.uuid4())[:8], "name": p.get("vendor", normalized),
+                           "normalized": normalized, "code": None, "status": "active",
+                           "createdBy": "System (seed)", "createdAt": datetime.now().isoformat()})
+            existing_normalized.add(normalized)
+    db["vendor_master"] = master
+    save_db(db)
     total = sum(len(v) for v in db.values() if isinstance(v, list))
     return {"success": True, "message": f"Demo data seeded ({total} records)"}
 
