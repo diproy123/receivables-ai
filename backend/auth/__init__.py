@@ -176,8 +176,8 @@ def get_user_vendor_scope(user: dict) -> list:
     stored = next((u for u in users if u["id"] == user.get("id")), None)
     if stored and stored.get("assignedVendors"):
         return stored["assignedVendors"]
-    # No assignment yet = full access (backward compat during rollout)
-    return []
+    # No assignment = no access (analyst must be assigned vendors by manager)
+    return ["__NONE__"]
 
 def scope_by_vendor(records: list, vendor_scope: list, vendor_key: str = "vendor") -> list:
     """Filter a list of records by vendor scope. Empty scope = no filter.

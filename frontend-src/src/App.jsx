@@ -129,6 +129,7 @@ function Sidebar() {
       { id: 'contracts', label: 'Contracts', icon: FileCheck },
     ]},
     ...(lvl >= 1 ? [{ section: 'Configure', items: [
+      { id: 'workforce', label: 'Workforce', icon: Activity },
       { id: 'settings', label: 'AP Policy', icon: Settings },
       { id: 'team', label: 'Team & Access', icon: Users },
       { id: 'training', label: 'Model Training', icon: Brain },
@@ -534,6 +535,24 @@ function Anomalies() {
     await post(`/api/anomalies/${id}/dismiss`, { reason: `[${label}] ${notes}` });
     await load(); setNotes(''); setActionType(''); setSel(null); toast('Anomaly dismissed', 'success');
   }
+  // Claim helpers
+  const myId = s.user?.id;
+  const lvl = RL[s.user?.role] || 0;
+  const isAnomMine = (a) => a.claimedBy === myId;
+  const isAnomClaimed = (a) => a.claimedBy && a.claimedBy !== myId;
+  const canActionAnom = (a) => !a.claimedBy || a.claimedBy === myId || lvl >= 1;
+
+  async function claimAnom(id) {
+    const r = await post(`/api/anomalies/${id}/claim`, {});
+    if (r?.success) { toast('Anomaly claimed — you can now action it', 'success'); await load(); }
+    else toast(r?.detail || 'Claim failed', 'danger');
+  }
+  async function releaseAnom(id) {
+    const r = await post(`/api/anomalies/${id}/release`, {});
+    if (r?.success) { toast('Claim released', 'success'); await load(); setSel(null); }
+    else toast(r?.detail || 'Release failed', 'danger');
+  }
+
   const escalationRouting = {
     'TERMS_VIOLATION': { primary: 'AP Manager', secondary: 'Procurement Lead' },
     'PRICE_VARIANCE': { primary: 'AP Manager', secondary: 'Category Manager' },
@@ -745,6 +764,12 @@ function Anomalies() {
                             <Badge c={a.severity === 'high' ? 'err' : a.severity === 'medium' ? 'warn' : 'ok'}>{a.severity}</Badge>
                             <span className={cn('text-sm font-semibold tabular-nums w-20 text-right', Math.abs(a.amount_at_risk || 0) > 0 ? 'text-red-600' : 'text-slate-400')}>{$(Math.abs(a.amount_at_risk || 0))}</span>
                             <Badge c={a.status === 'open' ? 'warn' : a.status === 'resolved' ? 'ok' : 'muted'}>{a.status}</Badge>
+                            {a.claimedBy && (
+                              <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full font-medium",
+                                a.claimedBy === s.user?.id ? "bg-accent-100 text-accent-700 border border-accent-200" : "bg-slate-200 text-slate-500")}>
+                                {a.claimedBy === s.user?.id ? '● You' : a.claimedByName || 'Claimed'}
+                              </span>
+                            )}
                           </div>
                         </div>
                       );
@@ -779,6 +804,21 @@ function Anomalies() {
             </div>
 
             {/* Sibling anomalies on same invoice */}
+            {/* Claim Status Banner */}
+            {sel.status === 'open' && sel.claimedBy && (
+              <div className={cn("rounded-xl p-3 mb-4 flex items-center justify-between",
+                isAnomMine(sel) ? "bg-accent-50 border border-accent-200" : "bg-slate-100 border border-slate-200")}>
+                <div className="text-sm">
+                  {isAnomMine(sel)
+                    ? <span className="font-semibold text-accent-700">You are working on this</span>
+                    : <span className="text-slate-600">Claimed by <strong>{sel.claimedByName}</strong></span>}
+                  {sel.claimedAt && <span className="text-xs text-slate-400 ml-2">({dateTime(sel.claimedAt)})</span>}
+                </div>
+                {(isAnomMine(sel) || lvl >= 1) && (
+                  <button onClick={() => releaseAnom(sel.id)} className="btn-o text-xs px-2 py-1">Release</button>
+                )}
+              </div>
+            )}
             {(() => {
               const siblings = filtered.filter(a => (a.invoiceNumber || a.invoiceId) === (sel.invoiceNumber || sel.invoiceId) && a.id !== sel.id);
               if (siblings.length === 0) return null;
@@ -877,6 +917,23 @@ function Anomalies() {
               <div className="mt-6 pt-4 border-t border-slate-200">
                 <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Take Action</div>
 
+                {/* Not claimed — must claim first */}
+                {!sel.claimedBy && (
+                  <button onClick={() => claimAnom(sel.id)} className="btn-p text-sm px-4 py-2 w-full mb-2">
+                    <Shield className="w-4 h-4" /> Claim & Work on This
+                  </button>
+                )}
+
+                {/* Claimed by someone else — blocked */}
+                {isAnomClaimed(sel) && lvl < 1 && (
+                  <div className="text-xs text-slate-500 text-center bg-slate-50 rounded-lg p-3">
+                    Claimed by <strong>{sel.claimedByName}</strong> — you cannot action this anomaly until it is released.
+                  </div>
+                )}
+
+                {/* Claimed by me OR manager+ — show action buttons */}
+                {canActionAnom(sel) && sel.claimedBy && (
+                  <>
                 {/* Action type tabs */}
                 <div className="flex gap-1.5 mb-3">
                   {[['resolve', 'Resolve', 'bg-emerald-600'], ['dismiss', 'Dismiss', 'bg-slate-500'], ['escalate', 'Escalate', 'bg-amber-600']].map(([k, label, bg]) => (
@@ -953,8 +1010,10 @@ function Anomalies() {
                   </div>
                 )}
 
-                {!actionMode && (
+                {!actionMode && !isAnomClaimed(sel) && sel.claimedBy && (
                   <div className="text-center text-xs text-slate-400 py-4">Select an action above to proceed</div>
+                )}
+                  </>
                 )}
               </div>
             ) : (
@@ -1050,9 +1109,14 @@ function Matching() {
 function Triage() {
   const { s, toast, load } = useStore();
   const tri = s.triageData || {};
-  const lanes = ['AUTO_APPROVE', 'MANAGER_REVIEW', 'VP_REVIEW', 'CFO_REVIEW', 'BLOCK'];
-  const laneIcons = { AUTO_APPROVE: CheckCircle2, BLOCK: XCircle, MANAGER_REVIEW: Eye, VP_REVIEW: Eye, CFO_REVIEW: Eye };
+  const role = s.user?.role || 'analyst';
+  const lvl = RL[role] || 0;
+  const myId = s.user?.id;
 
+  // Lane visibility by role: analysts see their queues, managers see all
+  const allLanes = ['AUTO_APPROVE', 'MANAGER_REVIEW', 'VP_REVIEW', 'CFO_REVIEW', 'BLOCK'];
+  const lanes = lvl >= 1 ? allLanes : ['AUTO_APPROVE', 'BLOCK'];
+  const laneIcons = { AUTO_APPROVE: CheckCircle2, BLOCK: XCircle, MANAGER_REVIEW: Eye, VP_REVIEW: Eye, CFO_REVIEW: Eye };
   const bgMap = { AUTO_APPROVE: 'bg-emerald-50 border-b border-emerald-100', BLOCK: 'bg-red-50 border-b border-red-100', MANAGER_REVIEW: 'bg-amber-50 border-b border-amber-100', VP_REVIEW: 'bg-amber-50 border-b border-amber-100', CFO_REVIEW: 'bg-amber-50 border-b border-amber-100' };
   const icMap = { AUTO_APPROVE: 'text-emerald-600', BLOCK: 'text-red-600', MANAGER_REVIEW: 'text-amber-600', VP_REVIEW: 'text-amber-600', CFO_REVIEW: 'text-amber-600' };
   const txtMap = { AUTO_APPROVE: 'text-emerald-900', BLOCK: 'text-red-900', MANAGER_REVIEW: 'text-amber-900', VP_REVIEW: 'text-amber-900', CFO_REVIEW: 'text-amber-900' };
@@ -1060,14 +1124,26 @@ function Triage() {
   const [sel, setSel] = useState(null);
   const allAnoms = s.anomalies || [];
 
-  // Reset to list when sidebar re-clicked
   useEffect(() => { if (s.tab === 'triage') setSel(null); }, [s.tabKey]);
 
-  // Find anomalies for selected invoice
   const selAnoms = sel ? allAnoms.filter(a => a.invoiceId === sel.id || a.invoiceNumber === sel.invoiceNumber) : [];
-  // Find the triage reason for the selected invoice
-  const selLane = sel ? lanes.find(l => (tri[l] || []).some(i => i.id === sel.id)) : null;
+  const selLane = sel ? allLanes.find(l => (tri[l] || []).some(i => i.id === sel.id)) : null;
 
+  // Claim helpers
+  const isMine = (inv) => inv.claimedBy === myId;
+  const isClaimed = (inv) => inv.claimedBy && inv.claimedBy !== myId;
+  const canAction = (inv) => !inv.claimedBy || inv.claimedBy === myId || lvl >= 1;
+
+  async function claimInvoice(inv) {
+    const r = await post(`/api/invoices/${inv.id}/claim`, {});
+    if (r?.success) { toast('Invoice claimed — you can now action it', 'success'); await load(); }
+    else toast(r?.detail || 'Claim failed', 'danger');
+  }
+  async function releaseInvoice(inv) {
+    const r = await post(`/api/invoices/${inv.id}/release`, {});
+    if (r?.success) { toast('Claim released', 'success'); await load(); setSel(null); }
+    else toast(r?.detail || 'Release failed', 'danger');
+  }
   async function overrideApprove(inv) {
     const n = prompt('Override reason — why should this be approved despite being blocked?');
     if (n?.trim()) {
@@ -1104,12 +1180,22 @@ function Triage() {
                   <div className="divide-y divide-slate-50 max-h-[320px] overflow-y-auto">
                     {items.length === 0 && <div className="p-6 text-center text-sm text-slate-500">No invoices</div>}
                     {items.map(inv => (
-                      <div key={inv.id} onClick={() => setSel(inv)} className={cn('px-5 py-3 hover:bg-slate-50 transition-colors cursor-pointer', sel?.id === inv.id && 'bg-accent-50 ring-1 ring-accent-200')}>
+                      <div key={inv.id} onClick={() => setSel(inv)} className={cn('px-5 py-3 hover:bg-slate-50 transition-colors cursor-pointer',
+                        sel?.id === inv.id && 'bg-accent-50 ring-1 ring-accent-200',
+                        isClaimed(inv) && 'opacity-50')}>
                         <div className="flex items-center justify-between">
                           <div className="font-semibold text-sm">{inv.invoiceNumber || inv.id}</div>
                           <span className="text-sm font-bold font-mono">{$(inv.amount, inv.currency)}</span>
                         </div>
-                        <div className="text-xs text-slate-500 mt-0.5">{inv.vendor} · {pct(inv.confidence)} conf</div>
+                        <div className="flex items-center justify-between mt-0.5">
+                          <div className="text-xs text-slate-500">{inv.vendor} · {pct(inv.confidence)} conf</div>
+                          {inv.claimedBy && (
+                            <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full font-medium",
+                              isMine(inv) ? "bg-accent-100 text-accent-700 border border-accent-200" : "bg-slate-200 text-slate-600")}>
+                              {isMine(inv) ? '● You' : inv.claimedByName || 'Claimed'}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1130,6 +1216,22 @@ function Triage() {
               <button onClick={() => setSel(null)} className="p-1 hover:bg-slate-100 rounded-lg"><X className="w-4 h-4" /></button>
             </div>
 
+            {/* Claim Status Banner */}
+            {sel.claimedBy && (
+              <div className={cn("rounded-xl p-3 mb-4 flex items-center justify-between",
+                isMine(sel) ? "bg-accent-50 border border-accent-200" : "bg-slate-100 border border-slate-200")}>
+                <div className="text-sm">
+                  {isMine(sel)
+                    ? <span className="font-semibold text-accent-700">You are working on this</span>
+                    : <span className="text-slate-600">Claimed by <strong>{sel.claimedByName}</strong></span>}
+                  {sel.claimedAt && <span className="text-xs text-slate-400 ml-2">({dateTime(sel.claimedAt)})</span>}
+                </div>
+                {(isMine(sel) || lvl >= 1) && (
+                  <button onClick={() => releaseInvoice(sel)} className="btn-o text-xs px-2 py-1">Release</button>
+                )}
+              </div>
+            )}
+
             {/* Invoice Summary */}
             <div className="grid grid-cols-2 gap-3 mb-4">
               <div className="bg-slate-50 rounded-xl p-3">
@@ -1142,20 +1244,18 @@ function Triage() {
               </div>
             </div>
 
-            {/* PO Match — 3-way match context */}
+            {/* PO Match */}
             {(() => {
               const match = (s.matches || []).find(m => m.invoiceId === sel.id);
               const allDocs = s.docs || [];
               const po = match ? allDocs.find(d => d.id === match.poId) : null;
               const grn = match ? allDocs.find(d => d.type === 'goods_receipt' && (d.poReference === match.poNumber || d.poId === match.poId)) : null;
               const hasMatch = match && po;
-
               return (
                 <div className="mb-4">
                   <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">PO Match</div>
                   {hasMatch ? (
                     <div className="rounded-xl border border-slate-200 overflow-hidden">
-                      {/* 3-way match indicator */}
                       <div className="flex items-center gap-0 text-xs font-bold bg-slate-50 px-4 py-2.5">
                         <div className="flex items-center gap-1.5 text-emerald-700"><FileText className="w-3.5 h-3.5" /> Invoice</div>
                         <div className={cn("mx-2 text-lg", match.matchScore >= 75 ? "text-emerald-500" : "text-amber-500")}>{match.matchScore >= 75 ? "↔" : "⇢"}</div>
@@ -1169,7 +1269,6 @@ function Triage() {
                           </span>
                         </div>
                       </div>
-                      {/* PO details */}
                       <div className="px-4 py-3 border-t border-slate-100">
                         <div className="flex items-center justify-between mb-2">
                           <div>
@@ -1189,7 +1288,6 @@ function Triage() {
                           </div>
                         )}
                       </div>
-                      {/* GRN status if present */}
                       {grn && (
                         <div className="px-4 py-2.5 border-t border-slate-100 bg-indigo-50/50">
                           <div className="flex items-center justify-between text-xs">
@@ -1210,7 +1308,7 @@ function Triage() {
               );
             })()}
 
-            {/* Triage Decision */}
+            {/* Triage Decision + Blocking Reasons */}
             <div className="mb-4">
               <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Triage Decision</div>
               <div className={cn('rounded-xl p-3 text-sm font-medium',
@@ -1221,6 +1319,13 @@ function Triage() {
                 {laneLabel(selLane)}
                 {sel.triageReason && <div className="text-xs mt-1 opacity-75">{sel.triageReason}</div>}
               </div>
+              {(sel.triageReasons || []).length > 0 && (
+                <div className="mt-2 space-y-1">
+                  {sel.triageReasons.map((r, i) => (
+                    <div key={i} className="text-xs text-red-700 bg-red-50 rounded-lg px-3 py-1.5 border border-red-100">→ {r}</div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Linked Anomalies */}
@@ -1243,14 +1348,29 @@ function Triage() {
               </div>
             )}
 
-            {/* Actions */}
+            {/* Actions — claim-aware */}
             {selLane !== 'AUTO_APPROVE' && (
               <div className="mt-6 pt-4 border-t border-slate-200">
                 <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Actions</div>
-                <div className="flex gap-2">
-                  <button onClick={() => overrideApprove(sel)} className="btn-p text-sm px-4 py-2 flex-1"><Check className="w-4 h-4" /> Override & Approve</button>
-                  <button onClick={() => escalateCase(sel)} className="btn-g text-sm px-4 py-2 flex-1"><ClipboardList className="w-4 h-4" /> Create Case</button>
-                </div>
+                {/* Not claimed — show Claim button */}
+                {!sel.claimedBy && (
+                  <button onClick={() => claimInvoice(sel)} className="btn-p text-sm px-4 py-2 w-full mb-2">
+                    <Shield className="w-4 h-4" /> Claim & Work on This
+                  </button>
+                )}
+                {/* Claimed by me or manager+ — show action buttons */}
+                {canAction(sel) && sel.claimedBy && (
+                  <div className="flex gap-2">
+                    <button onClick={() => overrideApprove(sel)} className="btn-p text-sm px-4 py-2 flex-1"><Check className="w-4 h-4" /> Override & Approve</button>
+                    <button onClick={() => escalateCase(sel)} className="btn-g text-sm px-4 py-2 flex-1"><ClipboardList className="w-4 h-4" /> Create Case</button>
+                  </div>
+                )}
+                {/* Claimed by someone else — analyst blocked */}
+                {isClaimed(sel) && lvl < 1 && (
+                  <div className="text-xs text-slate-500 text-center mt-2 bg-slate-50 rounded-lg p-3">
+                    Claimed by <strong>{sel.claimedByName}</strong> — you cannot action this invoice until it is released.
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -3014,6 +3134,276 @@ function EscalationMatrixEditor() {
 /* ═══════════════════════════════════════════════════
    TEAM & ACCESS MANAGEMENT
    ═══════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════
+   WORKFORCE MANAGEMENT — Manager oversight dashboard
+   ═══════════════════════════════════════════════════ */
+function Workforce() {
+  const { s, toast } = useStore();
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [selAnalyst, setSelAnalyst] = useState(null);
+
+  async function fetchData() {
+    setLoading(true);
+    const r = await api('/api/workforce');
+    if (r && !r.detail) setData(r);
+    setLoading(false);
+  }
+  useEffect(() => { fetchData(); }, []);
+
+  if (loading) return <div className="page-enter"><PageHeader title="Workforce" sub="Analyst performance & queue health" /><div className="card p-12 text-center text-slate-400">Loading workforce metrics...</div></div>;
+  if (!data) return <div className="page-enter"><PageHeader title="Workforce" sub="Analyst performance & queue health" /><div className="card p-12 text-center text-red-400">Failed to load workforce data</div></div>;
+
+  const q = data.queueHealth;
+  const sla = data.sla;
+  const analysts = data.analysts || [];
+  const trend = data.queueTrend || [];
+  const sum = data.summary || {};
+  const PIE_C = ['#10b981', '#f59e0b', '#ef4444'];
+  const slaData = [
+    { name: 'Within SLA', value: sla.withinSla, fill: '#10b981' },
+    { name: 'Near Breach', value: sla.nearBreach, fill: '#f59e0b' },
+    { name: 'Breached', value: sla.breached, fill: '#ef4444' },
+  ].filter(d => d.value > 0);
+  const agingData = [
+    { name: '< 4h', v: q.agingBuckets.under_4h, fill: '#10b981' },
+    { name: '4-24h', v: q.agingBuckets['4_24h'], fill: '#f59e0b' },
+    { name: '1-3d', v: q.agingBuckets['1_3d'], fill: '#f97316' },
+    { name: '3d+', v: q.agingBuckets.over_3d, fill: '#ef4444' },
+  ];
+
+  const sel = selAnalyst ? analysts.find(a => a.id === selAnalyst) : null;
+
+  return (
+    <div className="page-enter space-y-6">
+      <PageHeader title="Workforce" sub="Analyst performance & queue health">
+        <button onClick={fetchData} className="btn-o text-xs px-3 py-1.5"><RefreshCw className="w-3.5 h-3.5" /> Refresh</button>
+      </PageHeader>
+
+      {/* ── Row 1: Queue Health KPIs ── */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <StatCard icon={ClipboardList} label="Actionable Queue" value={q.totalActionable} sub={`${q.openAnomalies} anomalies + ${q.blockedInvoices} blocked + ${q.reviewInvoices} review`} color="#3b82f6" />
+        <StatCard icon={AlertCircle} label="Unclaimed" value={q.unclaimed} sub={q.agingBuckets.over_3d > 0 ? `${q.agingBuckets.over_3d} older than 3 days!` : 'All recently queued'} color={q.agingBuckets.over_3d > 0 ? '#ef4444' : '#10b981'} />
+        <StatCard icon={Users} label="Active Today" value={`${sum.activeToday}/${sum.totalAnalysts}`} sub="Analysts with actions today" color="#8b5cf6" />
+        <StatCard icon={TrendingUp} label="Avg Throughput" value={`${sum.avgThroughputWeek}/wk`} sub="Resolved + dismissed per analyst" color="#0ea5e9" />
+        <StatCard icon={Shield} label="SLA Compliance" value={`${sla.compliancePct}%`} sub={sla.breached > 0 ? `${sla.breached} breached` : 'All within SLA'} color={sla.compliancePct >= 90 ? '#10b981' : sla.compliancePct >= 70 ? '#f59e0b' : '#ef4444'} />
+      </div>
+
+      {/* ── Row 2: Queue Aging + SLA + 7-Day Trend ── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Unclaimed Aging */}
+        <div className="card p-5">
+          <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Unclaimed Item Aging</div>
+          <ResponsiveContainer width="100%" height={140}>
+            <BarChart data={agingData}><XAxis dataKey="name" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} /><YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} allowDecimals={false} /><Tooltip contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 8px 32px rgba(0,0,0,.1)', fontSize: 12 }} /><Bar dataKey="v" radius={[6, 6, 0, 0]}>{agingData.map((e, i) => <Cell key={i} fill={e.fill} />)}</Bar></BarChart>
+          </ResponsiveContainer>
+          {q.agingBuckets.over_3d > 0 && (
+            <div className="mt-2 px-3 py-2 bg-red-50 border border-red-100 rounded-lg text-xs text-red-700 font-medium">
+              ⚠ {q.agingBuckets.over_3d} items unclaimed for 3+ days — SLA breach risk
+            </div>
+          )}
+        </div>
+
+        {/* SLA Compliance */}
+        <div className="card p-5">
+          <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">SLA Status</div>
+          {slaData.length > 0 ? (
+            <div className="flex items-center gap-4">
+              <div className="w-28 h-28">
+                <ResponsiveContainer><PieChart><Pie data={slaData} dataKey="value" cx="50%" cy="50%" outerRadius={50} innerRadius={30} strokeWidth={2}>{slaData.map((d, i) => <Cell key={i} fill={d.fill} />)}</Pie></PieChart></ResponsiveContainer>
+              </div>
+              <div className="space-y-2 text-xs">
+                {slaData.map(d => (
+                  <div key={d.name} className="flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 rounded-full" style={{ background: d.fill }} />
+                    <span className="text-slate-600">{d.name}</span>
+                    <span className="font-bold text-slate-800 ml-auto">{d.value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="text-sm text-slate-400 text-center py-8">No open anomalies</div>
+          )}
+          {/* SLA by severity */}
+          {Object.keys(sla.bySeverity || {}).length > 0 && (
+            <div className="mt-3 pt-3 border-t border-slate-100 space-y-1.5">
+              {Object.entries(sla.bySeverity).map(([sev, counts]) => (
+                <div key={sev} className="flex items-center gap-2 text-xs">
+                  <Badge c={sev === 'high' ? 'err' : sev === 'medium' ? 'warn' : 'ok'}>{sev}</Badge>
+                  <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${(counts.withinSla / Math.max(counts.total, 1)) * 100}%` }} />
+                  </div>
+                  <span className="text-slate-500 w-16 text-right">{counts.withinSla}/{counts.total}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 7-Day Trend */}
+        <div className="card p-5">
+          <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">7-Day Trend</div>
+          <ResponsiveContainer width="100%" height={140}>
+            <BarChart data={trend}><XAxis dataKey="day" tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} /><YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} allowDecimals={false} /><Tooltip contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 8px 32px rgba(0,0,0,.1)', fontSize: 12 }} /><Bar dataKey="new" name="New" fill="#94a3b8" radius={[3, 3, 0, 0]} /><Bar dataKey="claimed" name="Claimed" fill="#3b82f6" radius={[3, 3, 0, 0]} /><Bar dataKey="resolved" name="Resolved" fill="#10b981" radius={[3, 3, 0, 0]} /></BarChart>
+          </ResponsiveContainer>
+          <div className="flex justify-center gap-4 mt-2 text-[10px]">
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-slate-400" /> New</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-blue-500" /> Claimed</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-emerald-500" /> Resolved</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Row 3: Analyst Scorecards ── */}
+      <div className="card overflow-hidden">
+        <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+          <div className="text-sm font-bold text-slate-700">Analyst Scorecards</div>
+          <div className="text-xs text-slate-400">{analysts.length} analysts</div>
+        </div>
+        <div className="divide-y divide-slate-50">
+          {analysts.length === 0 && <div className="p-8 text-center text-sm text-slate-400">No analysts configured. Assign vendors in Team & Access first.</div>}
+          {analysts.map(a => {
+            const cpIdx = a.cherryPickIndex;
+            const cpColor = cpIdx === null ? 'text-slate-300' : cpIdx >= 0.7 ? 'text-emerald-600' : cpIdx >= 0.4 ? 'text-amber-600' : 'text-red-600';
+            const cpLabel = cpIdx === null ? '—' : cpIdx >= 0.7 ? 'Fair' : cpIdx >= 0.4 ? 'Skewed' : 'Cherry-picking';
+            const isSelected = selAnalyst === a.id;
+            return (
+              <div key={a.id} onClick={() => setSelAnalyst(isSelected ? null : a.id)}
+                className={cn('px-5 py-4 cursor-pointer transition-colors', isSelected ? 'bg-accent-50 ring-1 ring-inset ring-accent-200' : 'hover:bg-slate-50')}>
+                <div className="flex items-center gap-4">
+                  {/* Avatar + name */}
+                  <div className="flex items-center gap-3 w-44 flex-shrink-0">
+                    <div className="w-9 h-9 rounded-full bg-accent-600 text-white flex items-center justify-center text-xs font-bold">{(a.name || '?')[0].toUpperCase()}</div>
+                    <div>
+                      <div className="text-sm font-semibold text-slate-800">{a.name}</div>
+                      <div className="text-[10px] text-slate-400">{a.vendorCount} vendor{a.vendorCount !== 1 ? 's' : ''}</div>
+                    </div>
+                  </div>
+
+                  {/* Metrics row */}
+                  <div className="flex-1 grid grid-cols-7 gap-2 text-center">
+                    <div>
+                      <div className="text-lg font-bold text-slate-800">{a.throughputToday}</div>
+                      <div className="text-[10px] text-slate-400">Today</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-bold text-slate-800">{a.throughputWeek}</div>
+                      <div className="text-[10px] text-slate-400">This Week</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-bold text-blue-600">{a.currentlyClaimedCount}</div>
+                      <div className="text-[10px] text-slate-400">In Progress</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-bold text-amber-600">{a.unclaimedInScope}</div>
+                      <div className="text-[10px] text-slate-400">Unclaimed</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-bold text-slate-600">{a.avgResolutionHours > 0 ? `${a.avgResolutionHours}h` : '—'}</div>
+                      <div className="text-[10px] text-slate-400">Avg Time</div>
+                    </div>
+                    <div>
+                      <div className={cn('text-lg font-bold', cpColor)}>{cpIdx !== null ? cpIdx.toFixed(1) : '—'}</div>
+                      <div className="text-[10px] text-slate-400">Mix Index</div>
+                    </div>
+                    <div>
+                      <div className={cn('text-lg font-bold', a.escalatedWeek > 0 ? 'text-amber-600' : 'text-slate-300')}>{a.escalatedWeek}</div>
+                      <div className="text-[10px] text-slate-400">Escalated</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Expanded detail */}
+                {isSelected && (
+                  <div className="mt-4 pt-4 border-t border-slate-200 grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="bg-slate-50 rounded-xl p-3">
+                      <div className="text-[10px] text-slate-400 uppercase font-semibold">Claims Today / Week</div>
+                      <div className="text-base font-bold">{a.claimsToday} / {a.claimsWeek}</div>
+                    </div>
+                    <div className="bg-emerald-50 rounded-xl p-3">
+                      <div className="text-[10px] text-emerald-500 uppercase font-semibold">Resolved Today / Week</div>
+                      <div className="text-base font-bold text-emerald-700">{a.resolvedToday} / {a.resolvedWeek}</div>
+                    </div>
+                    <div className="bg-slate-50 rounded-xl p-3">
+                      <div className="text-[10px] text-slate-400 uppercase font-semibold">Dismissed Today / Week</div>
+                      <div className="text-base font-bold">{a.dismissedToday} / {a.dismissedWeek}</div>
+                    </div>
+                    <div className="bg-slate-50 rounded-xl p-3">
+                      <div className="text-[10px] text-slate-400 uppercase font-semibold">Overrides / Expired Claims</div>
+                      <div className="text-base font-bold">{a.overridesWeek} / {a.expiredClaimsWeek}</div>
+                    </div>
+                    {/* Severity Distribution */}
+                    <div className="col-span-2 md:col-span-4">
+                      <div className="text-[10px] text-slate-400 uppercase font-semibold mb-1.5">Severity Mix (resolved + dismissed)</div>
+                      <div className="flex items-center gap-2">
+                        {['high', 'medium', 'low'].map(sev => {
+                          const total = a.severityDistribution.high + a.severityDistribution.medium + a.severityDistribution.low;
+                          const w = total > 0 ? (a.severityDistribution[sev] / total * 100) : 0;
+                          const colors = { high: 'bg-red-500', medium: 'bg-amber-400', low: 'bg-emerald-400' };
+                          return w > 0 ? <div key={sev} className={cn('h-3 rounded-full', colors[sev])} style={{ width: `${Math.max(w, 5)}%` }} title={`${sev}: ${a.severityDistribution[sev]} (${Math.round(w)}%)`} /> : null;
+                        })}
+                        {(a.severityDistribution.high + a.severityDistribution.medium + a.severityDistribution.low) === 0 && (
+                          <div className="text-xs text-slate-300">No resolved items yet</div>
+                        )}
+                      </div>
+                      <div className="flex gap-3 mt-1 text-[10px] text-slate-400">
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" /> High ({a.severityDistribution.high})</span>
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400" /> Medium ({a.severityDistribution.medium})</span>
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400" /> Low ({a.severityDistribution.low})</span>
+                        <span className={cn('ml-auto font-semibold', cpColor)}>Mix: {cpLabel}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Row 4: SLA by Analyst ── */}
+      {Object.keys(sla.byAnalyst || {}).length > 0 && (
+        <div className="card p-5">
+          <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">SLA Status by Analyst / Queue</div>
+          <div className="space-y-2">
+            {Object.entries(sla.byAnalyst).map(([name, counts]) => {
+              const total = counts.withinSla + counts.nearBreach + counts.breached;
+              return (
+                <div key={name} className="flex items-center gap-3">
+                  <div className="w-32 text-sm text-slate-700 font-medium truncate">{name}</div>
+                  <div className="flex-1 h-4 bg-slate-100 rounded-full overflow-hidden flex">
+                    {counts.withinSla > 0 && <div className="h-full bg-emerald-500" style={{ width: `${(counts.withinSla / total) * 100}%` }} />}
+                    {counts.nearBreach > 0 && <div className="h-full bg-amber-400" style={{ width: `${(counts.nearBreach / total) * 100}%` }} />}
+                    {counts.breached > 0 && <div className="h-full bg-red-500" style={{ width: `${(counts.breached / total) * 100}%` }} />}
+                  </div>
+                  <div className="w-24 text-right flex items-center gap-1 justify-end">
+                    {counts.breached > 0 && <span className="text-[10px] px-1.5 py-0.5 bg-red-100 text-red-600 font-bold rounded-full">{counts.breached} breach</span>}
+                    <span className="text-xs text-slate-400">{total}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Info Panel ── */}
+      <div className="card p-5 bg-slate-50 border-slate-200">
+        <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Reading the Metrics</div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-slate-500">
+          <div><span className="font-semibold text-slate-700">Mix Index</span> measures whether an analyst is handling a proportional share of high-severity items. 1.0 = perfectly proportional to the overall pool. Below 0.4 flags potential cherry-picking — they may be avoiding complex items.</div>
+          <div><span className="font-semibold text-slate-700">Unclaimed in Scope</span> shows open items within this analyst's vendor assignment that nobody has claimed yet. A high number means the analyst has available work they haven't picked up.</div>
+          <div><span className="font-semibold text-slate-700">SLA Config</span>: Critical = {sla.config?.sla_critical_hours || 4}h, High = {sla.config?.sla_high_hours || 24}h, Medium = {sla.config?.sla_medium_hours || 72}h, Low = {sla.config?.sla_low_hours || 168}h. Claims auto-expire after {data.queueHealth?.claim_expiry_hours || 4}h.</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   TEAM MANAGEMENT
+   ═══════════════════════════════════════════════════ */
 function TeamManagement() {
   const { s, toast, load } = useStore();
   const [users, setUsers] = useState([]);
@@ -4730,7 +5120,7 @@ function AppShell() {
     dashboard: Dashboard, documents: Documents, triage: Triage, cases: Cases,
     anomalies: Anomalies, matching: Matching, vendors: Vendors, contracts: Contracts,
     settings: SettingsPage, training: Training, upload: UploadPage, audit_trail: AuditTrail,
-    team: TeamManagement,
+    team: TeamManagement, workforce: Workforce,
   };
   const Page = pages[s.tab] || Dashboard;
 

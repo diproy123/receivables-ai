@@ -74,6 +74,7 @@ DEFAULT_POLICY = {
     "sla_high_hours": 24,
     "sla_medium_hours": 72,
     "sla_low_hours": 168,
+    "claim_expiry_hours": 4,
     "tax_rate_tolerance_pct": 2.0,
     "early_payment_discount_flag": True,
     "auto_approve_min_confidence": float(os.environ.get("TRIAGE_AUTO_APPROVE_CONFIDENCE", "85")),

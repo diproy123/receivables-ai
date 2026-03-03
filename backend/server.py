@@ -1295,7 +1295,10 @@ async def get_matches(user: dict = Depends(get_optional_user)):
 @app.get("/api/anomalies")
 async def get_anomalies(user: dict = Depends(get_optional_user)):
     db = get_db()
+    policy = db.get("_policy_state", DEFAULT_POLICY)
+    expiry = policy.get("claim_expiry_hours", DEFAULT_POLICY.get("claim_expiry_hours", 4))
     an = db.get("anomalies", [])
+    _expire_stale_claims(an, expiry)
     scope = get_user_vendor_scope(user)
     an = scope_by_vendor(an, scope)
     op = [a for a in an if a.get("status") == "open"]
@@ -1314,9 +1317,14 @@ async def get_anomalies(user: dict = Depends(get_optional_user)):
 async def resolve_anomaly(aid: str, request: Request):
     role = get_role_from_request(request)
     user_display = get_user_display(request)
+    user = _user_from_request(request)
+    role_level = AUTHORITY_MATRIX.get(role, AUTHORITY_MATRIX[DEFAULT_ROLE])["level"]
     db = get_db()
     for a in db.get("anomalies", []):
         if a["id"] == aid:
+            # Claim enforcement: if claimed by someone else, only Manager+ can override
+            if a.get("claimedBy") and user.get("id") and a["claimedBy"] != user["id"] and role_level < 2:
+                raise HTTPException(403, f"Claimed by {a.get('claimedByName', 'another user')}. Claim it first or ask a manager.")
             if a.get("status") != "open":
                 return {"success": False, "error": f"Anomaly already {a.get('status')} — cannot resolve again"}
             body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
@@ -1368,9 +1376,14 @@ async def resolve_anomaly(aid: str, request: Request):
 async def dismiss_anomaly(aid: str, request: Request):
     role = get_role_from_request(request)
     user_display = get_user_display(request)
+    user = _user_from_request(request)
+    role_level = AUTHORITY_MATRIX.get(role, AUTHORITY_MATRIX[DEFAULT_ROLE])["level"]
     db = get_db()
     for a in db.get("anomalies", []):
         if a["id"] == aid:
+            # Claim enforcement
+            if a.get("claimedBy") and user.get("id") and a["claimedBy"] != user["id"] and role_level < 2:
+                raise HTTPException(403, f"Claimed by {a.get('claimedByName', 'another user')}. Claim it first or ask a manager.")
             if a.get("status") != "open":
                 return {"success": False, "error": f"Anomaly already {a.get('status')} — cannot dismiss again"}
             body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
@@ -1612,6 +1625,106 @@ async def mark_paid(iid: str, request: Request):
             save_db(db); return {"success": True}
     raise HTTPException(404)
 
+# ============================================================
+# CLAIM / LOCK — Work distribution for shared queues
+# ============================================================
+def _expire_stale_claims(records: list, expiry_hours: float = 4.0):
+    """Auto-release claims older than expiry_hours. Mutates in-place."""
+    now = datetime.now()
+    for r in records:
+        claimed_at = r.get("claimedAt")
+        if claimed_at and r.get("claimedBy"):
+            try:
+                elapsed = (now - datetime.fromisoformat(claimed_at)).total_seconds() / 3600
+                if elapsed > expiry_hours:
+                    r["claimedBy"] = None
+                    r["claimedByName"] = None
+                    r["claimedAt"] = None
+            except: pass
+
+@app.post("/api/invoices/{iid}/claim")
+async def claim_invoice(iid: str, user: dict = Depends(get_current_user)):
+    """Claim an invoice for the current user. Prevents others from actioning it."""
+    db = get_db()
+    policy = db.get("_policy_state", DEFAULT_POLICY)
+    expiry = policy.get("claim_expiry_hours", DEFAULT_POLICY.get("claim_expiry_hours", 4))
+    _expire_stale_claims(db["invoices"], expiry)
+    for i in db["invoices"]:
+        if i["id"] == iid:
+            if i.get("claimedBy") and i["claimedBy"] != user["id"]:
+                raise HTTPException(409, f"Already claimed by {i.get('claimedByName', 'another user')}")
+            i["claimedBy"] = user["id"]
+            i["claimedByName"] = user.get("name", "Unknown")
+            i["claimedAt"] = datetime.now().isoformat()
+            db["activity_log"].append({"id": str(uuid.uuid4())[:8], "action": "invoice_claimed",
+                "documentId": iid, "documentNumber": i.get("invoiceNumber", ""),
+                "vendor": i.get("vendor", ""), "claimedBy": user.get("name", "Unknown"),
+                "timestamp": datetime.now().isoformat()})
+            save_db(db)
+            return {"success": True, "claimedBy": user["id"], "claimedByName": user.get("name")}
+    raise HTTPException(404)
+
+@app.post("/api/invoices/{iid}/release")
+async def release_invoice(iid: str, user: dict = Depends(get_current_user)):
+    """Release claim on an invoice. Owner or Manager+ can release."""
+    db = get_db()
+    role_level = AUTHORITY_MATRIX.get(user["role"], AUTHORITY_MATRIX[DEFAULT_ROLE])["level"]
+    for i in db["invoices"]:
+        if i["id"] == iid:
+            if i.get("claimedBy") and i["claimedBy"] != user["id"] and role_level < 2:
+                raise HTTPException(403, "Only the claim owner or Manager+ can release")
+            prev = i.get("claimedByName", "Unknown")
+            i["claimedBy"] = None
+            i["claimedByName"] = None
+            i["claimedAt"] = None
+            db["activity_log"].append({"id": str(uuid.uuid4())[:8], "action": "invoice_released",
+                "documentId": iid, "documentNumber": i.get("invoiceNumber", ""),
+                "releasedBy": user.get("name", "Unknown"), "previousClaim": prev,
+                "timestamp": datetime.now().isoformat()})
+            save_db(db)
+            return {"success": True}
+    raise HTTPException(404)
+
+@app.post("/api/anomalies/{aid}/claim")
+async def claim_anomaly(aid: str, user: dict = Depends(get_current_user)):
+    """Claim an anomaly for investigation."""
+    db = get_db()
+    policy = db.get("_policy_state", DEFAULT_POLICY)
+    expiry = policy.get("claim_expiry_hours", DEFAULT_POLICY.get("claim_expiry_hours", 4))
+    _expire_stale_claims(db.get("anomalies", []), expiry)
+    for a in db.get("anomalies", []):
+        if a["id"] == aid:
+            if a.get("status") != "open":
+                raise HTTPException(400, "Can only claim open anomalies")
+            if a.get("claimedBy") and a["claimedBy"] != user["id"]:
+                raise HTTPException(409, f"Already claimed by {a.get('claimedByName', 'another user')}")
+            a["claimedBy"] = user["id"]
+            a["claimedByName"] = user.get("name", "Unknown")
+            a["claimedAt"] = datetime.now().isoformat()
+            db["activity_log"].append({"id": str(uuid.uuid4())[:8], "action": "anomaly_claimed",
+                "anomalyId": aid, "anomalyType": a.get("type", ""),
+                "vendor": a.get("vendor", ""), "claimedBy": user.get("name", "Unknown"),
+                "timestamp": datetime.now().isoformat()})
+            save_db(db)
+            return {"success": True, "claimedBy": user["id"], "claimedByName": user.get("name")}
+    raise HTTPException(404)
+
+@app.post("/api/anomalies/{aid}/release")
+async def release_anomaly(aid: str, user: dict = Depends(get_current_user)):
+    """Release claim on an anomaly. Owner or Manager+ can release."""
+    db = get_db()
+    role_level = AUTHORITY_MATRIX.get(user["role"], AUTHORITY_MATRIX[DEFAULT_ROLE])["level"]
+    for a in db.get("anomalies", []):
+        if a["id"] == aid:
+            if a.get("claimedBy") and a["claimedBy"] != user["id"] and role_level < 2:
+                raise HTTPException(403, "Only the claim owner or Manager+ can release")
+            a["claimedBy"] = None
+            a["claimedByName"] = None
+            a["claimedAt"] = None
+            save_db(db)
+            return {"success": True}
+    raise HTTPException(404)
+
 @app.post("/api/matches/{mid}/approve")
 async def approve_match(mid: str):
     db = get_db()
@@ -1622,6 +1735,220 @@ async def approve_match(mid: str):
 @app.post("/api/matches/{mid}/reject")
 async def reject_match(mid: str):
     db = get_db(); db["matches"] = [m for m in db["matches"] if m["id"] != mid]; save_db(db); return {"success": True}
+
+# ============================================================
+# WORKFORCE MANAGEMENT — Manager dashboard for analyst oversight
+# ============================================================
+@app.get("/api/workforce")
+async def get_workforce_metrics(user: dict = Depends(get_current_user)):
+    """Workforce metrics for manager dashboard. Manager+ only."""
+    if AUTHORITY_MATRIX.get(user["role"], AUTHORITY_MATRIX[DEFAULT_ROLE])["level"] < 2:
+        raise HTTPException(403, "Manager+ required")
+    db = get_db()
+    now = datetime.now()
+    users = db.get("users", [])
+    invoices = db.get("invoices", [])
+    anomalies = db.get("anomalies", [])
+    activity = db.get("activity_log", [])
+    policy = db.get("_policy_state", DEFAULT_POLICY)
+    sla_map = {
+        "critical": policy.get("sla_critical_hours", 4),
+        "high": policy.get("sla_high_hours", 24),
+        "medium": policy.get("sla_medium_hours", 72),
+        "low": policy.get("sla_low_hours", 168),
+    }
+    claim_expiry = policy.get("claim_expiry_hours", 4)
+
+    # ── 1. QUEUE HEALTH — Unclaimed items with aging buckets ──
+    open_anomalies = [a for a in anomalies if a.get("status") == "open"]
+    blocked_invoices = [i for i in invoices if i.get("triageLane") == "BLOCK"]
+    review_invoices = [i for i in invoices if i.get("triageLane") in ("MANAGER_REVIEW", "VP_REVIEW", "CFO_REVIEW", "REVIEW")]
+    actionable = open_anomalies + blocked_invoices + review_invoices
+
+    unclaimed = [x for x in actionable if not x.get("claimedBy")]
+    claimed = [x for x in actionable if x.get("claimedBy")]
+
+    def age_hours(item):
+        ts = item.get("detectedAt") or item.get("extractedAt") or item.get("createdAt")
+        if ts:
+            try: return (now - datetime.fromisoformat(ts)).total_seconds() / 3600
+            except: pass
+        return 0
+
+    aging_buckets = {"under_4h": 0, "4_24h": 0, "1_3d": 0, "over_3d": 0}
+    for x in unclaimed:
+        h = age_hours(x)
+        if h < 4: aging_buckets["under_4h"] += 1
+        elif h < 24: aging_buckets["4_24h"] += 1
+        elif h < 72: aging_buckets["1_3d"] += 1
+        else: aging_buckets["over_3d"] += 1
+
+    # ── 2. PER-ANALYST METRICS ──
+    analysts = [u for u in users if u.get("role") == "analyst" and u.get("status") != "inactive"]
+    analyst_metrics = []
+    for a in analysts:
+        aid = a["id"]
+        aname = a.get("name", "Unknown")
+        vendors = a.get("assignedVendors", [])
+
+        # Activity-based metrics (from activity_log for accuracy)
+        user_actions = [e for e in activity if (e.get("performedBy") or e.get("claimedBy") or "") == aname]
+
+        # Time-bounded: today and this week
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        week_start = today_start - timedelta(days=today_start.weekday())
+
+        def in_range(ts_str, start):
+            try: return datetime.fromisoformat(ts_str) >= start
+            except: return False
+
+        actions_today = [e for e in user_actions if in_range(e.get("timestamp", ""), today_start)]
+        actions_week = [e for e in user_actions if in_range(e.get("timestamp", ""), week_start)]
+
+        # Claims
+        claims_today = sum(1 for e in actions_today if e.get("action") in ("invoice_claimed", "anomaly_claimed"))
+        claims_week = sum(1 for e in actions_week if e.get("action") in ("invoice_claimed", "anomaly_claimed"))
+
+        # Resolutions
+        resolved_today = sum(1 for e in actions_today if e.get("action") == "anomaly_resolved")
+        resolved_week = sum(1 for e in actions_week if e.get("action") == "anomaly_resolved")
+
+        # Dismissals
+        dismissed_today = sum(1 for e in actions_today if e.get("action") == "anomaly_dismissed")
+        dismissed_week = sum(1 for e in actions_week if e.get("action") == "anomaly_dismissed")
+
+        # Escalations
+        escalated_week = sum(1 for e in actions_week if e.get("action") in ("case_created", "case_escalated"))
+
+        # Overrides
+        overrides_week = sum(1 for e in actions_week if e.get("action") == "triage_override")
+
+        # Currently claimed (live items)
+        claimed_anomalies = [x for x in open_anomalies if x.get("claimedBy") == aid]
+        claimed_invoices_live = [x for x in invoices if x.get("claimedBy") == aid and x.get("triageLane") in ("BLOCK", "MANAGER_REVIEW", "VP_REVIEW", "CFO_REVIEW", "REVIEW")]
+
+        # Average resolution time (from resolved anomalies)
+        resolved_by_user = [x for x in anomalies if x.get("resolvedBy") == aname and x.get("resolvedAt") and x.get("detectedAt")]
+        avg_res_hours = 0
+        if resolved_by_user:
+            times = []
+            for r in resolved_by_user:
+                try:
+                    dt = (datetime.fromisoformat(r["resolvedAt"]) - datetime.fromisoformat(r["detectedAt"])).total_seconds() / 3600
+                    if dt > 0: times.append(dt)
+                except: pass
+            avg_res_hours = round(sum(times) / len(times), 1) if times else 0
+
+        # Expired claims (from activity_log — invoice_released by system or claim_expiry)
+        expired_week = sum(1 for e in actions_week if e.get("action") == "invoice_released" and "expir" in (e.get("details") or "").lower())
+
+        # Cherry-picking detection: severity distribution of resolved items
+        resolved_all = [x for x in anomalies if x.get("resolvedBy") == aname or x.get("dismissedBy") == aname]
+        sev_dist = {"high": 0, "medium": 0, "low": 0}
+        for r in resolved_all:
+            s = r.get("severity", "low")
+            if s in sev_dist: sev_dist[s] += 1
+
+        # Items in scope (unworked)
+        from backend.vendor import normalize_vendor
+        scope_normalized = set(normalize_vendor(v) for v in vendors) if vendors else set()
+        in_scope_open = [x for x in open_anomalies if not x.get("claimedBy") and
+                         (not scope_normalized or normalize_vendor(x.get("vendor", "")) in scope_normalized)]
+
+        analyst_metrics.append({
+            "id": aid, "name": aname, "role": "analyst",
+            "vendors": vendors, "vendorCount": len(vendors),
+            "claimsToday": claims_today, "claimsWeek": claims_week,
+            "resolvedToday": resolved_today, "resolvedWeek": resolved_week,
+            "dismissedToday": dismissed_today, "dismissedWeek": dismissed_week,
+            "escalatedWeek": escalated_week, "overridesWeek": overrides_week,
+            "throughputToday": resolved_today + dismissed_today,
+            "throughputWeek": resolved_week + dismissed_week,
+            "currentlyClaimedCount": len(claimed_anomalies) + len(claimed_invoices_live),
+            "avgResolutionHours": avg_res_hours,
+            "expiredClaimsWeek": expired_week,
+            "severityDistribution": sev_dist,
+            "unclaimedInScope": len(in_scope_open),
+        })
+
+    # ── 3. SLA COMPLIANCE ──
+    sla_status = {"withinSla": 0, "nearBreach": 0, "breached": 0, "bySeverity": {}, "byAnalyst": {}}
+    for a in open_anomalies:
+        sev = a.get("severity", "low")
+        limit_h = sla_map.get(sev, 168)
+        age_h = age_hours(a)
+        status = "breached" if age_h > limit_h else "nearBreach" if age_h > limit_h * 0.75 else "withinSla"
+        sla_status[status] += 1
+        # By severity
+        if sev not in sla_status["bySeverity"]:
+            sla_status["bySeverity"][sev] = {"withinSla": 0, "nearBreach": 0, "breached": 0, "total": 0}
+        sla_status["bySeverity"][sev][status] += 1
+        sla_status["bySeverity"][sev]["total"] += 1
+        # By analyst (who claimed it)
+        claimer = a.get("claimedByName") or "Unclaimed"
+        if claimer not in sla_status["byAnalyst"]:
+            sla_status["byAnalyst"][claimer] = {"withinSla": 0, "nearBreach": 0, "breached": 0}
+        sla_status["byAnalyst"][claimer][status] += 1
+
+    sla_compliance_pct = round(sla_status["withinSla"] / max(len(open_anomalies), 1) * 100, 1)
+
+    # ── 4. CHERRY-PICKING INDEX ──
+    # Compare each analyst's resolved severity distribution against the pool distribution
+    pool_sev = {"high": 0, "medium": 0, "low": 0}
+    for a in anomalies:
+        s = a.get("severity", "low")
+        if s in pool_sev: pool_sev[s] += 1
+    pool_total = max(sum(pool_sev.values()), 1)
+    pool_pct_high = pool_sev["high"] / pool_total
+
+    for am in analyst_metrics:
+        total_resolved = sum(am["severityDistribution"].values())
+        if total_resolved > 0:
+            their_pct_high = am["severityDistribution"]["high"] / total_resolved
+            # Cherry-pick index: 1.0 = perfectly proportional, <0.5 = avoiding high-severity
+            am["cherryPickIndex"] = round(their_pct_high / max(pool_pct_high, 0.01), 2) if pool_pct_high > 0 else 1.0
+        else:
+            am["cherryPickIndex"] = None  # No data
+
+    # ── 5. QUEUE TREND — last 7 days ──
+    queue_trend = []
+    for d_offset in range(6, -1, -1):
+        day = (now - timedelta(days=d_offset)).replace(hour=0, minute=0, second=0, microsecond=0)
+        day_end = day + timedelta(days=1)
+        day_label = day.strftime("%a %d")
+        # Count actions that day
+        day_claims = sum(1 for e in activity if e.get("action") in ("invoice_claimed", "anomaly_claimed")
+                         and in_range(e.get("timestamp", ""), day) and not in_range(e.get("timestamp", ""), day_end))
+        day_resolved = sum(1 for e in activity if e.get("action") == "anomaly_resolved"
+                           and in_range(e.get("timestamp", ""), day) and not in_range(e.get("timestamp", ""), day_end))
+        day_new = sum(1 for e in activity if e.get("action") == "anomalies_detected"
+                      and in_range(e.get("timestamp", ""), day) and not in_range(e.get("timestamp", ""), day_end))
+        queue_trend.append({"day": day_label, "claimed": day_claims, "resolved": day_resolved, "new": day_new})
+
+    return {
+        "queueHealth": {
+            "totalActionable": len(actionable),
+            "unclaimed": len(unclaimed),
+            "claimed": len(claimed),
+            "agingBuckets": aging_buckets,
+            "openAnomalies": len(open_anomalies),
+            "blockedInvoices": len(blocked_invoices),
+            "reviewInvoices": len(review_invoices),
+        },
+        "analysts": sorted(analyst_metrics, key=lambda x: x["throughputWeek"], reverse=True),
+        "sla": {
+            **sla_status,
+            "compliancePct": sla_compliance_pct,
+            "config": sla_map,
+        },
+        "queueTrend": queue_trend,
+        "summary": {
+            "totalAnalysts": len(analysts),
+            "activeToday": sum(1 for am in analyst_metrics if am["throughputToday"] > 0),
+            "avgThroughputWeek": round(sum(am["throughputWeek"] for am in analyst_metrics) / max(len(analyst_metrics), 1), 1),
+            "avgResolutionHours": round(sum(am["avgResolutionHours"] for am in analyst_metrics if am["avgResolutionHours"] > 0) / max(sum(1 for am in analyst_metrics if am["avgResolutionHours"] > 0), 1), 1),
+        },
+    }
 
 # ============================================================
 # VENDOR MASTER — Canonical vendor register
@@ -1781,6 +2108,9 @@ async def refresh_vendor_profiles():
 async def get_triage_overview(user: dict = Depends(get_optional_user)):
     """Get triage overview: lane counts, auto-approve rate, blocked invoices."""
     db = get_db()
+    policy = db.get("_policy_state", DEFAULT_POLICY)
+    expiry = policy.get("claim_expiry_hours", DEFAULT_POLICY.get("claim_expiry_hours", 4))
+    _expire_stale_claims(db.get("invoices", []), expiry)
     decisions = db.get("triage_decisions", [])
     scope = get_user_vendor_scope(user)
     invoices = scope_by_vendor(db.get("invoices", []), scope)
