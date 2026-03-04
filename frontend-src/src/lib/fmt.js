@@ -1,7 +1,8 @@
 export const $ = (v, cur = 'USD') => {
-  const n = parseFloat(v) || 0;
+  const raw = parseFloat(v) || 0;
+  const n = Math.round(raw * 100) / 100;
   const sym = { USD: '$', EUR: '€', GBP: '£', INR: '₹', JPY: '¥', CNY: '¥', KRW: '₩', BRL: 'R$', AED: 'د.إ', SAR: '﷼' }[cur] || cur + ' ';
-  const hasDecimals = n % 1 !== 0;
+  const hasDecimals = Math.round(n * 100) % 100 !== 0;
   return sym + n.toLocaleString('en-US', { minimumFractionDigits: hasDecimals ? 2 : 0, maximumFractionDigits: 2 });
 };
 export const $f = (v, cur = 'USD') => {

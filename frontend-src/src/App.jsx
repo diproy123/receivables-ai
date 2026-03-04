@@ -390,7 +390,7 @@ function Dashboard() {
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
         <StatCard icon={FileText} label="Total Invoices" value={num(sb.total_invoices || 0)} color="#3b82f6" />
         <StatCard icon={Zap} label="Auto-Approved" value={pct(sb.auto_approve_rate)} sub={`${tri.auto_approved || 0} invoices`} color="#10b981" />
-        <StatCard icon={AlertTriangle} label="Open Anomalies" value={oa.length} sub={`${short(sb.total_risk || 0, 'USD')} at risk`} color="#ef4444" />
+        <StatCard icon={AlertTriangle} label="Open Anomalies" value={oa.length} sub={`${$f(sb.total_risk || 0)} at risk`} color="#ef4444" />
         <StatCard icon={Shield} label="Avg Confidence" value={pct(sb.avg_confidence)} color="#8b5cf6" />
       </div>
 
@@ -5311,7 +5311,8 @@ function SettingsPage() {
         }
         async function loadAuditLog() {
           const r = await api('/api/data-governance/audit-log?limit=50');
-          if (r) setAuditLog(r);
+          if (r && !r._err) setAuditLog(r);
+          else setAuditLog({ entries: [], summary: {}, _loaded: true });
         }
         async function loadVendorCtl(v) {
           if (!v) return;
@@ -5445,7 +5446,9 @@ function SettingsPage() {
                 <div className="p-3 bg-white rounded-xl border">
                   <div className="flex items-center justify-between mb-2">
                     <div className="text-[10px] font-bold text-slate-400 uppercase">LLM API Audit Log</div>
-                    <button onClick={loadAuditLog} className="text-xs text-blue-600 hover:underline">Load Log</button>
+                    <button onClick={async () => { setAuditLog('loading'); await loadAuditLog(); }} className="px-2.5 py-1 text-xs font-semibold text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-all">
+                      {auditLog === 'loading' ? 'Loading...' : 'Load Log'}
+                    </button>
                   </div>
                   {audit.total_calls > 0 && (
                     <div className="flex gap-4 mb-2 text-[10px]">
@@ -5454,6 +5457,9 @@ function SettingsPage() {
                       <span>PII Redacted: <b>{audit.pii_redacted_pct}%</b></span>
                       <span>Success: <b>{audit.success_rate}%</b></span>
                     </div>
+                  )}
+                  {auditLog && auditLog !== 'loading' && (!auditLog?.entries || auditLog.entries.length === 0) && (
+                    <div className="text-xs text-slate-400 py-3 text-center">No LLM API calls logged yet. Entries appear after document extraction or AI intelligence calls.</div>
                   )}
                   {auditLog?.entries?.length > 0 && (
                     <div className="max-h-40 overflow-y-auto space-y-1">
@@ -6415,7 +6421,7 @@ function LandingPage({ onGo, onFeatures }) {
   const totalRules = rc + 8;
 
   return (
-    <div className="min-h-screen bg-white overflow-hidden">
+    <div className="min-h-screen bg-white overflow-x-hidden">
 
       {/* ═══ NAV ═══ */}
       <nav className="fixed top-0 inset-x-0 z-50" style={{ background: 'rgba(255,255,255,0.72)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
@@ -6439,19 +6445,19 @@ function LandingPage({ onGo, onFeatures }) {
 
       {/* ═══ HERO — Dark editorial ═══ */}
       <section className="relative pt-16" style={{ background: 'linear-gradient(180deg, #0a0f1e 0%, #111827 60%, #1e293b 100%)' }}>
-        <div className="absolute top-20 left-1/4 w-[500px] h-[500px] rounded-full lp-glow" style={{ background: 'radial-gradient(circle, rgba(59,130,246,0.1) 0%, transparent 70%)' }} />
-        <div className="absolute top-40 right-1/4 w-[400px] h-[400px] rounded-full lp-glow" style={{ background: 'radial-gradient(circle, rgba(139,92,246,0.08) 0%, transparent 70%)', animationDelay: '2s' }} />
+        <div className="absolute top-20 left-1/4 w-[500px] h-[500px] rounded-full lp-glow hidden md:block" style={{ background: 'radial-gradient(circle, rgba(59,130,246,0.1) 0%, transparent 70%)' }} />
+        <div className="absolute top-40 right-1/4 w-[400px] h-[400px] rounded-full lp-glow hidden md:block" style={{ background: 'radial-gradient(circle, rgba(139,92,246,0.08) 0%, transparent 70%)', animationDelay: '2s' }} />
 
         <div className="relative z-10 max-w-6xl mx-auto px-6 pt-20 pb-24">
-          <div className="grid grid-cols-12 gap-10 items-center">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
             {/* Left */}
-            <div className="col-span-5">
+            <div className="col-span-1 lg:col-span-5">
               <div className="lp-reveal lp-reveal-1 inline-flex items-center gap-2 px-3 py-1.5 rounded-full mb-6" style={{ background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.25)' }}>
                 <div className="w-1.5 h-1.5 rounded-full bg-blue-400" />
                 <span className="text-xs font-semibold text-blue-300 tracking-wide">AI-POWERED AP AUDIT</span>
               </div>
 
-              <h1 className="lp-reveal lp-reveal-2 lp-serif text-[48px] font-extrabold leading-[1.05] tracking-[-0.02em] text-white mb-6">
+              <h1 className="lp-reveal lp-reveal-2 lp-serif text-[28px] md:text-[48px] font-extrabold leading-[1.05] tracking-[-0.02em] text-white mb-6">
                 Every invoice<br />audited.<br /><span className="lp-gradient-text">Before you pay.</span>
               </h1>
 
@@ -6486,7 +6492,7 @@ function LandingPage({ onGo, onFeatures }) {
                     <div className="flex gap-1.5"><div className="w-3 h-3 rounded-full bg-red-500/80" /><div className="w-3 h-3 rounded-full bg-amber-500/80" /><div className="w-3 h-3 rounded-full bg-emerald-500/80" /></div>
                     <div className="text-xs text-slate-400 ml-2 lp-mono">auditlens.app/dashboard</div>
                   </div>
-                  <div className="p-5 grid grid-cols-4 gap-3">
+                  <div className="p-5 grid grid-cols-2 md:grid-cols-4 gap-3">
                     {[
                       { label: 'Invoices Processed', val: '2,847', delta: '+124 today', color: '#60a5fa' },
                       { label: 'Anomalies Flagged', val: '183', delta: '6.4% rate', color: '#fbbf24' },
@@ -6539,7 +6545,7 @@ function LandingPage({ onGo, onFeatures }) {
           </div>
 
           {/* 4x3 AI capabilities grid */}
-          <div className="grid grid-cols-4 gap-4 mb-8">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
             {[
               { icon: <Zap className="w-4 h-4" />, title: 'Ensemble Extraction', desc: 'Two frontier models extract every field in parallel with consensus merging', color: '#4f46e5', bg: '#eef2ff' },
               { icon: <Brain className="w-4 h-4" />, title: 'Agentic Dispute Resolution', desc: 'Third model re-examines with vendor history when primary models disagree', color: '#7c3aed', bg: '#f5f3ff' },
@@ -6594,7 +6600,7 @@ function LandingPage({ onGo, onFeatures }) {
               <div className="flex-shrink-0"><ChevronRight className="w-5 h-5 text-slate-300" /></div>
 
               <div className="flex-1">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div className="rounded-xl p-4 lp-card-lift" style={{ background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)', border: '1px solid #c7d2fe' }}>
                     <div className="flex items-center gap-2 mb-2">
                       <div className="w-6 h-6 rounded-md bg-indigo-500 flex items-center justify-center"><Zap className="w-3 h-3 text-white" /></div>
@@ -6656,7 +6662,7 @@ function LandingPage({ onGo, onFeatures }) {
       <section className="px-6 pb-20">
         <div className="max-w-5xl mx-auto">
           <div className="rounded-2xl overflow-hidden" style={{ background: 'linear-gradient(135deg, #0f172a, #1a2744)' }}>
-            <div className="grid grid-cols-2">
+            <div className="grid grid-cols-1 md:grid-cols-2">
               <div className="p-10">
                 <div className="text-xs font-bold text-amber-400 uppercase tracking-[.15em] mb-4">AI In Action</div>
                 <h3 className="lp-serif text-3xl font-extrabold text-white leading-tight mb-4">
@@ -6720,7 +6726,7 @@ function LandingPage({ onGo, onFeatures }) {
             <p className="text-sm text-slate-500 mt-2">Three capabilities no other AP tool combines.</p>
           </div>
 
-          <div className="grid grid-cols-12 gap-5">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
             <div className="col-span-5 rounded-2xl p-7 lp-card-lift" style={{ background: 'linear-gradient(160deg, #eef2ff 0%, #e0e7ff 100%)', border: '1px solid #c7d2fe' }}>
               <div className="w-12 h-12 rounded-xl bg-indigo-500 flex items-center justify-center mb-5 shadow-lg shadow-indigo-200/60">
                 <Zap className="w-5 h-5 text-white" />
@@ -6775,7 +6781,7 @@ function LandingPage({ onGo, onFeatures }) {
               <h2 className="lp-serif text-2xl font-extrabold text-slate-900">Deploys how you need it</h2>
               <p className="text-sm text-slate-500 mt-1">Same product. Three privacy levels. One config change.</p>
             </div>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {[
                 { name: 'Standard', desc: 'Managed API', fr: 'Demo & SMBs', icon: <Zap className="w-4 h-4" />, color: '#3b82f6', bg: '#eff6ff', border: '#bfdbfe' },
                 { name: 'Enterprise VPC', desc: 'Bedrock / Vertex AI', fr: 'SOX-regulated F&A', icon: <Building2 className="w-4 h-4" />, color: '#059669', bg: '#ecfdf5', border: '#a7f3d0', rec: true },
@@ -6896,7 +6902,7 @@ function FeaturesPage({ onBack, onGo }) {
               {/* Extraction Pipeline */}
               <FeatureBlock icon={<Zap className="w-5 h-5 text-indigo-600" />} title="Ensemble Extraction Engine" tag="AI">
                 <p>Two frontier AI models (Sonnet + Haiku) extract every field in parallel — vendor name, invoice number, line items, tax details, payment terms, and more. A consensus engine merges results with field-level confidence scoring. When critical fields disagree, a third agentic model re-examines the document with vendor history, correction patterns, and PO context to break the tie.</p>
-                <div className="grid grid-cols-3 gap-3 mt-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
                   <MiniStat label="Extraction time" value="3–6 sec" />
                   <MiniStat label="Fields extracted" value="25+" />
                   <MiniStat label="Supported formats" value="PDF, PNG, JPEG" />
@@ -6984,7 +6990,7 @@ function FeaturesPage({ onBack, onGo }) {
               </div>
 
               {/* Deployment Modes */}
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {[
                   { icon: '🚀', name: 'Standard', target: 'Demo & SMBs', provider: 'Anthropic Cloud', embed: 'Voyage API', train: 'Together.ai',
                     data: true, details: 'Fastest setup. Managed API with optional ZDR.', envs: 'LLM_PROVIDER=anthropic', color: 'border-blue-200 bg-blue-50/30' },
@@ -7044,7 +7050,7 @@ function FeaturesPage({ onBack, onGo }) {
                 <p className="text-sm text-slate-500">Built for regulated environments.</p>
               </div>
 
-              <div className="grid grid-cols-2 gap-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 {[
                   { badge: 'SOX Section 404', items: ['Segregation of duties via 4-tier RBAC', 'Configurable approval authority by role, amount, and currency', 'Complete audit trail — who, what, when, and why', 'Deterministic anomaly detection (no AI dependency for compliance)'] },
                   { badge: 'SOC 2 Type II', items: ['JWT authentication with token expiration', 'Role-based access control (Analyst → Manager → Director → Admin)', 'All API endpoints authenticated', 'Activity logging for every action'] },
@@ -7297,7 +7303,7 @@ function DataGovernancePage() {
       {tab === 'overview' && (
         <div className="space-y-6">
           {/* Provider Status Cards */}
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-white rounded-xl border p-5">
               <div className="text-xs text-slate-400 uppercase tracking-wider mb-1">LLM Provider</div>
               <div className="text-lg font-bold text-slate-900">{(provider.provider || 'unknown').toUpperCase()}</div>
@@ -7344,7 +7350,7 @@ function DataGovernancePage() {
             </div>
             <div className="bg-white rounded-xl border p-5">
               <h3 className="font-semibold text-slate-700 mb-3">LLM Call Audit Summary</h3>
-              <div className="grid grid-cols-3 gap-3 text-center">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-center">
                 <div><div className="text-2xl font-bold text-indigo-600">{audit.total_calls || 0}</div><div className="text-xs text-slate-400">Total Calls</div></div>
                 <div><div className="text-2xl font-bold text-emerald-600">{audit.success_rate || 100}%</div><div className="text-xs text-slate-400">Success Rate</div></div>
                 <div><div className="text-2xl font-bold text-purple-600">{audit.pii_redacted_pct || 0}%</div><div className="text-xs text-slate-400">PII Redacted</div></div>
@@ -7399,7 +7405,7 @@ function DataGovernancePage() {
         <div>
           {/* Summary bar */}
           {auditLog?.summary && (
-            <div className="grid grid-cols-5 gap-3 mb-4">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
               {Object.entries(auditLog.summary.by_module || {}).map(([mod, count]) => (
                 <div key={mod} className="bg-white rounded-lg border p-3 text-center">
                   <div className="text-lg font-bold text-indigo-600">{count}</div>
@@ -7450,7 +7456,7 @@ function DataGovernancePage() {
       {tab === 'presets' && (
         <div className="space-y-4">
           <p className="text-sm text-slate-500 mb-4">Deployment presets configure all privacy-related settings at once. Set via <code className="bg-slate-100 px-1 rounded text-xs">DEPLOYMENT_PRESET</code> environment variable.</p>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {[
               { key: 'standard', name: 'Standard', desc: 'Anthropic Cloud + Voyage + Together.ai', icon: '🚀', suited: 'Demo, non-regulated SMBs', color: 'blue' },
               { key: 'enterprise_private', name: 'Enterprise Private Cloud', desc: 'Bedrock/Vertex + local embeddings + no Together.ai', icon: '🏢', suited: 'SOX-regulated, enterprise F&A', color: 'emerald' },
@@ -7479,7 +7485,7 @@ function DataGovernancePage() {
           {preset.effective_config && (
             <div className="bg-white rounded-xl border p-5 mt-4">
               <h3 className="font-semibold text-slate-700 mb-3">Current Effective Configuration</h3>
-              <div className="grid grid-cols-5 gap-4 text-sm">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
                 {Object.entries(preset.effective_config).map(([k, v]) => (
                   <div key={k}>
                     <div className="text-xs text-slate-400 uppercase">{k.replace(/_/g, ' ')}</div>
@@ -7619,8 +7625,10 @@ export default function App() {
   const [view, setView] = useState(s.user || s.token ? 'app' : 'landing');
 
   useEffect(() => {
-    if (view === 'landing') load();
-  }, [view, load]);
+    // Only bootstrap after user is authenticated — not on landing page
+    const token = localStorage.getItem('al_token');
+    if (token && !s.loaded) load();
+  }, [view, load, s.loaded]);
 
   useEffect(() => {
     if (s.user && s.token) setView('app');

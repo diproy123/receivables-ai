@@ -678,23 +678,74 @@ def audit_log_llm_call(module: str, model: str, data_type: str = "text",
 
 
 def get_audit_log(limit: int = 100, module: str = None) -> list:
-    """Retrieve recent LLM audit log entries."""
+    """Retrieve recent LLM audit log entries.
+    Falls back to persisted activity_log if in-memory buffer is empty (e.g. after restart)."""
     entries = _AUDIT_LOG[-limit:]
+    if not entries:
+        # Fallback: read from persisted activity_log in db.json
+        try:
+            from backend.db import get_db
+            db = get_db()
+            persisted = [e for e in db.get("activity_log", []) if e.get("action") == "llm_api_call"]
+            entries = [
+                {
+                    "timestamp": e.get("timestamp", ""),
+                    "module": e.get("details", "").split(" → ")[0] if " → " in e.get("details", "") else "unknown",
+                    "model": e.get("details", "").split(" → ")[1].split(" (")[0] if " → " in e.get("details", "") else "unknown",
+                    "data_type": e.get("details", "").split("(")[-1].rstrip(")") if "(" in e.get("details", "") else "text",
+                    "provider": e.get("provider", LLM_PROVIDER),
+                    "latency_ms": e.get("latency_ms", 0),
+                    "vendor": e.get("vendor", ""),
+                    "pii_redacted": False,
+                    "success": True,
+                    "error": "",
+                    "zdr_active": LLM_ZERO_DATA_RETENTION,
+                    "data_residency": e.get("data_residency", "unknown"),
+                }
+                for e in persisted[-limit:]
+            ]
+        except Exception:
+            entries = []
     if module:
-        entries = [e for e in entries if e["module"] == module]
+        entries = [e for e in entries if e.get("module") == module]
     return list(reversed(entries))  # Most recent first
 
 
 def get_audit_summary() -> dict:
     """Aggregate audit stats for data governance dashboard."""
-    if not _AUDIT_LOG:
-        return {"total_calls": 0, "by_module": {}, "by_provider": {},
-                "by_data_type": {}, "avg_latency_ms": 0, "pii_redacted_pct": 0}
+    source = list(_AUDIT_LOG)
+    if not source:
+        # Fallback: count persisted llm_api_call entries
+        try:
+            from backend.db import get_db
+            db = get_db()
+            source = [e for e in db.get("activity_log", []) if e.get("action") == "llm_api_call"]
+            if not source:
+                return {"total_calls": 0, "by_module": {}, "by_provider": {},
+                        "by_data_type": {}, "avg_latency_ms": 0, "pii_redacted_pct": 0, "success_rate": 100}
+            total = len(source)
+            by_module = {}
+            total_latency = 0
+            for e in source:
+                detail = e.get("details", "")
+                mod = detail.split(" → ")[0] if " → " in detail else "unknown"
+                by_module[mod] = by_module.get(mod, 0) + 1
+                total_latency += e.get("latency_ms", 0)
+            return {
+                "total_calls": total, "by_module": by_module,
+                "by_provider": {e.get("provider", "unknown"): total},
+                "by_data_type": {}, "avg_latency_ms": round(total_latency / max(total, 1)),
+                "pii_redacted_pct": 0, "success_rate": 100,
+                "zdr_active": LLM_ZERO_DATA_RETENTION,
+            }
+        except Exception:
+            return {"total_calls": 0, "by_module": {}, "by_provider": {},
+                    "by_data_type": {}, "avg_latency_ms": 0, "pii_redacted_pct": 0, "success_rate": 100}
 
-    total = len(_AUDIT_LOG)
+    total = len(source)
     by_module = {}; by_provider = {}; by_data_type = {}
     total_latency = 0; pii_count = 0
-    for e in _AUDIT_LOG:
+    for e in source:
         by_module[e["module"]] = by_module.get(e["module"], 0) + 1
         by_provider[e["provider"]] = by_provider.get(e["provider"], 0) + 1
         by_data_type[e["data_type"]] = by_data_type.get(e["data_type"], 0) + 1
@@ -710,7 +761,7 @@ def get_audit_summary() -> dict:
         "avg_latency_ms": round(total_latency / max(total, 1)),
         "pii_redacted_pct": round(pii_count / max(total, 1) * 100, 1),
         "zdr_active": LLM_ZERO_DATA_RETENTION,
-        "success_rate": round(sum(1 for e in _AUDIT_LOG if e["success"]) / max(total, 1) * 100, 1),
+        "success_rate": round(sum(1 for e in source if e.get("success")) / max(total, 1) * 100, 1),
     }
 
 

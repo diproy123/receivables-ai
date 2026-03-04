@@ -1344,7 +1344,7 @@ async def get_anomalies(user: dict = Depends(get_optional_user)):
         "summary": {"total": len(an), "open": len(op),
             "resolved": sum(1 for a in an if a.get("status") == "resolved"),
             "dismissed": sum(1 for a in an if a.get("status") == "dismissed"),
-            "total_risk": round(sum(a.get("amount_at_risk", 0) for a in op if a.get("amount_at_risk", 0) > 0), 2),
+            "total_risk": round(sum(a.get("amount_at_risk", 0) for a in op if a.get("amount_at_risk", 0) > 0)),
             "savings_opportunities": round(abs(sum(a.get("amount_at_risk", 0) for a in op if a.get("type") == "EARLY_PAYMENT_DISCOUNT")), 2),
             "by_type": {t: sum(1 for a in an if a.get("type") == t) for t in set(a.get("type") for a in an)},
             "by_severity": {"high": sum(1 for a in op if a.get("severity") == "high"),
@@ -3012,7 +3012,7 @@ async def get_dashboard(user: dict = Depends(get_optional_user)):
     worsening_vendors = [p for p in profiles if p.get("trend") == "worsening"]
 
     # ── Pre-compute values needed by both legacy and React frontend ──
-    _total_risk = round(sum(_n(a.get("amount_at_risk")) for a in oa if _n(a.get("amount_at_risk")) > 0), 2)
+    _total_risk = round(sum(_n(a.get("amount_at_risk")) for a in oa if _n(a.get("amount_at_risk")) > 0))
     _high_severity = sum(1 for a in oa if a.get("severity") == "high")
     # Savings = only RESOLVED anomalies (confirmed and acted upon).
     # Open anomalies are unconfirmed risk, NOT savings.
@@ -3027,10 +3027,10 @@ async def get_dashboard(user: dict = Depends(get_optional_user)):
     # ── React frontend reads dash.summary_bar for stat cards ──
     _summary_bar = {
         "total_invoices": _total_invoices,
-        "total_ap": round(tar, 2),
+        "total_ap": round(tar),
         "auto_approve_rate": auto_approve_rate,
         "total_risk": _total_risk,
-        "avg_confidence": round(ac, 1),
+        "avg_confidence": round(ac),
         "high_severity": _high_severity,
         "savings_discovered": _savings_discovered,
         "processing_speed": _processing_speed,
@@ -3074,7 +3074,7 @@ async def get_dashboard(user: dict = Depends(get_optional_user)):
         # ── Case metrics (sidebar badge reads dash.cases.active) ──
         "cases": compute_case_metrics(db.get("cases", []), db.get("users", [])),
         # ── Legacy/backward-compat top-level fields ──
-        "total_ap": round(tar, 2), "total_ar": round(tar, 2),
+        "total_ap": round(tar), "total_ar": round(tar),
         "unpaid_count": len(unpaid), "total_documents": len(ad),
         "invoice_count": _total_invoices, "po_count": len(db["purchase_orders"]),
         "grn_count": len(db.get("goods_receipts", [])),
@@ -3083,7 +3083,7 @@ async def get_dashboard(user: dict = Depends(get_optional_user)):
         "review_needed": sum(1 for m in all_matches if m["status"] == "review_needed"),
         "three_way_matched": sum(1 for m in all_matches if m.get("matchType") == "three_way"),
         "two_way_only": sum(1 for m in all_matches if m.get("matchType") != "three_way"),
-        "avg_confidence": round(ac, 1), "anomaly_count": len(oa),
+        "avg_confidence": round(ac), "anomaly_count": len(oa),
         "total_risk": _total_risk, "high_severity": _high_severity,
         "savings_discovered": _savings_discovered,
         "savings_breakdown": {
@@ -3106,7 +3106,7 @@ async def get_dashboard(user: dict = Depends(get_optional_user)):
         "disputed_count": sum(1 for i in all_invoices if i.get("status") == "disputed"),
         "due_in_7_days": len(due_7d), "due_in_7_days_amount": round(sum(i["amount"] for i in due_7d), 2),
         "early_payment_savings": round(epd_savings, 2),
-        "top_vendors": [{"vendor": vendor_display.get(v, v), "spend": round(s, 2)} for v, s in top_vendors],
+        "top_vendors": [{"vendor": vendor_display.get(v, v), "spend": round(s)} for v, s in top_vendors],
         "recent_activity": sorted(db.get("activity_log", []), key=lambda x: x.get("timestamp", ""), reverse=True)[:10],
         "verified_count": sum(1 for d in ad if d.get("manuallyVerified")),
         "correction_patterns": len(db.get("correction_patterns", [])),
