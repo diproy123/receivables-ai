@@ -6404,6 +6404,9 @@ function DocModal() {
    LANDING PAGE — Editorial Fintech Design
    Dark hero → Pipeline → AI Proof → Differentiators → Deploy → CTA
    ═══════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════
+   LANDING PAGE
+   ═══════════════════════════════════════════════════ */
 function LandingPage({ onGo, onFeatures }) {
   const { s } = useStore();
   const ps = s.ps || {};
@@ -6414,7 +6417,7 @@ function LandingPage({ onGo, onFeatures }) {
   return (
     <div className="min-h-screen bg-white overflow-hidden">
 
-      {/* ═══ NAV — Frosted glass ═══ */}
+      {/* ═══ NAV ═══ */}
       <nav className="fixed top-0 inset-x-0 z-50" style={{ background: 'rgba(255,255,255,0.72)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -6422,56 +6425,54 @@ function LandingPage({ onGo, onFeatures }) {
               <Shield className="w-4 h-4 text-white" />
             </div>
             <div className="leading-tight">
-              <div className="text-base font-bold tracking-tight text-slate-900">AuditLens</div>
-              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-[.2em] -mt-0.5">AP Intelligence</div>
+              <div className="text-lg font-bold tracking-tight text-slate-900">AuditLens</div>
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-[.2em] -mt-0.5">AP Intelligence</div>
             </div>
           </div>
           <div className="flex items-center gap-5">
-            <button onClick={onFeatures} className="text-[13px] font-medium text-slate-500 hover:text-slate-900 transition-colors">Features</button>
-            <button onClick={onGo} className="text-[13px] font-medium text-slate-500 hover:text-slate-900 transition-colors">Sign In</button>
-            <button onClick={onGo} className="px-5 py-2 text-[13px] font-semibold text-white rounded-lg transition-all hover:opacity-90" style={{ background: 'linear-gradient(135deg, #0f172a, #1e293b)' }}>Get Started →</button>
+            <button onClick={onFeatures} className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors">Features</button>
+            <button onClick={onGo} className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors">Sign In</button>
+            <button onClick={onGo} className="px-5 py-2.5 text-sm font-semibold text-white rounded-lg transition-all hover:opacity-90" style={{ background: 'linear-gradient(135deg, #0f172a, #1e293b)' }}>Get Started →</button>
           </div>
         </div>
       </nav>
 
-      {/* ═══ HERO — Dark, editorial, with product visual ═══ */}
+      {/* ═══ HERO — Dark editorial ═══ */}
       <section className="relative pt-16" style={{ background: 'linear-gradient(180deg, #0a0f1e 0%, #111827 60%, #1e293b 100%)' }}>
-        {/* Ambient orbs */}
-        <div className="absolute top-20 left-1/4 w-[500px] h-[500px] rounded-full lp-glow" style={{ background: 'radial-gradient(circle, rgba(59,130,246,0.08) 0%, transparent 70%)' }} />
-        <div className="absolute top-40 right-1/4 w-[400px] h-[400px] rounded-full lp-glow" style={{ background: 'radial-gradient(circle, rgba(139,92,246,0.06) 0%, transparent 70%)', animationDelay: '2s' }} />
+        <div className="absolute top-20 left-1/4 w-[500px] h-[500px] rounded-full lp-glow" style={{ background: 'radial-gradient(circle, rgba(59,130,246,0.1) 0%, transparent 70%)' }} />
+        <div className="absolute top-40 right-1/4 w-[400px] h-[400px] rounded-full lp-glow" style={{ background: 'radial-gradient(circle, rgba(139,92,246,0.08) 0%, transparent 70%)', animationDelay: '2s' }} />
 
         <div className="relative z-10 max-w-6xl mx-auto px-6 pt-20 pb-24">
-          <div className="grid grid-cols-12 gap-8 items-center">
-            {/* Left: Copy */}
+          <div className="grid grid-cols-12 gap-10 items-center">
+            {/* Left */}
             <div className="col-span-5">
-              <div className="lp-reveal lp-reveal-1 inline-flex items-center gap-2 px-3 py-1.5 rounded-full mb-6" style={{ background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.2)' }}>
+              <div className="lp-reveal lp-reveal-1 inline-flex items-center gap-2 px-3 py-1.5 rounded-full mb-6" style={{ background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.25)' }}>
                 <div className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-                <span className="text-[11px] font-semibold text-blue-300 tracking-wide">AI-POWERED AP AUDIT</span>
+                <span className="text-xs font-semibold text-blue-300 tracking-wide">AI-POWERED AP AUDIT</span>
               </div>
 
-              <h1 className="lp-reveal lp-reveal-2 lp-serif text-[46px] font-extrabold leading-[1.05] tracking-[-0.02em] text-white mb-5">
+              <h1 className="lp-reveal lp-reveal-2 lp-serif text-[48px] font-extrabold leading-[1.05] tracking-[-0.02em] text-white mb-6">
                 Every invoice<br />audited.<br /><span className="lp-gradient-text">Before you pay.</span>
               </h1>
 
-              <p className="lp-reveal lp-reveal-3 text-[15px] text-slate-400 leading-relaxed mb-8 max-w-md">
+              <p className="lp-reveal lp-reveal-3 text-base text-slate-300 leading-relaxed mb-8 max-w-md">
                 AI extracts, matches, and flags anomalies across every line item — recovering 1–3% of spend that manual review misses.
               </p>
 
-              <div className="lp-reveal lp-reveal-4 flex gap-3 mb-8">
-                <button onClick={onGo} className="px-6 py-3 text-sm font-semibold text-slate-900 bg-white rounded-xl hover:bg-slate-100 transition-all shadow-lg shadow-white/10">Upload Your First Invoice →</button>
-                <button onClick={onFeatures} className="px-6 py-3 text-sm font-semibold text-slate-300 border border-slate-700 rounded-xl hover:border-slate-500 hover:text-white transition-all">See Features</button>
+              <div className="lp-reveal lp-reveal-4 flex gap-3 mb-10">
+                <button onClick={onGo} className="px-7 py-3.5 text-sm font-semibold text-slate-900 bg-white rounded-xl hover:bg-slate-100 transition-all shadow-lg shadow-white/10">Upload Your First Invoice →</button>
+                <button onClick={onFeatures} className="px-7 py-3.5 text-sm font-semibold text-slate-200 border border-slate-600 rounded-xl hover:border-slate-400 hover:text-white transition-all">See Features</button>
               </div>
 
-              {/* Micro-stats */}
-              <div className="lp-reveal lp-reveal-5 flex gap-6">
+              <div className="lp-reveal lp-reveal-5 flex gap-8">
                 {[
                   { val: '<8s', label: 'End-to-end' },
                   { val: `${totalRules}`, label: 'Audit rules' },
                   { val: '100%', label: 'Coverage' },
-                ].map(s => (
-                  <div key={s.label}>
-                    <div className="lp-number text-xl font-bold text-white lp-mono">{s.val}</div>
-                    <div className="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">{s.label}</div>
+                ].map(st => (
+                  <div key={st.label}>
+                    <div className="lp-number text-2xl font-bold text-white lp-mono">{st.val}</div>
+                    <div className="text-xs text-slate-400 uppercase tracking-wider mt-1">{st.label}</div>
                   </div>
                 ))}
               </div>
@@ -6480,45 +6481,41 @@ function LandingPage({ onGo, onFeatures }) {
             {/* Right: Product mockup */}
             <div className="col-span-7 lp-scale">
               <div className="relative lp-float" style={{ animationDuration: '8s' }}>
-                {/* Dashboard mockup */}
-                <div className="rounded-2xl overflow-hidden border border-slate-700/50 shadow-2xl shadow-black/40" style={{ background: 'linear-gradient(145deg, #1e293b, #0f172a)' }}>
-                  {/* Title bar */}
-                  <div className="flex items-center gap-2 px-4 py-2.5 border-b border-slate-700/50">
-                    <div className="flex gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-red-500/70" /><div className="w-2.5 h-2.5 rounded-full bg-amber-500/70" /><div className="w-2.5 h-2.5 rounded-full bg-emerald-500/70" /></div>
-                    <div className="text-[10px] text-slate-500 ml-2 lp-mono">auditlens.app/dashboard</div>
+                <div className="rounded-2xl overflow-hidden shadow-2xl shadow-black/50" style={{ background: 'linear-gradient(145deg, #1e293b, #0f172a)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                  <div className="flex items-center gap-2 px-4 py-3 border-b" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
+                    <div className="flex gap-1.5"><div className="w-3 h-3 rounded-full bg-red-500/80" /><div className="w-3 h-3 rounded-full bg-amber-500/80" /><div className="w-3 h-3 rounded-full bg-emerald-500/80" /></div>
+                    <div className="text-xs text-slate-400 ml-2 lp-mono">auditlens.app/dashboard</div>
                   </div>
-                  {/* Simulated dashboard content */}
                   <div className="p-5 grid grid-cols-4 gap-3">
                     {[
-                      { label: 'Invoices Processed', val: '2,847', delta: '+124 today', color: '#3b82f6' },
-                      { label: 'Anomalies Flagged', val: '183', delta: '6.4% rate', color: '#f59e0b' },
-                      { label: 'Spend Recovered', val: '$847K', delta: '2.1% of total', color: '#10b981' },
-                      { label: 'Auto-Approved', val: '71%', delta: 'Straight-through', color: '#8b5cf6' },
+                      { label: 'Invoices Processed', val: '2,847', delta: '+124 today', color: '#60a5fa' },
+                      { label: 'Anomalies Flagged', val: '183', delta: '6.4% rate', color: '#fbbf24' },
+                      { label: 'Spend Recovered', val: '$847K', delta: '2.1% of total', color: '#34d399' },
+                      { label: 'Auto-Approved', val: '71%', delta: 'Straight-through', color: '#a78bfa' },
                     ].map(m => (
-                      <div key={m.label} className="rounded-lg p-3" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                        <div className="text-[9px] text-slate-500 uppercase tracking-wider mb-1">{m.label}</div>
-                        <div className="text-lg font-bold text-white lp-mono">{m.val}</div>
-                        <div className="text-[10px] mt-0.5" style={{ color: m.color }}>{m.delta}</div>
+                      <div key={m.label} className="rounded-lg p-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                        <div className="text-[10px] text-slate-400 uppercase tracking-wider mb-1.5">{m.label}</div>
+                        <div className="text-xl font-bold text-white lp-mono">{m.val}</div>
+                        <div className="text-xs mt-1 font-medium" style={{ color: m.color }}>{m.delta}</div>
                       </div>
                     ))}
                   </div>
-                  {/* Simulated table rows */}
-                  <div className="px-5 pb-4">
-                    <div className="rounded-lg overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+                  <div className="px-5 pb-5">
+                    <div className="rounded-lg overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.07)' }}>
                       {[
-                        { inv: 'INV-2024-0847', vendor: 'Acme Logistics', amt: '$124,800', status: 'Flagged', sc: '#f59e0b', anomaly: 'Price overcharge +$4,200 vs contract' },
-                        { inv: 'INV-2024-0848', vendor: 'Global Shipping Co', amt: '$67,350', status: 'Matched', sc: '#10b981', anomaly: '3-way match ✓' },
-                        { inv: 'INV-2024-0849', vendor: 'TechServe Ltd', amt: '$215,000', status: 'Blocked', sc: '#ef4444', anomaly: 'Duplicate of INV-2024-0712' },
+                        { inv: 'INV-2024-0847', vendor: 'Acme Logistics', amt: '$124,800', status: 'Flagged', sc: '#fbbf24', anomaly: 'Price overcharge +$4,200 vs contract' },
+                        { inv: 'INV-2024-0848', vendor: 'Global Shipping Co', amt: '$67,350', status: 'Matched', sc: '#34d399', anomaly: '3-way match ✓' },
+                        { inv: 'INV-2024-0849', vendor: 'TechServe Ltd', amt: '$215,000', status: 'Blocked', sc: '#f87171', anomaly: 'Duplicate of INV-2024-0712' },
                       ].map((r, i) => (
-                        <div key={r.inv} className="flex items-center justify-between px-3 py-2" style={{ background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                          <div className="flex items-center gap-3">
-                            <span className="text-[10px] lp-mono text-slate-400">{r.inv}</span>
-                            <span className="text-[11px] text-slate-300">{r.vendor}</span>
+                        <div key={r.inv} className="flex items-center justify-between px-4 py-3" style={{ background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                          <div className="flex items-center gap-4">
+                            <span className="text-xs lp-mono text-slate-400">{r.inv}</span>
+                            <span className="text-sm text-slate-200 font-medium">{r.vendor}</span>
                           </div>
-                          <div className="flex items-center gap-3">
-                            <span className="text-[10px] text-slate-400">{r.anomaly}</span>
-                            <span className="text-[10px] lp-mono text-white">{r.amt}</span>
-                            <span className="px-2 py-0.5 rounded text-[9px] font-bold" style={{ color: r.sc, background: `${r.sc}15` }}>{r.status}</span>
+                          <div className="flex items-center gap-4">
+                            <span className="text-xs text-slate-400">{r.anomaly}</span>
+                            <span className="text-sm lp-mono text-white font-semibold">{r.amt}</span>
+                            <span className="px-2.5 py-1 rounded text-[10px] font-bold" style={{ color: r.sc, background: `${r.sc}18` }}>{r.status}</span>
                           </div>
                         </div>
                       ))}
@@ -6529,36 +6526,73 @@ function LandingPage({ onGo, onFeatures }) {
             </div>
           </div>
         </div>
-
-        {/* Gradient fade to white */}
         <div className="h-24" style={{ background: 'linear-gradient(180deg, #1e293b, #ffffff)' }} />
       </section>
 
-      {/* ═══ ENSEMBLE PIPELINE — The technical differentiator, visualized ═══ */}
+      {/* ═══ AI INTELLIGENCE SUITE — Comprehensive AI capabilities ═══ */}
       <section className="px-6 pb-20 -mt-4">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-10">
-            <div className="text-[11px] font-bold text-blue-500 uppercase tracking-[.15em] mb-2">How It Works</div>
+            <div className="text-xs font-bold text-indigo-500 uppercase tracking-[.15em] mb-2">12 AI Capabilities</div>
+            <h2 className="lp-serif text-3xl font-extrabold text-slate-900 tracking-tight">AI at every step of the AP workflow</h2>
+            <p className="text-sm text-slate-500 mt-3 max-w-2xl mx-auto">Not a chatbot bolted onto legacy software. AI is woven into extraction, matching, anomaly detection, investigation, and vendor management — each grounded in your actual data.</p>
+          </div>
+
+          {/* 4x3 AI capabilities grid */}
+          <div className="grid grid-cols-4 gap-4 mb-8">
+            {[
+              { icon: <Zap className="w-4 h-4" />, title: 'Ensemble Extraction', desc: 'Two frontier models extract every field in parallel with consensus merging', color: '#4f46e5', bg: '#eef2ff' },
+              { icon: <Brain className="w-4 h-4" />, title: 'Agentic Dispute Resolution', desc: 'Third model re-examines with vendor history when primary models disagree', color: '#7c3aed', bg: '#f5f3ff' },
+              { icon: <Link2 className="w-4 h-4" />, title: 'Smart PO Matching', desc: 'AI fuzzy-matches invoices to POs and GRNs across format inconsistencies', color: '#059669', bg: '#ecfdf5' },
+              { icon: <AlertTriangle className="w-4 h-4" />, title: 'RAG Anomaly Detection', desc: 'AI cross-references past anomalies, contract clauses, and vendor patterns', color: '#d97706', bg: '#fffbeb' },
+              { icon: <FileText className="w-4 h-4" />, title: 'AI Investigation Briefs', desc: 'One-click case summaries grounded in invoice data, PO context, and history', color: '#2563eb', bg: '#eff6ff' },
+              { icon: <AlertCircle className="w-4 h-4" />, title: 'Anomaly Explanations', desc: 'Plain-language explanations of what was expected vs. found and why it matters', color: '#dc2626', bg: '#fef2f2' },
+              { icon: <Send className="w-4 h-4" />, title: 'Vendor Dispute Drafts', desc: 'AI-drafted dispute letters with contract references and corrected amounts', color: '#9333ea', bg: '#faf5ff' },
+              { icon: <TrendingUp className="w-4 h-4" />, title: 'Vendor Behavior Analytics', desc: '9-factor risk scoring with AI-synthesized spending trends and pattern analysis', color: '#0891b2', bg: '#ecfeff' },
+              { icon: <Shield className="w-4 h-4" />, title: 'Contract Intelligence', desc: 'Price drift, expiry risk, underbilling detection against live contract terms', color: '#0369a1', bg: '#f0f9ff' },
+              { icon: <Settings className="w-4 h-4" />, title: 'Natural Language Policy', desc: 'Describe AP rules in plain English — AI translates to audit parameters', color: '#64748b', bg: '#f8fafc' },
+              { icon: <Brain className="w-4 h-4" />, title: 'LoRA Fine-Tuning', desc: 'Model learns from analyst corrections — accuracy improves per vendor over time', color: '#be123c', bg: '#fff1f2' },
+              { icon: <Activity className="w-4 h-4" />, title: 'Payment Prioritization', desc: 'AI ranks pending payments by discount capture, risk, and cash flow impact', color: '#15803d', bg: '#f0fdf4' },
+            ].map(f => (
+              <div key={f.title} className="rounded-xl p-4 lp-card-lift" style={{ background: f.bg, border: `1px solid ${f.color}20` }}>
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center mb-3" style={{ background: f.color, color: 'white' }}>{f.icon}</div>
+                <div className="text-sm font-bold text-slate-900 mb-1">{f.title}</div>
+                <div className="text-xs text-slate-600 leading-relaxed">{f.desc}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* AI guarantee bar */}
+          <div className="rounded-xl px-6 py-4 flex items-center gap-4" style={{ background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)', border: '1px solid #c7d2fe' }}>
+            <div className="w-10 h-10 rounded-lg bg-indigo-500 flex items-center justify-center flex-shrink-0"><CheckCircle2 className="w-5 h-5 text-white" /></div>
+            <div>
+              <div className="text-sm font-bold text-indigo-900">Grounded AI — No Hallucinations</div>
+              <div className="text-xs text-indigo-600">Every AI insight cites specific fields, rules, or statistics. If it can't be grounded in real data, the claim isn't made. Deterministic fallbacks for every feature.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ═══ ENSEMBLE PIPELINE — Visual differentiator ═══ */}
+      <section className="px-6 pb-20">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-8">
+            <div className="text-xs font-bold text-blue-500 uppercase tracking-[.15em] mb-2">Core Innovation</div>
             <h2 className="lp-serif text-3xl font-extrabold text-slate-900 tracking-tight">Two AI models. One source of truth.</h2>
             <p className="text-sm text-slate-500 mt-2 max-w-lg mx-auto">Every other AP tool runs one model and hopes it's right. AuditLens runs two, compares every field, and resolves disputes with your data.</p>
           </div>
 
-          {/* Pipeline visualization */}
           <div className="relative rounded-2xl p-8 overflow-hidden" style={{ background: 'linear-gradient(135deg, #f8fafc, #f1f5f9)', border: '1px solid #e2e8f0' }}>
             <div className="flex items-center justify-between gap-4">
-              {/* Step 1: Document */}
               <div className="flex-shrink-0 text-center">
                 <div className="w-16 h-20 rounded-xl mx-auto mb-2 flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #1e293b, #334155)' }}>
                   <FileText className="w-7 h-7 text-white" />
                 </div>
                 <div className="text-xs font-bold text-slate-700">Invoice PDF</div>
-                <div className="text-[10px] text-slate-400">uploaded</div>
               </div>
 
-              {/* Arrow */}
               <div className="flex-shrink-0"><ChevronRight className="w-5 h-5 text-slate-300" /></div>
 
-              {/* Step 2: Parallel models */}
               <div className="flex-1">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="rounded-xl p-4 lp-card-lift" style={{ background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)', border: '1px solid #c7d2fe' }}>
@@ -6566,10 +6600,10 @@ function LandingPage({ onGo, onFeatures }) {
                       <div className="w-6 h-6 rounded-md bg-indigo-500 flex items-center justify-center"><Zap className="w-3 h-3 text-white" /></div>
                       <span className="text-xs font-bold text-indigo-800">Model A · Sonnet</span>
                     </div>
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[10px]"><span className="text-indigo-400">vendor</span><span className="text-indigo-700 font-semibold lp-mono">Acme Corp</span></div>
-                      <div className="flex justify-between text-[10px]"><span className="text-indigo-400">total</span><span className="text-indigo-700 font-semibold lp-mono">$124,800.00</span></div>
-                      <div className="flex justify-between text-[10px]"><span className="text-indigo-400">tax</span><span className="text-indigo-700 font-semibold lp-mono">$11,232.00</span></div>
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-xs"><span className="text-indigo-400">vendor</span><span className="text-indigo-800 font-semibold lp-mono">Acme Corp</span></div>
+                      <div className="flex justify-between text-xs"><span className="text-indigo-400">total</span><span className="text-indigo-800 font-semibold lp-mono">$124,800</span></div>
+                      <div className="flex justify-between text-xs"><span className="text-indigo-400">tax</span><span className="text-indigo-800 font-semibold lp-mono">$11,232</span></div>
                     </div>
                   </div>
                   <div className="rounded-xl p-4 lp-card-lift" style={{ background: 'linear-gradient(135deg, #f0fdf4, #dcfce7)', border: '1px solid #bbf7d0' }}>
@@ -6577,43 +6611,39 @@ function LandingPage({ onGo, onFeatures }) {
                       <div className="w-6 h-6 rounded-md bg-emerald-500 flex items-center justify-center"><Zap className="w-3 h-3 text-white" /></div>
                       <span className="text-xs font-bold text-emerald-800">Model B · Haiku</span>
                     </div>
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[10px]"><span className="text-emerald-400">vendor</span><span className="text-emerald-700 font-semibold lp-mono">Acme Corp</span></div>
-                      <div className="flex justify-between text-[10px]"><span className="text-emerald-400">total</span><span className="text-emerald-700 font-semibold lp-mono">$124,800.00</span></div>
-                      <div className="flex justify-between text-[10px]"><span className="text-emerald-400">tax</span><span className="font-semibold lp-mono text-amber-600">$11,322.00</span></div>
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-xs"><span className="text-emerald-400">vendor</span><span className="text-emerald-800 font-semibold lp-mono">Acme Corp</span></div>
+                      <div className="flex justify-between text-xs"><span className="text-emerald-400">total</span><span className="text-emerald-800 font-semibold lp-mono">$124,800</span></div>
+                      <div className="flex justify-between text-xs"><span className="text-emerald-400">tax</span><span className="font-semibold lp-mono text-amber-600">$11,322 ✗</span></div>
                     </div>
                   </div>
                 </div>
-                <div className="text-center mt-2">
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold" style={{ background: 'rgba(245,158,11,0.1)', color: '#d97706', border: '1px solid rgba(245,158,11,0.2)' }}>
+                <div className="text-center mt-3">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold" style={{ background: 'rgba(245,158,11,0.12)', color: '#b45309', border: '1px solid rgba(245,158,11,0.25)' }}>
                     <AlertTriangle className="w-3 h-3" /> Tax field disputed — $90 difference
                   </span>
                 </div>
               </div>
 
-              {/* Arrow */}
               <div className="flex-shrink-0"><ChevronRight className="w-5 h-5 text-slate-300" /></div>
 
-              {/* Step 3: Resolution */}
               <div className="flex-shrink-0 text-center">
-                <div className="w-16 h-16 rounded-xl mx-auto mb-2 flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #3b82f6, #6366f1)', boxShadow: '0 8px 24px -4px rgba(99,102,241,0.3)' }}>
+                <div className="w-16 h-16 rounded-xl mx-auto mb-2 flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #3b82f6, #6366f1)', boxShadow: '0 8px 24px -4px rgba(99,102,241,0.35)' }}>
                   <Brain className="w-7 h-7 text-white" />
                 </div>
                 <div className="text-xs font-bold text-slate-700">Agentic Resolver</div>
-                <div className="text-[10px] text-slate-400">re-examines with<br/>vendor history</div>
+                <div className="text-[11px] text-slate-500 mt-0.5">re-examines with<br/>vendor history</div>
               </div>
 
-              {/* Arrow */}
               <div className="flex-shrink-0"><ChevronRight className="w-5 h-5 text-slate-300" /></div>
 
-              {/* Step 4: Result */}
               <div className="flex-shrink-0">
                 <div className="rounded-xl p-4" style={{ background: 'linear-gradient(135deg, #0f172a, #1e293b)', border: '1px solid rgba(255,255,255,0.1)' }}>
-                  <div className="text-[9px] font-bold text-emerald-400 uppercase tracking-wider mb-2">✓ Verified Result</div>
-                  <div className="space-y-1">
-                    <div className="flex justify-between gap-4 text-[10px]"><span className="text-slate-500">total</span><span className="text-white font-semibold lp-mono">$124,800</span></div>
-                    <div className="flex justify-between gap-4 text-[10px]"><span className="text-slate-500">tax</span><span className="text-emerald-400 font-semibold lp-mono">$11,232</span></div>
-                    <div className="flex justify-between gap-4 text-[10px]"><span className="text-slate-500">confidence</span><span className="text-blue-400 font-bold lp-mono">98.7%</span></div>
+                  <div className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-2">✓ Verified Result</div>
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between gap-6 text-xs"><span className="text-slate-400">total</span><span className="text-white font-semibold lp-mono">$124,800</span></div>
+                    <div className="flex justify-between gap-6 text-xs"><span className="text-slate-400">tax</span><span className="text-emerald-400 font-semibold lp-mono">$11,232</span></div>
+                    <div className="flex justify-between gap-6 text-xs"><span className="text-slate-400">conf</span><span className="text-blue-400 font-bold lp-mono">98.7%</span></div>
                   </div>
                 </div>
               </div>
@@ -6622,66 +6652,57 @@ function LandingPage({ onGo, onFeatures }) {
         </div>
       </section>
 
-      {/* ═══ AI CAUGHT THIS — Real proof moment ═══ */}
+      {/* ═══ AI CAUGHT THIS — Proof moment (dark) ═══ */}
       <section className="px-6 pb-20">
         <div className="max-w-5xl mx-auto">
           <div className="rounded-2xl overflow-hidden" style={{ background: 'linear-gradient(135deg, #0f172a, #1a2744)' }}>
             <div className="grid grid-cols-2">
-              {/* Left: The story */}
               <div className="p-10">
-                <div className="text-[11px] font-bold text-amber-400 uppercase tracking-[.15em] mb-4">AI Caught This</div>
-                <h3 className="lp-serif text-2xl font-extrabold text-white leading-tight mb-4">
+                <div className="text-xs font-bold text-amber-400 uppercase tracking-[.15em] mb-4">AI In Action</div>
+                <h3 className="lp-serif text-3xl font-extrabold text-white leading-tight mb-4">
                   $47,200 overcharge<br />flagged in 3 seconds.
                 </h3>
-                <p className="text-sm text-slate-400 leading-relaxed mb-6">
-                  A logistics vendor submitted a $172,400 invoice. AuditLens extracted every line item, matched against the purchase order, and flagged a unit price increase of $8.40/unit across 5,619 items — a $47,200 variance from the contracted rate. The AI drafted the dispute letter with contract reference, PO number, and corrected amount.
+                <p className="text-sm text-slate-300 leading-relaxed mb-6">
+                  A logistics vendor submitted a $172,400 invoice. AuditLens extracted every line item, matched against the purchase order, and flagged a unit price increase of $8.40/unit across 5,619 items — a $47,200 variance from the contracted rate. The AI drafted the dispute letter with contract reference and corrected amount.
                 </p>
-                <div className="flex gap-4">
-                  <div>
-                    <div className="text-2xl font-bold text-white lp-mono">$47.2K</div>
-                    <div className="text-[10px] text-slate-500 uppercase tracking-wider">Overcharge caught</div>
-                  </div>
-                  <div className="w-px bg-slate-700" />
-                  <div>
-                    <div className="text-2xl font-bold text-white lp-mono">3.1s</div>
-                    <div className="text-[10px] text-slate-500 uppercase tracking-wider">Detection time</div>
-                  </div>
-                  <div className="w-px bg-slate-700" />
-                  <div>
-                    <div className="text-2xl font-bold text-white lp-mono">Auto</div>
-                    <div className="text-[10px] text-slate-500 uppercase tracking-wider">Dispute drafted</div>
-                  </div>
+                <div className="flex gap-6">
+                  {[
+                    { val: '$47.2K', label: 'Overcharge caught' },
+                    { val: '3.1s', label: 'Detection time' },
+                    { val: 'Auto', label: 'Dispute drafted' },
+                  ].map(st => (
+                    <div key={st.label}>
+                      <div className="text-2xl font-bold text-white lp-mono">{st.val}</div>
+                      <div className="text-xs text-slate-400 uppercase tracking-wider mt-1">{st.label}</div>
+                    </div>
+                  ))}
                 </div>
               </div>
 
-              {/* Right: The evidence */}
-              <div className="p-8 flex items-center" style={{ background: 'rgba(255,255,255,0.02)' }}>
+              <div className="p-8 flex items-center" style={{ background: 'rgba(255,255,255,0.03)' }}>
                 <div className="w-full space-y-3">
-                  {/* Anomaly card */}
-                  <div className="rounded-xl p-4" style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.15)' }}>
-                    <div className="flex items-center gap-2 mb-2">
+                  <div className="rounded-xl p-4" style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)' }}>
+                    <div className="flex items-center gap-2 mb-3">
                       <AlertTriangle className="w-4 h-4 text-amber-400" />
-                      <span className="text-xs font-bold text-amber-300">PRICE_OVERCHARGE · High Severity</span>
+                      <span className="text-sm font-bold text-amber-300">PRICE_OVERCHARGE · High Severity</span>
                     </div>
-                    <div className="space-y-1.5 text-[11px]">
-                      <div className="flex justify-between"><span className="text-slate-500">Invoice unit price</span><span className="text-red-400 lp-mono font-semibold">$22.40</span></div>
-                      <div className="flex justify-between"><span className="text-slate-500">Contract rate</span><span className="text-emerald-400 lp-mono font-semibold">$14.00</span></div>
-                      <div className="flex justify-between"><span className="text-slate-500">Qty affected</span><span className="text-white lp-mono">5,619 units</span></div>
-                      <div className="flex justify-between pt-1 border-t border-slate-700"><span className="text-slate-400 font-semibold">Overpayment risk</span><span className="text-amber-400 lp-mono font-bold">$47,199.60</span></div>
-                    </div>
-                  </div>
-                  {/* Match card */}
-                  <div className="rounded-xl p-3" style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.12)' }}>
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                      <span className="text-[11px] text-emerald-400">Matched to PO-2024-1847 · Contract CNT-0094</span>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between"><span className="text-slate-400">Invoice unit price</span><span className="text-red-400 lp-mono font-semibold">$22.40</span></div>
+                      <div className="flex justify-between"><span className="text-slate-400">Contract rate</span><span className="text-emerald-400 lp-mono font-semibold">$14.00</span></div>
+                      <div className="flex justify-between"><span className="text-slate-400">Qty affected</span><span className="text-white lp-mono">5,619 units</span></div>
+                      <div className="flex justify-between pt-2 border-t" style={{ borderColor: 'rgba(255,255,255,0.1)' }}><span className="text-slate-300 font-semibold">Overpayment risk</span><span className="text-amber-400 lp-mono font-bold">$47,199.60</span></div>
                     </div>
                   </div>
-                  {/* AI draft card */}
-                  <div className="rounded-xl p-3" style={{ background: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.12)' }}>
+                  <div className="rounded-xl p-3" style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.15)' }}>
                     <div className="flex items-center gap-2">
-                      <Send className="w-3.5 h-3.5 text-purple-400" />
-                      <span className="text-[11px] text-purple-300">AI drafted vendor dispute — ready to send</span>
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      <span className="text-sm text-emerald-300">Matched to PO-2024-1847 · Contract CNT-0094</span>
+                    </div>
+                  </div>
+                  <div className="rounded-xl p-3" style={{ background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.15)' }}>
+                    <div className="flex items-center gap-2">
+                      <Send className="w-4 h-4 text-purple-400" />
+                      <span className="text-sm text-purple-300">AI drafted vendor dispute — ready to send</span>
                     </div>
                   </div>
                 </div>
@@ -6691,7 +6712,7 @@ function LandingPage({ onGo, onFeatures }) {
         </div>
       </section>
 
-      {/* ═══ THREE PILLARS — Asymmetric differentiator layout ═══ */}
+      {/* ═══ THREE PILLARS — Why we're different ═══ */}
       <section className="px-6 pb-20">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-10">
@@ -6700,48 +6721,44 @@ function LandingPage({ onGo, onFeatures }) {
           </div>
 
           <div className="grid grid-cols-12 gap-5">
-            {/* Pillar 1: Ensemble AI — takes more space */}
             <div className="col-span-5 rounded-2xl p-7 lp-card-lift" style={{ background: 'linear-gradient(160deg, #eef2ff 0%, #e0e7ff 100%)', border: '1px solid #c7d2fe' }}>
-              <div className="w-11 h-11 rounded-xl bg-indigo-500 flex items-center justify-center mb-5 shadow-lg shadow-indigo-200/60">
+              <div className="w-12 h-12 rounded-xl bg-indigo-500 flex items-center justify-center mb-5 shadow-lg shadow-indigo-200/60">
                 <Zap className="w-5 h-5 text-white" />
               </div>
               <h3 className="text-lg font-extrabold text-slate-900 mb-2">Ensemble AI Extraction</h3>
-              <p className="text-sm text-slate-600 leading-relaxed mb-4">
-                Two frontier models cross-check every field. Consensus merging with field-level confidence. Agentic dispute resolution with vendor context.
+              <p className="text-sm text-slate-700 leading-relaxed mb-4">
+                Two frontier models cross-check every field. Consensus merging with field-level confidence. Agentic dispute resolution with vendor context when they disagree.
               </p>
-              <div className="text-xs font-bold text-indigo-600">↳ Higher accuracy than any single-model approach</div>
+              <div className="text-sm font-bold text-indigo-600">↳ Higher accuracy than any single-model approach</div>
             </div>
 
-            {/* Right column: two stacked */}
             <div className="col-span-7 flex flex-col gap-5">
-              {/* Pillar 2: Deterministic Core */}
               <div className="flex-1 rounded-2xl p-7 lp-card-lift" style={{ background: 'linear-gradient(160deg, #fffbeb 0%, #fef3c7 100%)', border: '1px solid #fde68a' }}>
                 <div className="flex gap-5">
-                  <div className="w-11 h-11 rounded-xl bg-amber-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-amber-200/60">
+                  <div className="w-12 h-12 rounded-xl bg-amber-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-amber-200/60">
                     <Shield className="w-5 h-5 text-white" />
                   </div>
                   <div>
                     <h3 className="text-lg font-extrabold text-slate-900 mb-1">Deterministic Audit Core</h3>
-                    <p className="text-sm text-slate-600 leading-relaxed">
-                      {totalRules} rule-based checks run locally. No LLM dependency for compliance-critical decisions. Same result every time — auditor-grade consistency.
+                    <p className="text-sm text-slate-700 leading-relaxed">
+                      {totalRules} rules run locally with zero AI dependency. Same result every time — auditor-grade consistency. SOX-auditable by design.
                     </p>
-                    <div className="text-xs font-bold text-amber-600 mt-2">↳ 70% of capability requires zero AI calls</div>
+                    <div className="text-sm font-bold text-amber-600 mt-2">↳ 70% of capability requires zero AI calls</div>
                   </div>
                 </div>
               </div>
 
-              {/* Pillar 3: Data Privacy */}
               <div className="flex-1 rounded-2xl p-7 lp-card-lift" style={{ background: 'linear-gradient(160deg, #ecfdf5 0%, #d1fae5 100%)', border: '1px solid #a7f3d0' }}>
                 <div className="flex gap-5">
-                  <div className="w-11 h-11 rounded-xl bg-emerald-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-emerald-200/60">
+                  <div className="w-12 h-12 rounded-xl bg-emerald-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-emerald-200/60">
                     <CheckCircle2 className="w-5 h-5 text-white" />
                   </div>
                   <div>
                     <h3 className="text-lg font-extrabold text-slate-900 mb-1">Your Data, Your Cloud</h3>
-                    <p className="text-sm text-slate-600 leading-relaxed">
-                      AI runs inside your VPC via AWS Bedrock or Google Vertex. PII redaction, LLM audit logs, per-vendor controls. Or go fully air-gapped.
+                    <p className="text-sm text-slate-700 leading-relaxed">
+                      AI runs inside your VPC via AWS Bedrock or Google Vertex. PII redaction, LLM audit logs, per-vendor controls. Or go fully air-gapped with self-hosted models.
                     </p>
-                    <div className="text-xs font-bold text-emerald-600 mt-2">↳ Zero data leaves your network</div>
+                    <div className="text-sm font-bold text-emerald-600 mt-2">↳ Zero data leaves your network</div>
                   </div>
                 </div>
               </div>
@@ -6750,7 +6767,7 @@ function LandingPage({ onGo, onFeatures }) {
         </div>
       </section>
 
-      {/* ═══ DEPLOY MODES — Refined, no emojis ═══ */}
+      {/* ═══ DEPLOY MODES ═══ */}
       <section className="px-6 pb-20">
         <div className="max-w-5xl mx-auto">
           <div className="rounded-2xl p-8" style={{ background: 'linear-gradient(135deg, #f8fafc, #f1f5f9)', border: '1px solid #e2e8f0' }}>
@@ -6758,23 +6775,21 @@ function LandingPage({ onGo, onFeatures }) {
               <h2 className="lp-serif text-2xl font-extrabold text-slate-900">Deploys how you need it</h2>
               <p className="text-sm text-slate-500 mt-1">Same product. Three privacy levels. One config change.</p>
             </div>
-
             <div className="grid grid-cols-3 gap-4">
               {[
-                { name: 'Standard', desc: 'Managed API', for: 'Demo & SMBs', icon: <Zap className="w-4 h-4" />, color: '#3b82f6', bg: '#eff6ff', border: '#bfdbfe' },
-                { name: 'Enterprise VPC', desc: 'Bedrock / Vertex AI', for: 'SOX-regulated F&A', icon: <Building2 className="w-4 h-4" />, color: '#059669', bg: '#ecfdf5', border: '#a7f3d0', recommended: true },
-                { name: 'Air-Gapped', desc: 'Self-hosted vLLM', for: 'Defense / Gov / Banking', icon: <Shield className="w-4 h-4" />, color: '#7c3aed', bg: '#f5f3ff', border: '#ddd6fe' },
+                { name: 'Standard', desc: 'Managed API', fr: 'Demo & SMBs', icon: <Zap className="w-4 h-4" />, color: '#3b82f6', bg: '#eff6ff', border: '#bfdbfe' },
+                { name: 'Enterprise VPC', desc: 'Bedrock / Vertex AI', fr: 'SOX-regulated F&A', icon: <Building2 className="w-4 h-4" />, color: '#059669', bg: '#ecfdf5', border: '#a7f3d0', rec: true },
+                { name: 'Air-Gapped', desc: 'Self-hosted vLLM', fr: 'Defense / Gov / Banking', icon: <Shield className="w-4 h-4" />, color: '#7c3aed', bg: '#f5f3ff', border: '#ddd6fe' },
               ].map(m => (
                 <div key={m.name} className="rounded-xl p-5 text-center lp-card-lift relative" style={{ background: m.bg, border: `1.5px solid ${m.border}` }}>
-                  {m.recommended && <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full text-[9px] font-bold text-white" style={{ background: m.color }}>RECOMMENDED</div>}
+                  {m.rec && <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full text-[10px] font-bold text-white" style={{ background: m.color }}>RECOMMENDED</div>}
                   <div className="w-10 h-10 rounded-xl mx-auto mb-3 flex items-center justify-center" style={{ background: m.color, color: 'white' }}>{m.icon}</div>
                   <div className="text-sm font-bold text-slate-900">{m.name}</div>
-                  <div className="text-xs text-slate-500 mt-1">{m.desc}</div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">{m.for}</div>
+                  <div className="text-xs text-slate-600 mt-1">{m.desc}</div>
+                  <div className="text-xs text-slate-400 mt-0.5">{m.fr}</div>
                 </div>
               ))}
             </div>
-
             <div className="mt-6 text-center">
               <code className="lp-mono text-xs px-4 py-2 rounded-lg inline-block" style={{ background: '#0f172a', color: '#94a3b8' }}>
                 <span style={{ color: '#34d399' }}>DEPLOYMENT_PRESET</span><span style={{ color: '#475569' }}>=</span><span style={{ color: '#fbbf24' }}>enterprise_private</span>
@@ -6784,37 +6799,33 @@ function LandingPage({ onGo, onFeatures }) {
         </div>
       </section>
 
-      {/* ═══ TRUST — Compact horizontal ═══ */}
-      <section className="px-6 pb-20">
+      {/* ═══ TRUST ═══ */}
+      <section className="px-6 pb-16">
         <div className="max-w-4xl mx-auto flex items-center justify-center gap-3 flex-wrap">
           {['SOX 404', 'SOC 2', 'GDPR', 'RBAC', 'ZDR', 'Audit Trail', `${totalRules} Rules`, 'PII Redaction'].map(b => (
-            <span key={b} className="px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200/80 text-[11px] font-semibold text-slate-500">{b}</span>
+            <span key={b} className="px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-600">{b}</span>
           ))}
-          <button onClick={onFeatures} className="px-3 py-1.5 rounded-lg text-[11px] font-semibold text-blue-600 hover:text-blue-800 hover:bg-blue-50 transition-all">
-            View all →
-          </button>
+          <button onClick={onFeatures} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-blue-600 hover:text-blue-800 hover:bg-blue-50 transition-all">View all →</button>
         </div>
       </section>
 
-      {/* ═══ CTA — Dark premium ═══ */}
+      {/* ═══ CTA ═══ */}
       <section className="px-6 pb-20">
         <div className="max-w-4xl mx-auto relative overflow-hidden rounded-2xl" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1a2744 100%)' }}>
-          {/* Ambient gradient */}
-          <div className="absolute top-0 right-0 w-64 h-64 rounded-full" style={{ background: 'radial-gradient(circle, rgba(59,130,246,0.12) 0%, transparent 70%)' }} />
+          <div className="absolute top-0 right-0 w-64 h-64 rounded-full" style={{ background: 'radial-gradient(circle, rgba(59,130,246,0.15) 0%, transparent 70%)' }} />
           <div className="relative z-10 p-12 text-center">
             <h2 className="lp-serif text-3xl font-extrabold text-white tracking-tight mb-3">See what your AP team is missing.</h2>
-            <p className="text-sm text-slate-400 mb-8 max-w-md mx-auto">Upload your first invoice — extracted, matched, and audited in under 8 seconds. No credit card required.</p>
+            <p className="text-sm text-slate-300 mb-8 max-w-md mx-auto">Upload your first invoice — extracted, matched, and audited in under 8 seconds. No credit card required.</p>
             <div className="flex gap-3 justify-center">
               <button onClick={onGo} className="px-8 py-3.5 text-sm font-semibold text-slate-900 bg-white rounded-xl hover:bg-slate-100 transition-all shadow-lg shadow-white/10">Start Auditing →</button>
-              <button onClick={onFeatures} className="px-8 py-3.5 text-sm font-semibold text-slate-300 border border-slate-600 rounded-xl hover:border-slate-400 hover:text-white transition-all">Full Feature Specs</button>
+              <button onClick={onFeatures} className="px-8 py-3.5 text-sm font-semibold text-slate-200 border border-slate-600 rounded-xl hover:border-slate-400 hover:text-white transition-all">Full Feature Specs</button>
             </div>
           </div>
         </div>
       </section>
 
-      {/* ── Footer ── */}
       <footer className="py-8 px-6" style={{ borderTop: '1px solid #f1f5f9' }}>
-        <div className="max-w-6xl mx-auto flex justify-between items-center text-[11px] text-slate-400">
+        <div className="max-w-6xl mx-auto flex justify-between items-center text-xs text-slate-400">
           <span>© 2026 AuditLens{ver ? ` · v${ver}` : ''}</span>
           <span className="lp-mono">Enterprise AP Audit · SOX-Ready · VPC-Isolated AI</span>
         </div>
