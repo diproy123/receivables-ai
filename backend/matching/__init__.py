@@ -6,7 +6,7 @@ Deterministic matching using multi-signal scoring.
 
 Matching signals:
   - PO reference exact match (+50)
-  - Vendor similarity (+15/+25)
+  - Vendor similarity (+20/+30)
   - Amount proximity (+5/+12/+20)
   - Line item overlap (+10)
   - Budget remaining (+5)
@@ -32,7 +32,7 @@ def match_invoice_to_po(invoice, purchase_orders, existing_matches, all_invoices
 
     Scoring signals (max 100):
       +50  PO reference exact match
-      +25  Vendor exact / +15 partial
+      +30  Vendor exact / +20 partial
       +20  Amount near-exact (<2%) / +12 close (<10%) / +5 approximate (<25%)
       +10  Line item overlap >50%
       +5   Within PO remaining budget
@@ -63,10 +63,11 @@ def match_invoice_to_po(invoice, purchase_orders, existing_matches, all_invoices
         if invoice.get("poReference") and invoice["poReference"] == po.get("poNumber"):
             score += 50; signals.append("po_reference_exact")
 
-        # ── Signal 2: Vendor similarity (+15/+25) ──
+        # ── Signal 2: Vendor similarity (+20/+30) ──
+        # In AP, exact vendor match is very strong evidence — many invoices lack PO references
         vs = vendor_similarity(invoice.get("vendor"), po.get("vendor"))
-        if vs >= 0.95: score += 25; signals.append("vendor_exact")
-        elif vs >= 0.7: score += 15; signals.append("vendor_partial")
+        if vs >= 0.95: score += 30; signals.append("vendor_exact")
+        elif vs >= 0.7: score += 20; signals.append("vendor_partial")
 
         # ── Signal 3: Amount proximity (+5/+12/+20) ──
         pa = _n(po.get("amount"))
@@ -97,19 +98,25 @@ def match_invoice_to_po(invoice, purchase_orders, existing_matches, all_invoices
                 score += 10; signals.append("line_items_overlap")
 
         # ── Variance penalties (reduce score for large discrepancies) ──
+        # Cap total penalties so structural matches still appear as review items
+        penalty = 0
         if variance_pct > AMOUNT_TOL_PCT:
-            score -= 10; signals.append("variance_exceeds_pct_tolerance")
+            penalty += 10; signals.append("variance_exceeds_pct_tolerance")
             review_reasons.append(f"Variance {variance_pct:.1f}% exceeds {AMOUNT_TOL_PCT}% tolerance")
         if variance_pct > 10:
-            score -= 15; signals.append("variance_over_10pct")
+            penalty += 10; signals.append("variance_over_10pct")
         if variance_pct > 25:
-            score -= 25; signals.append("variance_over_25pct")
+            penalty += 10; signals.append("variance_over_25pct")
         if variance_abs > AMOUNT_TOL_ABS:
-            score -= 10; signals.append("variance_exceeds_abs_tolerance")
+            penalty += 5; signals.append("variance_exceeds_abs_tolerance")
             review_reasons.append(f"Variance ${variance_abs:,.2f} exceeds ${AMOUNT_TOL_ABS:,.0f} threshold")
+        # Cap penalty at 25 — structural evidence (PO ref, vendor) should not be fully negated
+        penalty = min(penalty, 25)
 
-        # ── Clamp score to [0, 100] ──
-        ns = max(0, min(100, score))
+        # ── Pre-penalty score: used for match IDENTIFICATION (is this the right PO?) ──
+        # ── Post-penalty score: used for CONFIDENCE display and status determination ──
+        pre_penalty_score = max(0, min(100, score))
+        ns = max(0, min(100, score - penalty))
 
         # ── Over-invoicing check (cumulative) ──
         over = (already + inv_subtotal) > pa * (1 + OVER_INVOICE_PCT / 100) if pa > 0 else False
@@ -137,8 +144,8 @@ def match_invoice_to_po(invoice, purchase_orders, existing_matches, all_invoices
             signals.append("duplicate_invoice_on_po")
             review_reasons.append("Duplicate invoice number already matched to this PO")
 
-        if ns > best_score and ns >= 40:
-            best_score = ns
+        if pre_penalty_score > best_score and pre_penalty_score >= 40:
+            best_score = pre_penalty_score
             best = {"poId": po["id"], "poNumber": po["poNumber"], "poAmount": pa,
                 "matchScore": ns, "signals": signals,
                 "amountDifference": round(variance_abs, 2),
