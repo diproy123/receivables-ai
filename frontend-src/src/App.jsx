@@ -6880,6 +6880,83 @@ function LandingPage({ onGo }) {
         </div>
       </section>
 
+      {/* ── DATA PRIVACY & AI GOVERNANCE ── */}
+      <section className="px-6 pb-12">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-8">
+            <div className="text-[11px] font-bold text-indigo-500 uppercase tracking-widest mb-2">Data Privacy & AI Governance</div>
+            <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">Your data never has to leave your network.</h2>
+            <p className="text-sm text-slate-500 mt-2 max-w-2xl mx-auto">Enterprise F&A teams need provable data residency. AuditLens gives you three deployment modes — from managed cloud to fully air-gapped — with zero code changes.</p>
+          </div>
+
+          {/* Deterministic Core Banner */}
+          <div className="rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 p-5 mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center flex-shrink-0"><Shield className="w-5 h-5 text-emerald-600" /></div>
+              <div>
+                <h3 className="text-sm font-bold text-emerald-800">70% of AuditLens requires zero LLM calls</h3>
+                <p className="text-xs text-emerald-600 mt-0.5">Anomaly detection ({rc} rules), PO matching, 3-way reconciliation, and triage are entirely deterministic and local. No financial data goes to any AI model for core audit functions.</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Three deployment modes */}
+          <div className="grid grid-cols-3 gap-4 mb-6">
+            {[
+              { icon: '🚀', name: 'Standard', target: 'Demo & SMBs', provider: 'Anthropic Cloud', llm: 'Claude Sonnet + Haiku', embed: 'Voyage API', train: 'Together.ai',
+                data: true, privacy: 'Standard API', color: 'blue', borderClr: 'border-blue-200', bgClr: 'bg-blue-50/40' },
+              { icon: '🏢', name: 'Enterprise VPC', target: 'SOX-regulated F&A', provider: 'AWS Bedrock / Vertex AI', llm: 'Same models, your VPC', embed: 'Local', train: 'Local PEFT/LoRA',
+                data: false, privacy: 'Private Cloud', color: 'emerald', borderClr: 'border-emerald-300', bgClr: 'bg-emerald-50/40' },
+              { icon: '🔒', name: 'Air-Gapped', target: 'Defense / Gov / Banking', provider: 'Self-hosted vLLM or Ollama', llm: 'Your infrastructure', embed: 'Local TF-IDF', train: 'Local',
+                data: false, privacy: 'Zero external calls', color: 'purple', borderClr: 'border-purple-300', bgClr: 'bg-purple-50/40' },
+            ].map(m => (
+              <div key={m.name} className={`rounded-2xl border-2 ${m.borderClr} ${m.bgClr} p-5`}>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-xl">{m.icon}</span>
+                  <div>
+                    <div className="text-sm font-bold text-slate-900">{m.name}</div>
+                    <div className="text-[10px] text-slate-400">{m.target}</div>
+                  </div>
+                </div>
+                <div className="space-y-2 text-xs">
+                  <div className="flex justify-between"><span className="text-slate-400">LLM Provider</span><span className="text-slate-700 font-medium text-right">{m.provider}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400">Embeddings</span><span className="text-slate-700 font-medium">{m.embed}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400">Fine-tuning</span><span className="text-slate-700 font-medium">{m.train}</span></div>
+                </div>
+                <div className="mt-3 pt-3 border-t border-slate-200/60 flex items-center gap-1.5">
+                  <div className={`w-2 h-2 rounded-full ${m.data ? 'bg-amber-400' : 'bg-emerald-500'}`} />
+                  <span className={`text-[11px] font-semibold ${m.data ? 'text-amber-700' : 'text-emerald-700'}`}>{m.data ? 'Data leaves org' : 'All data stays in-network'}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Privacy feature grid */}
+          <div className="grid grid-cols-4 gap-3">
+            {[
+              { icon: '🛡️', title: 'PII Redaction', desc: 'Bank accounts, tax IDs, SSNs automatically masked before any LLM call. Reversible token mapping restores values in output.' },
+              { icon: '📋', title: 'LLM Audit Log', desc: 'Every external AI call logged: timestamp, provider, model, data type, latency, PII status. SOX-ready evidence trail.' },
+              { icon: '🔧', title: 'Vendor Controls', desc: 'Per-vendor toggle: enable/disable AI extraction, intelligence features, and training data inclusion independently.' },
+              { icon: '🚫', title: 'Zero Data Retention', desc: 'ZDR header on Anthropic calls. Bedrock/Vertex have inherent ZDR — data never stored by the model provider.' },
+            ].map(f => (
+              <div key={f.title} className="rounded-xl bg-white border border-slate-200/60 p-4">
+                <div className="text-lg mb-2">{f.icon}</div>
+                <div className="text-xs font-bold text-slate-800 mb-1">{f.title}</div>
+                <div className="text-[11px] text-slate-500 leading-relaxed">{f.desc}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Config one-liner */}
+          <div className="mt-5 flex items-center justify-center gap-4 flex-wrap">
+            <div className="bg-slate-900 rounded-lg px-4 py-2 font-mono text-xs inline-flex items-center gap-1">
+              <span className="text-emerald-400">DEPLOYMENT_PRESET</span><span className="text-slate-500">=</span><span className="text-amber-300">enterprise_private</span>
+            </div>
+            <span className="text-xs text-slate-500">One environment variable. All privacy settings configured.</span>
+          </div>
+        </div>
+      </section>
+
       {/* ── ROI & Compliance ── */}
       <section className="px-6 pb-12">
         <div className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -6909,9 +6986,10 @@ function LandingPage({ onGo }) {
               {[
                 { badge: 'SOX 404', desc: 'Segregation of duties, approval workflows, complete audit trail' },
                 { badge: 'SOC 2 Type II', desc: 'Infrastructure and data handling security controls' },
-                { badge: 'GDPR / DPDP', desc: 'Data residency options, right to erasure, Zero Data Retention mode' },
+                { badge: 'GDPR / DPDP', desc: 'Data residency options, PII redaction, Zero Data Retention mode' },
                 { badge: 'RBAC', desc: '4-tier role-based access control with configurable authority limits' },
                 { badge: 'Audit Trail', desc: 'Every action, decision, and AI recommendation logged with timestamp' },
+                { badge: 'Data Governance', desc: 'Live dashboard: data egress map, LLM audit log, per-vendor AI controls' },
               ].map(c => (
                 <div key={c.badge} className="flex gap-3 items-start">
                   <span className="text-[11px] px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-100 whitespace-nowrap">{c.badge}</span>
@@ -6938,7 +7016,7 @@ function LandingPage({ onGo }) {
       <footer className="py-6 px-6">
         <div className="max-w-6xl mx-auto flex justify-between items-center text-[11px] text-slate-400">
           <span>© 2026 AuditLens{ver ? ` · v${ver}` : ''}</span>
-          <span>Enterprise AP Automation · SOX-Ready</span>
+          <span>Enterprise AP Automation · SOX-Ready · VPC-Isolated AI</span>
         </div>
       </footer>
     </div>
