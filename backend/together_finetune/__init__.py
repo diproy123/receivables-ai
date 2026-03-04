@@ -1,21 +1,28 @@
 """
-AuditLens — Together.ai Fine-Tuning Integration
-=================================================
+AuditLens — Fine-Tuning Integration (Multi-Provider)
+=======================================================
 
-Full lifecycle management for custom model fine-tuning via Together.ai:
+Full lifecycle management for custom model fine-tuning:
 
-  1. FORMAT  — Convert AuditLens correction_patterns → Together JSONL
-  2. UPLOAD  — Push training file to Together's file storage
-  3. TRAIN   — Trigger LoRA fine-tuning job on Qwen2.5-7B-Instruct
-  4. MONITOR — Poll job status, stream events
-  5. ACTIVATE — When training completes, auto-configure the custom model
-               in the ensemble extraction pipeline
+  Provider: together (default)
+    Uses Together.ai cloud for LoRA fine-tuning on Qwen2.5-7B-Instruct
+    Data leaves organization → NOT suitable for enterprise/regulated clients
 
-No GPU required. Together handles training + serving.
-LoRA adapters get serverless inference at base model pricing.
+  Provider: local
+    Writes JSONL training data to local filesystem only
+    Customer runs fine-tuning in their own environment (HuggingFace PEFT/LoRA)
+    Data NEVER leaves organization → suitable for SOX/GDPR/air-gapped deployments
 
-Env vars needed:
-  TOGETHER_API_KEY — your Together.ai API key
+  1. FORMAT  — Convert AuditLens correction_patterns → JSONL (both providers)
+  2. UPLOAD  — Push to Together (together) or write locally (local)
+  3. TRAIN   — Trigger Together job (together) or signal readiness (local)
+  4. MONITOR — Poll Together status (together) or check local flag (local)
+  5. ACTIVATE — Configure custom model in extraction pipeline
+
+Env vars:
+  FINETUNE_PROVIDER = together | local  (default: together)
+  TOGETHER_API_KEY — your Together.ai API key (only for together provider)
+  FINETUNE_LOCAL_DIR — directory for local training data export (default: data/finetune)
 
 Together.ai SDK docs: https://docs.together.ai/docs/fine-tuning-quickstart
 """
@@ -27,6 +34,9 @@ from typing import Optional
 
 from backend.db import get_db, save_db
 from backend.config import FINE_TUNE_MIN_CORRECTIONS
+
+# R3: Fine-tuning provider selection
+FINETUNE_PROVIDER = os.environ.get("FINETUNE_PROVIDER", "together").lower()  # together | local
 
 __all__ = [
     'is_together_configured', 'get_together_status',
@@ -77,12 +87,19 @@ def _get_client():
 
 
 def is_together_configured() -> bool:
-    """Check if Together.ai API key is available."""
+    """Check if Together.ai is configured and selected as fine-tuning provider."""
+    if FINETUNE_PROVIDER != "together":
+        return False  # Using local fine-tuning, Together not needed
     return bool(os.environ.get("TOGETHER_API_KEY"))
 
 
+def is_local_finetune() -> bool:
+    """Check if local fine-tuning mode is active (R3: data never leaves org)."""
+    return FINETUNE_PROVIDER == "local"
+
+
 def get_together_status() -> dict:
-    """Return Together.ai integration status and readiness."""
+    """Return fine-tuning integration status and readiness."""
     try:
         db = get_db()
         corrections = db.get("correction_patterns", [])
@@ -90,7 +107,10 @@ def get_together_status() -> dict:
         active_job = db.get("active_finetune_job", None)
 
         return {
-            "configured": is_together_configured(),
+            "finetune_provider": FINETUNE_PROVIDER,
+            "configured": is_together_configured() if FINETUNE_PROVIDER == "together" else True,
+            "local_mode": is_local_finetune(),
+            "data_leaves_org": FINETUNE_PROVIDER == "together",
             "base_model": TOGETHER_BASE_MODEL,
             "method": "LoRA (Low-Rank Adaptation)",
             "corrections_available": len(corrections),
@@ -102,7 +122,8 @@ def get_together_status() -> dict:
             "history": ft_history[-5:],  # last 5 jobs
         }
     except Exception as e:
-        return {"configured": False, "error": str(e), "corrections_available": 0,
+        return {"finetune_provider": FINETUNE_PROVIDER, "configured": False, "error": str(e),
+                "corrections_available": 0, "local_mode": is_local_finetune(),
                 "corrections_required": FINE_TUNE_MIN_CORRECTIONS, "ready_to_train": False,
                 "base_model": TOGETHER_BASE_MODEL, "method": "LoRA (Low-Rank Adaptation)",
                 "active_job": None, "completed_jobs": 0, "active_custom_model": None, "history": []}
@@ -275,16 +296,60 @@ def prepare_training_file() -> dict:
 
 
 # ============================================================
-# STEP 2: UPLOAD — Push training file to Together
+# STEP 2: UPLOAD — Push training file to Together OR write locally
 # ============================================================
 def upload_training_file(filepath: str = None) -> dict:
     """
-    Upload a training JSONL file to Together.ai.
+    Upload a training JSONL file to Together.ai, or write to local directory.
+    If FINETUNE_PROVIDER=local, data stays on-premise — never uploaded externally.
     If no filepath given, prepares one automatically.
-    Returns the Together file ID needed for fine-tuning.
+    Returns the file info needed for fine-tuning.
     """
+    # R3: LOCAL MODE — data never leaves the organization
+    if is_local_finetune():
+        if not filepath:
+            prep = prepare_training_file()
+            if not prep["success"]:
+                return prep
+            filepath = prep["filepath"]
+
+        if not Path(filepath).exists():
+            return {"success": False, "error": f"File not found: {filepath}"}
+
+        # Copy to configured local finetune directory
+        local_dir = Path(os.environ.get("FINETUNE_LOCAL_DIR",
+                         str(Path(__file__).parent.parent.parent / "data" / "finetune")))
+        local_dir.mkdir(parents=True, exist_ok=True)
+        dest = local_dir / Path(filepath).name
+        import shutil
+        shutil.copy2(filepath, dest)
+
+        # Record in DB
+        db = get_db()
+        file_id = f"local_{int(time.time())}"
+        db.setdefault("together_files", []).append({
+            "file_id": file_id,
+            "filename": Path(filepath).name,
+            "local_path": str(dest),
+            "uploaded_at": datetime.now().isoformat(),
+            "provider": "local",
+        })
+        save_db(db)
+
+        print(f"[FineTune:Local] Training data saved: {dest} ({dest.stat().st_size} bytes)")
+        print(f"[FineTune:Local] Data stays on-premise. Run HuggingFace PEFT/LoRA training externally.")
+        return {
+            "success": True,
+            "file_id": file_id,
+            "filename": Path(filepath).name,
+            "local_path": str(dest),
+            "provider": "local",
+            "message": "Training data saved locally. Use HuggingFace PEFT/LoRA for fine-tuning in your environment.",
+        }
+
+    # TOGETHER MODE — upload to Together.ai cloud
     if not is_together_configured():
-        return {"success": False, "error": "TOGETHER_API_KEY not set"}
+        return {"success": False, "error": "TOGETHER_API_KEY not set (or set FINETUNE_PROVIDER=local for on-premise)"}
 
     # Prepare file if none provided
     if not filepath:
@@ -295,6 +360,43 @@ def upload_training_file(filepath: str = None) -> dict:
 
     if not Path(filepath).exists():
         return {"success": False, "error": f"File not found: {filepath}"}
+
+    # R9: Check vendor AI controls — exclude opted-out vendors from training data
+    try:
+        from backend.llm_provider import get_vendor_ai_controls
+        # Read the JSONL and filter out vendors that opted out of training
+        filtered_lines = []
+        with open(filepath, "r") as f:
+            for line in f:
+                try:
+                    entry = json.loads(line)
+                    # Check if any vendor name in messages is opted out
+                    messages_text = json.dumps(entry.get("messages", []))
+                    # Simple heuristic: check vendor_name in synthetic output
+                    vendor = ""
+                    for msg in entry.get("messages", []):
+                        if msg.get("role") == "assistant":
+                            try:
+                                content = json.loads(msg.get("content", "{}"))
+                                vendor = content.get("vendor_name", "")
+                            except Exception:
+                                pass
+                    if vendor:
+                        controls = get_vendor_ai_controls(vendor)
+                        if not controls.get("include_in_training", True):
+                            print(f"[FineTune] Excluding vendor '{vendor}' from training (opted out)")
+                            continue
+                    filtered_lines.append(line)
+                except Exception:
+                    filtered_lines.append(line)
+
+        # Rewrite filtered file
+        if len(filtered_lines) < sum(1 for _ in open(filepath)):
+            with open(filepath, "w") as f:
+                f.writelines(filtered_lines)
+            print(f"[FineTune] Filtered training data: {len(filtered_lines)} examples after vendor opt-out")
+    except ImportError:
+        pass  # R9 not yet fully integrated
 
     client = _get_client()
 

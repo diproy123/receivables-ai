@@ -38,22 +38,45 @@ def _get_policy():
 def _use_real_api():
     return bool(os.environ.get("ANTHROPIC_API_KEY"))
 
-async def _call_claude(prompt: str, max_tokens: int = 2000) -> Optional[str]:
-    """Single LLM call with error handling. Routes through llm_provider for multi-provider support."""
-    if not _use_real_api():
-        return None
+def _vendor_intelligence_allowed(vendor_name: str) -> bool:
+    """R9: Check if AI intelligence is enabled for this vendor."""
+    if not vendor_name:
+        return True
     try:
-        from backend.llm_provider import llm_call
-        return await llm_call(prompt=prompt, model="primary", max_tokens=max_tokens)
+        from backend.llm_provider import get_vendor_ai_controls
+        controls = get_vendor_ai_controls(vendor_name)
+        return controls.get("intelligence_enabled", True)
+    except Exception:
+        return True  # Default to enabled if controls unavailable
+
+async def _call_claude(prompt: str, max_tokens: int = 2000) -> Optional[str]:
+    """Single LLM call with error handling. Routes through llm_provider for multi-provider support.
+    If provider layer is unavailable, returns None (caller must use deterministic fallback)."""
+    if not _use_real_api():
+        # Also check provider layer — Bedrock/Vertex may work without ANTHROPIC_API_KEY
+        try:
+            from backend.llm_provider import is_llm_available
+            if not is_llm_available():
+                return None
+        except ImportError:
+            return None
+    try:
+        from backend.llm_provider import llm_call, audit_log_llm_call
+        import time as _t
+        t0 = _t.time()
+        result = await llm_call(prompt=prompt, model="primary", max_tokens=max_tokens)
+        elapsed = round((_t.time() - t0) * 1000)
+        try:
+            audit_log_llm_call(module="ai_intelligence", model="primary",
+                               data_type="text", latency_ms=elapsed)
+        except Exception:
+            pass
+        return result
     except ImportError:
-        # Fallback if llm_provider not yet integrated
-        import anthropic
-        from backend.config import ENSEMBLE_PRIMARY_MODEL
-        client = anthropic.AsyncAnthropic()
-        msg = await client.messages.create(
-            model=ENSEMBLE_PRIMARY_MODEL, max_tokens=max_tokens,
-            messages=[{"role": "user", "content": prompt}])
-        return msg.content[0].text.strip()
+        # R2: Do NOT fall back to direct Anthropic client — return None so caller uses
+        # deterministic fallback. This ensures provider configuration is always honored.
+        print("[AI Intelligence] llm_provider not available — using deterministic fallback")
+        return None
     except Exception as e:
         print(f"[AI Intelligence] LLM call failed: {e}")
         return None
@@ -165,6 +188,15 @@ async def generate_investigation_brief(case_id: str) -> dict:
         return {"brief": "Invoice data not found.", "ai_generated": False, "facts_verified": False}
 
     inv = ctx["invoice"]
+
+    # R9: Check vendor AI controls
+    vendor_name = inv.get("vendor", "")
+    if not _vendor_intelligence_allowed(vendor_name):
+        fallback = _fallback_investigation_brief(ctx)
+        return {"brief": fallback + "\n\n[AI intelligence disabled for this vendor — showing deterministic analysis only]",
+                "ai_generated": False, "facts_verified": True,
+                "context_summary": {"vendor": vendor_name, "vendor_ai_disabled": True}}
+
     cur = inv.get("currency", "USD")
     anomalies = ctx["anomalies"]
     risk = ctx["vendor_risk"]
@@ -714,6 +746,14 @@ async def draft_vendor_communication(case_id: str, comm_type: str = "dispute") -
 
     ctx = _build_investigation_context(case, db)
     inv = ctx.get("invoice", {})
+
+    # R9: Check vendor AI controls
+    vendor_name = inv.get("vendor", "")
+    if not _vendor_intelligence_allowed(vendor_name):
+        return {"subject": f"Re: Invoice {inv.get('invoiceNumber', 'N/A')}",
+                "body": f"[AI communication drafting is disabled for vendor '{vendor_name}'. Enable in Data Governance settings.]",
+                "ai_generated": False, "data_sources": [], "vendor_ai_disabled": True}
+
     cur = inv.get("currency", "USD")
     anomalies = ctx.get("anomalies", [])
     contract = ctx.get("contract")
@@ -852,6 +892,12 @@ async def generate_vendor_insights(vendor_name: str) -> dict:
     """F7: AI-synthesized vendor behavior analysis.
     Returns: {"insights": str, "patterns": [...], "recommendations": [...], "ai_powered": bool}
     """
+    # R9: Check vendor AI controls
+    if not _vendor_intelligence_allowed(vendor_name):
+        return {"insights": f"AI intelligence is disabled for vendor '{vendor_name}'. Enable in Data Governance settings.",
+                "patterns": [], "recommendations": [], "ai_powered": False,
+                "vendor_ai_disabled": True}
+
     db = _get_db()
     stats = _compute_vendor_patterns(vendor_name, db)
 

@@ -38,7 +38,14 @@ RAG_DIR.mkdir(parents=True, exist_ok=True)
 VECTOR_STORE_PATH = RAG_DIR / "vectors.json"
 CHUNK_STORE_PATH = RAG_DIR / "chunks.json"
 
-USE_VOYAGE = bool(os.environ.get("ANTHROPIC_API_KEY"))
+# R4: Embedding provider selection
+# "voyage" = Voyage API (cloud), "local" = TF-IDF only, "sentence_transformers" = local neural
+RAG_EMBEDDING_PROVIDER = os.environ.get("RAG_EMBEDDING_PROVIDER", "voyage").lower()
+
+# Legacy check — only use Voyage if provider is set to "voyage" AND key is available
+USE_VOYAGE = (RAG_EMBEDDING_PROVIDER == "voyage") and bool(
+    os.environ.get("VOYAGE_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
+)
 
 # Chunk size targets
 MAX_CHUNK_TOKENS = 300  # ~300 tokens per chunk
@@ -223,7 +230,11 @@ tfidf_embedder = TFIDFEmbedder()
 
 # --- Voyage Embeddings (production quality) ---
 async def embed_with_voyage(texts: list) -> list:
-    """Use Anthropic's Voyage embedding model for high-quality vectors."""
+    """Use Anthropic's Voyage embedding model for high-quality vectors.
+    Only called when RAG_EMBEDDING_PROVIDER=voyage."""
+    if RAG_EMBEDDING_PROVIDER != "voyage":
+        print(f"[RAG] Voyage disabled (provider={RAG_EMBEDDING_PROVIDER}), using local TF-IDF")
+        return tfidf_embedder.embed_batch(texts)
     try:
         import anthropic
         # Voyage embeddings via Anthropic's API
@@ -243,6 +254,13 @@ async def embed_with_voyage(texts: list) -> list:
             )
             if response.status_code == 200:
                 data = response.json()
+                # R6: Audit log Voyage API call
+                try:
+                    from backend.llm_provider import audit_log_llm_call
+                    audit_log_llm_call(module="rag_embeddings", model="voyage-3-lite",
+                                       data_type="text", latency_ms=0)
+                except Exception:
+                    pass
                 return [d["embedding"] for d in data["data"]]
     except Exception as e:
         print(f"Voyage embedding error: {e}, falling back to TF-IDF")
@@ -251,8 +269,40 @@ async def embed_with_voyage(texts: list) -> list:
     return tfidf_embedder.embed_batch(texts)
 
 
+# --- Sentence Transformers (local neural, optional) ---
+_st_model = None
+
+def _get_sentence_transformer():
+    """Lazy-load sentence-transformers model for local neural embeddings."""
+    global _st_model
+    if _st_model is None:
+        try:
+            from sentence_transformers import SentenceTransformer
+            _st_model = SentenceTransformer("all-MiniLM-L6-v2")
+            print("[RAG] Loaded sentence-transformers model: all-MiniLM-L6-v2")
+        except ImportError:
+            print("[RAG] sentence-transformers not installed, falling back to TF-IDF")
+            return None
+    return _st_model
+
+
+def embed_with_sentence_transformers(texts: list) -> list:
+    """Use local sentence-transformers for privacy-preserving neural embeddings."""
+    model = _get_sentence_transformer()
+    if model is None:
+        return tfidf_embedder.embed_batch(texts)
+    embeddings = model.encode(texts, show_progress_bar=False)
+    return [emb.tolist() for emb in embeddings]
+
+
 async def get_embedding(text: str) -> list:
-    """Get embedding for a single text. Uses Voyage if available, else TF-IDF."""
+    """Get embedding for a single text. Provider selection:
+    - voyage: Voyage API (cloud) — highest quality
+    - sentence_transformers: Local neural model — good quality, no external calls
+    - local: TF-IDF — basic quality, zero dependencies, fully offline
+    """
+    if RAG_EMBEDDING_PROVIDER == "sentence_transformers":
+        return embed_with_sentence_transformers([text])[0]
     if USE_VOYAGE and os.environ.get("VOYAGE_API_KEY"):
         results = await embed_with_voyage([text])
         return results[0]
@@ -260,7 +310,9 @@ async def get_embedding(text: str) -> list:
 
 
 async def get_embeddings_batch(texts: list) -> list:
-    """Get embeddings for multiple texts."""
+    """Get embeddings for multiple texts. Respects RAG_EMBEDDING_PROVIDER setting."""
+    if RAG_EMBEDDING_PROVIDER == "sentence_transformers":
+        return embed_with_sentence_transformers(texts)
     if USE_VOYAGE and os.environ.get("VOYAGE_API_KEY"):
         # Voyage supports batches up to 128
         all_embeds = []

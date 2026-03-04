@@ -99,9 +99,9 @@ async def detect_anomalies_with_claude(invoice, po, contract, history, tolerance
     if not USE_REAL_API:
         return detect_anomalies_rule_based(invoice, po, contract, history, tolerances)
 
-    import anthropic
+    import anthropic  # kept for type hints only
 
-    client = anthropic.AsyncAnthropic(timeout=120.0)
+    ## R1/R2: Route through provider layer, not direct client
     def clean(d):
         if not d: return "Not available"
         skip = {"rawExtraction", "extractionSource", "extractedAt", "billTo", "shipTo"}
@@ -137,9 +137,19 @@ Be more aggressive flagging anomalies for this vendor."""
     prompt += tol_context + rag_context
 
     try:
-        msg = await client.messages.create(model=ENSEMBLE_PRIMARY_MODEL, max_tokens=4000,
-            messages=[{"role": "user", "content": prompt}])
-        text = msg.content[0].text.strip()
+        from backend.llm_provider import llm_call, audit_log_llm_call
+        import time as _t
+        t0 = _t.time()
+        text = await llm_call(prompt=prompt, model="primary", max_tokens=4000)
+        elapsed = round((_t.time() - t0) * 1000)
+        if text is None:
+            return detect_anomalies_rule_based(invoice, po, contract, history, tolerances)
+        try:
+            audit_log_llm_call(module="anomaly_detection_ai", model="primary",
+                               data_type="text", latency_ms=elapsed,
+                               vendor=invoice.get("vendor", ""))
+        except Exception:
+            pass
         if text.startswith("```"):
             text = text.split("\n", 1)[1]
             if text.endswith("```"): text = text[:-3]

@@ -15,7 +15,14 @@ Every LLM call is stateless and grounded in DB context:
 """
 import json, asyncio, base64
 import time as _time
-import anthropic
+## # R1: All LLM calls route through provider layer — no direct anthropic import
+# This ensures Bedrock/Vertex/self-hosted config is respected for extraction
+from backend.llm_provider import (
+    llm_call_with_document, resolve_model, is_llm_available,
+    audit_log_llm_call, get_vendor_ai_controls,
+    LLM_PRIMARY_MODEL, LLM_SECONDARY_MODEL,
+)
+from backend.pii_redactor import redact_prompt, restore_pii, is_redaction_enabled  # REMOVED (R1) — all LLM calls route through backend.llm_provider
 
 from backend.config import ENSEMBLE_PRIMARY_MODEL, ENSEMBLE_SECONDARY_MODEL, USE_REAL_API
 from backend.db import get_db
@@ -880,17 +887,23 @@ def _vendor_cross_reference(merged: dict, db: dict) -> list:
 
 
 # ============================================================
-# MODEL CALLER
+# MODEL CALLER — Routes through llm_provider for multi-provider support
 # ============================================================
-async def _call_model(client, model: str, content_block: dict, prompt: str, label: str) -> dict:
-    """Call a single model for extraction. Uses AsyncAnthropic for true parallel execution."""
+async def _call_model(b64_data: str, media_type: str, model: str, prompt: str, label: str) -> dict:
+    """Call a single model for extraction. Routes through llm_provider abstraction layer
+    to support Anthropic Cloud, AWS Bedrock, Vertex AI, and self-hosted endpoints."""
     try:
-        print(f"[Ensemble:{label}] Calling {model.split('-')[1]}...")
+        from backend.llm_provider import llm_call_with_document, audit_log_llm_call
+        model_alias = "primary" if "sonnet" in model.lower() or model == ENSEMBLE_PRIMARY_MODEL else "secondary"
+        print(f"[Ensemble:{label}] Calling {model_alias} via provider layer...")
         t0 = _time.time()
-        msg = await client.messages.create(model=model, max_tokens=4000,
-            messages=[{"role": "user", "content": [content_block, {"type": "text", "text": prompt}]}])
-        text = msg.content[0].text.strip()
+        text = await llm_call_with_document(
+            document_b64=b64_data, media_type=media_type,
+            prompt=prompt, model=model_alias, max_tokens=4000
+        )
         elapsed = round((_time.time() - t0) * 1000)
+        if text is None:
+            return {"_error": "LLM provider returned None", "_model": model}
         if text.startswith("```"):
             first_nl = text.index("\n") if "\n" in text else len(text)
             text = text[first_nl + 1:]
@@ -900,6 +913,12 @@ async def _call_model(client, model: str, content_block: dict, prompt: str, labe
         result["_model"] = model; result["_latency_ms"] = elapsed
         # Normalize locale-specific number/date formats
         result = normalize_extraction_locale(result)
+        # Audit log this LLM call
+        try:
+            audit_log_llm_call(module="extraction", model=model, data_type="document",
+                               latency_ms=elapsed, vendor=result.get("vendor_name", ""))
+        except Exception:
+            pass  # Audit logging must never break extraction
         print(f"[Ensemble:{label}] OK in {elapsed}ms — type={result.get('document_type')}, vendor={result.get('vendor_name')}, total={result.get('total_amount')}")
         return result
     except json.JSONDecodeError as e:
@@ -911,10 +930,10 @@ async def _call_model(client, model: str, content_block: dict, prompt: str, labe
 
 
 # ============================================================
-# DISPUTE RESOLVER (agentic)
+# DISPUTE RESOLVER (agentic) — Routes through llm_provider
 # ============================================================
-async def _resolve_disputes(client, content_block: dict, merged: dict, field_conf: dict, meta: dict) -> dict:
-    """On critical disagreements, send both outputs + DB context back to Sonnet."""
+async def _resolve_disputes(b64_data: str, media_type: str, merged: dict, field_conf: dict, meta: dict) -> dict:
+    """On critical disagreements, send both outputs + DB context back to Sonnet via provider layer."""
     critical_disputes = []
     for f in ("subtotal", "total_amount"):
         fc = field_conf.get(f, {})
@@ -954,17 +973,28 @@ If tax is disputed, include "tax_details" with the corrected array.
 Be extremely precise. Count digits carefully. Pay attention to Indian number formatting (lakhs/crores)."""
 
     try:
+        from backend.llm_provider import llm_call_with_document, audit_log_llm_call
         print(f"[Ensemble:Resolve] Re-examining {len(critical_disputes)} disputed fields...")
         t0 = _time.time()
-        msg = await client.messages.create(model=ENSEMBLE_PRIMARY_MODEL, max_tokens=2000,
-            messages=[{"role": "user", "content": [content_block, {"type": "text", "text": resolve_prompt}]}])
-        text = msg.content[0].text.strip()
+        text = await llm_call_with_document(
+            document_b64=b64_data, media_type=media_type,
+            prompt=resolve_prompt, model="primary", max_tokens=2000
+        )
+        if text is None:
+            meta["resolution_applied"] = False; meta["resolution_error"] = "Provider returned None"
+            return merged
         if text.startswith("```"):
             text = text.split("\n", 1)[1] if "\n" in text else text
             if text.endswith("```"): text = text[:-3]
             text = text.strip()
         corrections = json.loads(text)
         elapsed = round((_time.time() - t0) * 1000)
+        try:
+            audit_log_llm_call(module="extraction_resolve", model=ENSEMBLE_PRIMARY_MODEL,
+                               data_type="document", latency_ms=elapsed,
+                               vendor=merged.get("vendor_name", ""))
+        except Exception:
+            pass
         for k, v in corrections.items():
             if k in merged:
                 old = merged[k]; merged[k] = v
@@ -994,20 +1024,36 @@ async def extract_with_claude(file_path: str, file_name: str, media_type: str,
     5. Vendor cross-reference against historical patterns
     """
     if not USE_REAL_API:
-        return {"_source": "no_api_key", "_extraction_failed": True,
-                "document_type": doc_type_hint or "invoice", "vendor_name": "Unknown",
-                "total_amount": 0, "extraction_confidence": 0,
-                "_error": "ANTHROPIC_API_KEY not configured. Use Manual Entry to index this document."}
+        # Check via provider layer — Bedrock/Vertex may be available without ANTHROPIC_API_KEY
+        try:
+            from backend.llm_provider import is_llm_available
+            if not is_llm_available():
+                return {"_source": "no_api_key", "_extraction_failed": True,
+                        "document_type": doc_type_hint or "invoice", "vendor_name": "Unknown",
+                        "total_amount": 0, "extraction_confidence": 0,
+                        "_error": "No LLM provider configured. Set LLM_PROVIDER and credentials."}
+        except ImportError:
+            return {"_source": "no_api_key", "_extraction_failed": True,
+                    "document_type": doc_type_hint or "invoice", "vendor_name": "Unknown",
+                    "total_amount": 0, "extraction_confidence": 0,
+                    "_error": "ANTHROPIC_API_KEY not configured. Use Manual Entry to index this document."}
 
-    client = anthropic.AsyncAnthropic(timeout=120.0)  # 120s timeout — prevents hung requests
+    # Read file and encode — provider layer handles content block construction
     with open(file_path, "rb") as f:
         b64_data = base64.standard_b64encode(f.read()).decode("utf-8")
 
-    if media_type == "application/pdf":
-        content_block = {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": b64_data}}
-    else:
-        img_type = media_type if media_type in ["image/jpeg", "image/png", "image/gif", "image/webp"] else "image/png"
-        content_block = {"type": "image", "source": {"type": "base64", "media_type": img_type, "data": b64_data}}
+    # R9: Check vendor AI controls — skip AI extraction if disabled for this vendor
+    if vendor_hint:
+        try:
+            controls = get_vendor_ai_controls(vendor_hint)
+            if not controls.get("extraction_enabled", True):
+                print(f"[Ensemble] AI extraction disabled for vendor '{vendor_hint}' — skipping")
+                return {"_source": "vendor_ai_disabled", "_extraction_failed": False,
+                        "document_type": doc_type_hint or "invoice", "vendor_name": vendor_hint,
+                        "total_amount": 0, "extraction_confidence": 0,
+                        "_note": f"AI extraction is disabled for vendor '{vendor_hint}'. Use Manual Entry."}
+        except Exception:
+            pass  # Controls check must never block extraction
 
     db = get_db()
     hints = build_correction_hints(vendor_hint or file_name, doc_type_hint or "auto", db)
@@ -1022,14 +1068,28 @@ async def extract_with_claude(file_path: str, file_name: str, media_type: str,
     t0_ensemble = _time.time()
 
     # Build extraction tasks — always primary + secondary, optionally custom
+    # PII redaction: apply before sending to any LLM
+    try:
+        from backend.pii_redactor import redact_prompt, is_redaction_enabled
+        if is_redaction_enabled():
+            prompt, _pii_map = redact_prompt(prompt)
+    except ImportError:
+        pass  # PII redactor not yet deployed
+
     tasks = [
-        _call_model(client, ENSEMBLE_PRIMARY_MODEL, content_block, prompt, "Primary"),
-        _call_model(client, ENSEMBLE_SECONDARY_MODEL, content_block, prompt, "Secondary"),
+        _call_model(b64_data, media_type, ENSEMBLE_PRIMARY_MODEL, prompt, "Primary"),
+        _call_model(b64_data, media_type, ENSEMBLE_SECONDARY_MODEL, prompt, "Secondary"),
     ]
     custom_enabled = is_custom_model_enabled()
     if custom_enabled:
         print(f"[Ensemble] Custom model enabled — running 3-model ensemble")
-        tasks.append(call_custom_model(content_block, prompt, "Custom"))
+        # Custom model has its own endpoint config — build content block for it
+        if media_type == "application/pdf":
+            _custom_cb = {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": b64_data}}
+        else:
+            _img_t = media_type if media_type in ["image/jpeg", "image/png", "image/gif", "image/webp"] else "image/png"
+            _custom_cb = {"type": "image", "source": {"type": "base64", "media_type": _img_t, "data": b64_data}}
+        tasks.append(call_custom_model(_custom_cb, prompt, "Custom"))
 
     try:
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -1097,7 +1157,7 @@ async def extract_with_claude(file_path: str, file_name: str, media_type: str,
             meta["custom_model_error"] = custom_result.get("_error", "unknown") if custom_result else "not available"
 
     if meta["fields_disputed"] > 0:
-        merged = await _resolve_disputes(client, content_block, merged, field_conf, meta)
+        merged = await _resolve_disputes(b64_data, media_type, merged, field_conf, meta)
 
     # Math validation only for doc types with financial arithmetic
     _doc_type = merged.get("document_type") or "invoice"

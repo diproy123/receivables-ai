@@ -133,6 +133,7 @@ function Sidebar() {
       { id: 'settings', label: 'AP Policy', icon: Settings },
       { id: 'team', label: 'Team & Access', icon: Users },
       { id: 'training', label: 'Model Training', icon: Brain },
+      { id: 'data_governance', label: 'Data Governance', icon: Shield },
     ]}] : []),
   ];
 
@@ -5293,6 +5294,213 @@ function SettingsPage() {
         );
       })()}
 
+      {/* R7: Data Governance Dashboard */}
+      {(() => {
+        const [gov, setGov] = useState(null);
+        const [govLoading, setGovLoading] = useState(false);
+        const [auditLog, setAuditLog] = useState(null);
+        const [vendorCtl, setVendorCtl] = useState(null);
+        const [vendorInput, setVendorInput] = useState('');
+        const [showGov, setShowGov] = useState(false);
+
+        async function loadGovernance() {
+          setGovLoading(true);
+          const r = await api('/api/data-governance');
+          if (r && !r.error) setGov(r);
+          setGovLoading(false);
+        }
+        async function loadAuditLog() {
+          const r = await api('/api/data-governance/audit-log?limit=50');
+          if (r) setAuditLog(r);
+        }
+        async function loadVendorCtl(v) {
+          if (!v) return;
+          const r = await api(`/api/data-governance/vendor-controls/${encodeURIComponent(v)}`);
+          if (r) setVendorCtl(r);
+        }
+        async function toggleVendorCtl(vendor, field) {
+          if (!vendorCtl) return;
+          const current = vendorCtl.ai_controls?.[field] ?? true;
+          await post(`/api/data-governance/vendor-controls/${encodeURIComponent(vendor)}`,
+            { ...vendorCtl.ai_controls, [field]: !current });
+          loadVendorCtl(vendor);
+          toast(`${field.replace(/_/g, ' ')}: ${!current ? 'ON' : 'OFF'}`, 'success');
+        }
+
+        const tier = gov?.privacy_posture;
+        const egress = gov?.egress_map || {};
+        const audit = gov?.audit_summary || {};
+        const preset = gov?.deployment_preset?.current_preset || 'standard';
+
+        const riskColor = (r) => r === 'none' ? '#10b981' : r === 'low' ? '#3b82f6' : r === 'medium' ? '#f59e0b' : '#ef4444';
+        const presetColor = { standard: '#f59e0b', enterprise_private: '#10b981', airgapped: '#06b6d4' };
+
+        return (
+          <div className="rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50 p-5">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Shield className="w-5 h-5 text-emerald-600" />
+                <div>
+                  <div className="text-sm font-bold text-emerald-900">Data Governance & Privacy</div>
+                  <div className="text-xs text-emerald-600">LLM data residency, PII redaction, audit trail, per-vendor controls</div>
+                </div>
+              </div>
+              <button onClick={() => { setShowGov(!showGov); if (!gov) loadGovernance(); }}
+                className="btn-o text-xs">{showGov ? 'Hide' : 'Show'} Governance</button>
+            </div>
+
+            {showGov && (
+              <div className="space-y-4 mt-4">
+                {govLoading && <div className="text-xs text-slate-500">Loading governance data...</div>}
+
+                {/* Privacy Posture Summary */}
+                {tier && (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="p-3 bg-white rounded-xl border">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase">LLM Provider</div>
+                      <div className="text-sm font-bold" style={{ color: tier.llm_provider?.provider === 'anthropic' ? '#f59e0b' : '#10b981' }}>
+                        {(tier.llm_provider?.provider || 'unknown').toUpperCase()}
+                      </div>
+                      <div className="text-[10px] text-slate-500">{tier.llm_provider?.data_residency}</div>
+                    </div>
+                    <div className="p-3 bg-white rounded-xl border">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase">Embeddings</div>
+                      <div className="text-sm font-bold" style={{ color: tier.embedding_provider === 'voyage' ? '#f59e0b' : '#10b981' }}>
+                        {tier.embedding_provider?.toUpperCase()}
+                      </div>
+                      <div className="text-[10px] text-slate-500">{tier.embedding_provider === 'voyage' ? 'Cloud API' : 'Local only'}</div>
+                    </div>
+                    <div className="p-3 bg-white rounded-xl border">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase">Fine-Tuning</div>
+                      <div className="text-sm font-bold" style={{ color: tier.finetune_provider === 'together' ? '#f59e0b' : '#10b981' }}>
+                        {tier.finetune_provider?.toUpperCase()}
+                      </div>
+                      <div className="text-[10px] text-slate-500">{tier.finetune_provider === 'together' ? 'Cloud (data egress)' : 'On-premise'}</div>
+                    </div>
+                    <div className="p-3 bg-white rounded-xl border">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase">PII Redaction</div>
+                      <div className="text-sm font-bold" style={{ color: tier.pii_redaction_enabled ? '#10b981' : '#94a3b8' }}>
+                        {tier.pii_redaction_enabled ? 'ACTIVE' : 'OFF'}
+                      </div>
+                      <div className="text-[10px] text-slate-500">{tier.zero_data_retention ? 'ZDR active' : 'Standard retention'}</div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Data Leaves Org Warning */}
+                {tier?.data_leaves_organization && (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                    <div className="text-xs text-amber-800">
+                      <span className="font-bold">Data leaves your organization.</span> Current config sends data to external services.
+                      Set <code className="bg-amber-100 px-1 rounded">DEPLOYMENT_PRESET=enterprise_private</code> for VPC-only mode.
+                    </div>
+                  </div>
+                )}
+                {tier && !tier.data_leaves_organization && (
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                    <div className="text-xs text-emerald-800">
+                      <span className="font-bold">All data stays within your network.</span> No external LLM, embedding, or training API calls.
+                    </div>
+                  </div>
+                )}
+
+                {/* Deployment Preset */}
+                {gov?.deployment_preset && (
+                  <div className="p-3 bg-white rounded-xl border">
+                    <div className="text-[10px] font-bold text-slate-400 uppercase mb-2">Deployment Preset</div>
+                    <div className="flex gap-2">
+                      {Object.entries(gov.deployment_preset.available_presets || {}).map(([k, desc]) => (
+                        <div key={k} className={`flex-1 p-2 rounded-lg border text-center ${preset === k ? 'border-2' : 'opacity-60'}`}
+                             style={{ borderColor: presetColor[k] || '#94a3b8' }}>
+                          <div className="text-xs font-bold" style={{ color: presetColor[k] }}>{k.replace(/_/g, ' ').toUpperCase()}</div>
+                          <div className="text-[10px] text-slate-500 mt-1">{desc.split('—')[0]}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Data Egress Map */}
+                {Object.keys(egress).length > 0 && (
+                  <div className="p-3 bg-white rounded-xl border">
+                    <div className="text-[10px] font-bold text-slate-400 uppercase mb-2">Data Egress Map</div>
+                    <div className="space-y-1">
+                      {Object.entries(egress).map(([mod, info]) => (
+                        <div key={mod} className="flex items-center justify-between text-xs p-2 bg-slate-50 rounded-lg">
+                          <span className="font-semibold text-slate-700 w-28">{mod.replace(/_/g, ' ')}</span>
+                          <span className="text-slate-500 flex-1 truncate">{info.destination}</span>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                                style={{ backgroundColor: riskColor(info.risk) + '20', color: riskColor(info.risk) }}>
+                            {info.risk?.toUpperCase()}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Audit Log */}
+                <div className="p-3 bg-white rounded-xl border">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="text-[10px] font-bold text-slate-400 uppercase">LLM API Audit Log</div>
+                    <button onClick={loadAuditLog} className="text-xs text-blue-600 hover:underline">Load Log</button>
+                  </div>
+                  {audit.total_calls > 0 && (
+                    <div className="flex gap-4 mb-2 text-[10px]">
+                      <span>Total: <b>{audit.total_calls}</b></span>
+                      <span>Avg: <b>{audit.avg_latency_ms}ms</b></span>
+                      <span>PII Redacted: <b>{audit.pii_redacted_pct}%</b></span>
+                      <span>Success: <b>{audit.success_rate}%</b></span>
+                    </div>
+                  )}
+                  {auditLog?.entries?.length > 0 && (
+                    <div className="max-h-40 overflow-y-auto space-y-1">
+                      {auditLog.entries.slice(0, 20).map((e, i) => (
+                        <div key={i} className="flex items-center gap-2 text-[10px] p-1.5 bg-slate-50 rounded">
+                          <span className="text-slate-400 w-16 truncate">{e.timestamp?.slice(11, 19)}</span>
+                          <span className="font-semibold w-20 truncate">{e.module}</span>
+                          <span className="text-slate-500 w-20 truncate">{e.model}</span>
+                          <span className={`px-1 rounded ${e.data_type === 'document' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>{e.data_type}</span>
+                          <span className="text-slate-400">{e.latency_ms}ms</span>
+                          {e.vendor && <span className="text-purple-600 truncate">{e.vendor}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Per-Vendor AI Controls (R9) */}
+                <div className="p-3 bg-white rounded-xl border">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase mb-2">Per-Vendor AI Controls</div>
+                  <div className="flex gap-2 mb-2">
+                    <input value={vendorInput} onChange={e => setVendorInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') loadVendorCtl(vendorInput); }}
+                      placeholder="Enter vendor name..." className="inp text-xs flex-1" />
+                    <button onClick={() => loadVendorCtl(vendorInput)} className="btn-o text-xs">Load</button>
+                  </div>
+                  {vendorCtl && (
+                    <div className="space-y-1">
+                      <div className="text-xs font-semibold text-slate-700 mb-1">{vendorCtl.vendor}</div>
+                      {['extraction_enabled', 'intelligence_enabled', 'include_in_training'].map(field => (
+                        <div key={field} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg">
+                          <span className="text-xs text-slate-600">{field.replace(/_/g, ' ')}</span>
+                          <button onClick={() => toggleVendorCtl(vendorCtl.vendor, field)}
+                            className={`text-[10px] font-bold px-3 py-1 rounded-lg ${vendorCtl.ai_controls?.[field] !== false ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                            {vendorCtl.ai_controls?.[field] !== false ? 'ON' : 'OFF'}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="space-y-4">
           <div className="card p-5">
@@ -6798,6 +7006,340 @@ function LoginScreen() {
 }
 
 /* ═══════════════════════════════════════════════════
+   R7: DATA GOVERNANCE DASHBOARD
+   Privacy posture, egress map, audit log, vendor controls, deployment presets
+   ═══════════════════════════════════════════════════ */
+function DataGovernancePage() {
+  const [governance, setGovernance] = useState(null);
+  const [auditLog, setAuditLog] = useState(null);
+  const [vendorControls, setVendorControls] = useState({});
+  const [tab, setTab] = useState('overview');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      api('/api/data-governance').then(r => setGovernance(r)).catch(() => {}),
+      api('/api/data-governance/audit-log?limit=50').then(r => setAuditLog(r)).catch(() => {}),
+    ]).finally(() => setLoading(false));
+  }, []);
+
+  const loadVendorControls = async (vendor) => {
+    try {
+      const r = await api(`/api/data-governance/vendor-controls/${encodeURIComponent(vendor)}`);
+      setVendorControls(prev => ({ ...prev, [vendor]: r.ai_controls }));
+    } catch (e) { console.error(e); }
+  };
+
+  const updateVendorControl = async (vendor, field, value) => {
+    const current = vendorControls[vendor] || {};
+    const updated = { ...current, [field]: value };
+    try {
+      await api(`/api/data-governance/vendor-controls/${encodeURIComponent(vendor)}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+      setVendorControls(prev => ({ ...prev, [vendor]: updated }));
+    } catch (e) { console.error(e); }
+  };
+
+  if (loading) return <div className="text-center py-12 text-slate-400">Loading governance data...</div>;
+
+  const pp = governance?.privacy_posture || {};
+  const provider = pp.llm_provider || {};
+  const preset = governance?.deployment_preset || {};
+  const egress = governance?.egress_map || {};
+  const audit = governance?.audit_summary || {};
+
+  const riskColor = (r) => r === 'none' ? '#059669' : r === 'low' ? '#0ea5e9' : r === 'medium' ? '#d97706' : '#dc2626';
+  const riskBg = (r) => r === 'none' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+    r === 'low' ? 'bg-sky-50 text-sky-700 border-sky-200' :
+    r === 'medium' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+    'bg-red-50 text-red-700 border-red-200';
+
+  const tabs = [
+    { id: 'overview', label: 'Privacy Posture' },
+    { id: 'egress', label: 'Data Egress Map' },
+    { id: 'audit', label: 'LLM Audit Log' },
+    { id: 'vendors', label: 'Vendor Controls' },
+    { id: 'presets', label: 'Deployment Presets' },
+  ];
+
+  return (
+    <div>
+      <div className="flex items-center gap-3 mb-6">
+        <Shield className="w-6 h-6 text-indigo-600" />
+        <h1 className="text-2xl font-bold text-slate-900">Data Governance</h1>
+        {!pp.data_leaves_organization
+          ? <span className="ml-3 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">✓ All Data Stays In-Network</span>
+          : <span className="ml-3 px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-200">⚠ External Data Egress Active</span>}
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 mb-6 bg-slate-100 rounded-lg p-1 w-fit">
+        {tabs.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition ${tab === t.id ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── OVERVIEW ── */}
+      {tab === 'overview' && (
+        <div className="space-y-6">
+          {/* Provider Status Cards */}
+          <div className="grid grid-cols-4 gap-4">
+            <div className="bg-white rounded-xl border p-5">
+              <div className="text-xs text-slate-400 uppercase tracking-wider mb-1">LLM Provider</div>
+              <div className="text-lg font-bold text-slate-900">{(provider.provider || 'unknown').toUpperCase()}</div>
+              <div className="text-sm text-slate-500 mt-1">{provider.data_residency || '—'}</div>
+              <span className={`mt-2 inline-block px-2 py-0.5 text-xs rounded border ${provider.privacy_tier === 'vpc' || provider.privacy_tier === 'on_prem' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                {provider.privacy_label || '—'}
+              </span>
+            </div>
+            <div className="bg-white rounded-xl border p-5">
+              <div className="text-xs text-slate-400 uppercase tracking-wider mb-1">Embeddings</div>
+              <div className="text-lg font-bold text-slate-900">{(pp.embedding_provider || 'voyage').toUpperCase()}</div>
+              <div className="text-sm text-slate-500 mt-1">{pp.embedding_provider === 'local' || pp.embedding_provider === 'sentence_transformers' ? 'Local — no external calls' : 'Voyage API (external)'}</div>
+              <span className={`mt-2 inline-block px-2 py-0.5 text-xs rounded border ${pp.embedding_provider !== 'voyage' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                {pp.embedding_provider !== 'voyage' ? '✓ Private' : '⚠ Cloud'}
+              </span>
+            </div>
+            <div className="bg-white rounded-xl border p-5">
+              <div className="text-xs text-slate-400 uppercase tracking-wider mb-1">Fine-Tuning</div>
+              <div className="text-lg font-bold text-slate-900">{(pp.finetune_provider || 'together').toUpperCase()}</div>
+              <div className="text-sm text-slate-500 mt-1">{pp.finetune_provider === 'local' ? 'Local — training data stays on-prem' : 'Together.ai (external)'}</div>
+              <span className={`mt-2 inline-block px-2 py-0.5 text-xs rounded border ${pp.finetune_provider === 'local' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                {pp.finetune_provider === 'local' ? '✓ Private' : '✗ External'}
+              </span>
+            </div>
+            <div className="bg-white rounded-xl border p-5">
+              <div className="text-xs text-slate-400 uppercase tracking-wider mb-1">PII Redaction</div>
+              <div className="text-lg font-bold text-slate-900">{pp.pii_redaction_enabled ? 'ENABLED' : 'DISABLED'}</div>
+              <div className="text-sm text-slate-500 mt-1">{pp.pii_redaction_enabled ? 'SSN, bank accts, tax IDs masked' : 'Raw data sent to LLM'}</div>
+              <span className={`mt-2 inline-block px-2 py-0.5 text-xs rounded border ${pp.pii_redaction_enabled ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                {pp.pii_redaction_enabled ? '✓ Active' : '⚠ Inactive'}
+              </span>
+            </div>
+          </div>
+
+          {/* ZDR + Audit Stats */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-white rounded-xl border p-5">
+              <h3 className="font-semibold text-slate-700 mb-3">Zero Data Retention (ZDR)</h3>
+              <div className="flex items-center gap-3">
+                <div className={`w-3 h-3 rounded-full ${pp.zero_data_retention ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                <span className="text-sm">{pp.zero_data_retention ? 'Active — Anthropic does not retain prompt/completion data' : 'Inactive — standard API data handling'}</span>
+              </div>
+              <p className="text-xs text-slate-400 mt-2">Set LLM_ZERO_DATA_RETENTION=true to enable. Only applies to Anthropic direct API — Bedrock/Vertex have inherent ZDR.</p>
+            </div>
+            <div className="bg-white rounded-xl border p-5">
+              <h3 className="font-semibold text-slate-700 mb-3">LLM Call Audit Summary</h3>
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div><div className="text-2xl font-bold text-indigo-600">{audit.total_calls || 0}</div><div className="text-xs text-slate-400">Total Calls</div></div>
+                <div><div className="text-2xl font-bold text-emerald-600">{audit.success_rate || 100}%</div><div className="text-xs text-slate-400">Success Rate</div></div>
+                <div><div className="text-2xl font-bold text-purple-600">{audit.pii_redacted_pct || 0}%</div><div className="text-xs text-slate-400">PII Redacted</div></div>
+              </div>
+            </div>
+          </div>
+
+          {/* Deterministic Core Banner */}
+          <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl border border-emerald-200 p-5">
+            <div className="flex items-center gap-2 mb-2">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              <h3 className="font-semibold text-emerald-800">Deterministic Core — No LLM Required</h3>
+            </div>
+            <p className="text-sm text-emerald-700">
+              Anomaly detection (19 rules), PO matching (multi-signal scoring), and triage (agentic classification)
+              are entirely local and deterministic. 70% of AuditLens capability requires zero LLM calls.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── EGRESS MAP ── */}
+      {tab === 'egress' && (
+        <div className="bg-white rounded-xl border overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="text-left p-3 font-medium text-slate-500">Module</th>
+                <th className="text-left p-3 font-medium text-slate-500">Data Sent</th>
+                <th className="text-left p-3 font-medium text-slate-500">Destination</th>
+                <th className="text-left p-3 font-medium text-slate-500">Provider Layer</th>
+                <th className="text-left p-3 font-medium text-slate-500">Risk</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(egress).map(([mod, info]) => (
+                <tr key={mod} className="border-t hover:bg-slate-25">
+                  <td className="p-3 font-medium text-slate-900 capitalize">{mod.replace(/_/g, ' ')}</td>
+                  <td className="p-3 text-slate-600 max-w-xs">{info.data_type}</td>
+                  <td className="p-3 text-slate-600">{info.destination}</td>
+                  <td className="p-3">{info.uses_provider_layer ? <span className="text-emerald-600 font-medium">✓ Yes</span> : <span className="text-slate-400">N/A</span>}</td>
+                  <td className="p-3"><span className={`px-2 py-0.5 rounded text-xs font-medium border ${riskBg(info.risk)}`}>{info.risk.toUpperCase()}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── AUDIT LOG ── */}
+      {tab === 'audit' && (
+        <div>
+          {/* Summary bar */}
+          {auditLog?.summary && (
+            <div className="grid grid-cols-5 gap-3 mb-4">
+              {Object.entries(auditLog.summary.by_module || {}).map(([mod, count]) => (
+                <div key={mod} className="bg-white rounded-lg border p-3 text-center">
+                  <div className="text-lg font-bold text-indigo-600">{count}</div>
+                  <div className="text-xs text-slate-400 capitalize">{mod.replace(/_/g, ' ')}</div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="bg-white rounded-xl border overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="text-left p-3 font-medium text-slate-500">Timestamp</th>
+                  <th className="text-left p-3 font-medium text-slate-500">Module</th>
+                  <th className="text-left p-3 font-medium text-slate-500">Model</th>
+                  <th className="text-left p-3 font-medium text-slate-500">Type</th>
+                  <th className="text-left p-3 font-medium text-slate-500">Provider</th>
+                  <th className="text-left p-3 font-medium text-slate-500">Latency</th>
+                  <th className="text-left p-3 font-medium text-slate-500">PII</th>
+                  <th className="text-left p-3 font-medium text-slate-500">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(auditLog?.entries || []).length === 0 ? (
+                  <tr><td colSpan={8} className="p-8 text-center text-slate-400">No LLM calls recorded yet. Upload a document or trigger an AI feature to see audit entries.</td></tr>
+                ) : (auditLog?.entries || []).map((e, i) => (
+                  <tr key={i} className="border-t hover:bg-slate-25">
+                    <td className="p-3 text-xs text-slate-500 font-mono">{e.timestamp?.replace('T', ' ').replace('Z', '').slice(0, 19)}</td>
+                    <td className="p-3 font-medium text-slate-700 capitalize">{e.module?.replace(/_/g, ' ')}</td>
+                    <td className="p-3 text-xs text-slate-600 font-mono">{e.model?.split('-').slice(1, 2).join('') || e.model}</td>
+                    <td className="p-3"><span className={`px-2 py-0.5 rounded text-xs ${e.data_type === 'document' ? 'bg-purple-100 text-purple-700' : 'bg-sky-100 text-sky-700'}`}>{e.data_type}</span></td>
+                    <td className="p-3 text-xs text-slate-600">{e.provider}</td>
+                    <td className="p-3 text-xs text-slate-600">{e.latency_ms}ms</td>
+                    <td className="p-3">{e.pii_redacted ? <span className="text-emerald-600 text-xs font-medium">✓</span> : <span className="text-slate-300 text-xs">—</span>}</td>
+                    <td className="p-3">{e.success ? <span className="text-emerald-600 text-xs">✓</span> : <span className="text-red-600 text-xs">✗ {e.error?.slice(0, 30)}</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── VENDOR CONTROLS ── */}
+      {tab === 'vendors' && <VendorAIControls loadVendorControls={loadVendorControls} vendorControls={vendorControls} updateVendorControl={updateVendorControl} />}
+
+      {/* ── DEPLOYMENT PRESETS ── */}
+      {tab === 'presets' && (
+        <div className="space-y-4">
+          <p className="text-sm text-slate-500 mb-4">Deployment presets configure all privacy-related settings at once. Set via <code className="bg-slate-100 px-1 rounded text-xs">DEPLOYMENT_PRESET</code> environment variable.</p>
+          <div className="grid grid-cols-3 gap-4">
+            {[
+              { key: 'standard', name: 'Standard', desc: 'Anthropic Cloud + Voyage + Together.ai', icon: '🚀', suited: 'Demo, non-regulated SMBs', color: 'blue' },
+              { key: 'enterprise_private', name: 'Enterprise Private Cloud', desc: 'Bedrock/Vertex + local embeddings + no Together.ai', icon: '🏢', suited: 'SOX-regulated, enterprise F&A', color: 'emerald' },
+              { key: 'airgapped', name: 'Air-Gapped / Sovereign', desc: 'Self-hosted vLLM/Ollama + local TF-IDF + local fine-tuning', icon: '🔒', suited: 'Defense, government, banking', color: 'purple' },
+            ].map(p => {
+              const isCurrent = preset.current_preset === p.key;
+              return (
+                <div key={p.key} className={`rounded-xl border-2 p-6 ${isCurrent ? `border-${p.color}-500 bg-${p.color}-50/30` : 'border-slate-200 bg-white'}`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-2xl">{p.icon}</span>
+                    {isCurrent && <span className="px-2 py-0.5 text-xs font-semibold bg-indigo-100 text-indigo-700 rounded-full">ACTIVE</span>}
+                  </div>
+                  <h3 className="font-bold text-slate-900 mb-1">{p.name}</h3>
+                  <p className="text-sm text-slate-500 mb-3">{p.desc}</p>
+                  <p className="text-xs text-slate-400">Best for: {p.suited}</p>
+                  <div className="mt-3 pt-3 border-t text-xs text-slate-400 space-y-1">
+                    <div>Data leaves org: {p.key === 'standard' ? <span className="text-amber-600 font-medium">Yes</span> : <span className="text-emerald-600 font-medium">No</span>}</div>
+                    <div>PII redaction: {p.key !== 'standard' ? <span className="text-emerald-600 font-medium">Enabled</span> : <span className="text-slate-400">Disabled</span>}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Current effective config */}
+          {preset.effective_config && (
+            <div className="bg-white rounded-xl border p-5 mt-4">
+              <h3 className="font-semibold text-slate-700 mb-3">Current Effective Configuration</h3>
+              <div className="grid grid-cols-5 gap-4 text-sm">
+                {Object.entries(preset.effective_config).map(([k, v]) => (
+                  <div key={k}>
+                    <div className="text-xs text-slate-400 uppercase">{k.replace(/_/g, ' ')}</div>
+                    <div className="font-medium text-slate-700">{String(v)}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Vendor AI Controls sub-component */
+function VendorAIControls({ loadVendorControls, vendorControls, updateVendorControl }) {
+  const { s } = useStore();
+  const vendors = (s.data?.vendor_profiles || []).map(v => v.vendor).filter(Boolean);
+
+  useEffect(() => {
+    vendors.forEach(v => { if (!vendorControls[v]) loadVendorControls(v); });
+  }, [vendors.length]);
+
+  const Toggle = ({ checked, onChange, label }) => (
+    <label className="flex items-center gap-2 cursor-pointer">
+      <div onClick={onChange} className={`w-9 h-5 rounded-full transition relative ${checked ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+        <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition ${checked ? 'left-[18px]' : 'left-0.5'}`} />
+      </div>
+      <span className="text-sm text-slate-600">{label}</span>
+    </label>
+  );
+
+  return (
+    <div>
+      <p className="text-sm text-slate-500 mb-4">Control which vendors have AI features enabled. Disabling extraction means documents from this vendor require manual entry. Disabling intelligence skips AI-powered analysis. Excluding from training prevents correction data from being used in fine-tuning.</p>
+      <div className="bg-white rounded-xl border overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50">
+            <tr>
+              <th className="text-left p-3 font-medium text-slate-500">Vendor</th>
+              <th className="text-left p-3 font-medium text-slate-500">AI Extraction</th>
+              <th className="text-left p-3 font-medium text-slate-500">AI Intelligence</th>
+              <th className="text-left p-3 font-medium text-slate-500">Include in Training</th>
+            </tr>
+          </thead>
+          <tbody>
+            {vendors.length === 0 ? (
+              <tr><td colSpan={4} className="p-8 text-center text-slate-400">No vendors found. Upload documents to populate vendor list.</td></tr>
+            ) : vendors.map(v => {
+              const c = vendorControls[v] || { extraction_enabled: true, intelligence_enabled: true, include_in_training: true };
+              return (
+                <tr key={v} className="border-t">
+                  <td className="p-3 font-medium text-slate-900">{v}</td>
+                  <td className="p-3"><Toggle checked={c.extraction_enabled} onChange={() => updateVendorControl(v, 'extraction_enabled', !c.extraction_enabled)} label={c.extraction_enabled ? 'Enabled' : 'Disabled'} /></td>
+                  <td className="p-3"><Toggle checked={c.intelligence_enabled} onChange={() => updateVendorControl(v, 'intelligence_enabled', !c.intelligence_enabled)} label={c.intelligence_enabled ? 'Enabled' : 'Disabled'} /></td>
+                  <td className="p-3"><Toggle checked={c.include_in_training} onChange={() => updateVendorControl(v, 'include_in_training', !c.include_in_training)} label={c.include_in_training ? 'Included' : 'Excluded'} /></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+
+/* ═══════════════════════════════════════════════════
    APP SHELL
    ═══════════════════════════════════════════════════ */
 function AppShell() {
@@ -6818,7 +7360,7 @@ function AppShell() {
     dashboard: Dashboard, documents: Documents, triage: Triage, cases: Cases,
     anomalies: Anomalies, matching: Matching, vendors: Vendors, contracts: Contracts,
     settings: SettingsPage, training: Training, upload: UploadPage, audit_trail: AuditTrail,
-    team: TeamManagement, workforce: Workforce,
+    team: TeamManagement, workforce: Workforce, data_governance: DataGovernancePage,
   };
   const Page = pages[s.tab] || Dashboard;
 

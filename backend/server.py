@@ -383,6 +383,12 @@ async def health():
     return {"status": "ok", "product": "AuditLens",
         "claude_api": "connected" if USE_REAL_API else "no_api_key", "version": VERSION,
         "llm_provider": get_provider_info() if _HAS_LLM_PROVIDER else {"provider": "anthropic", "available": USE_REAL_API},
+        "data_governance": {
+            "pii_redaction": os.environ.get("PII_REDACTION_ENABLED", "false").lower() == "true",
+            "embedding_provider": os.environ.get("RAG_EMBEDDING_PROVIDER", "voyage").lower(),
+            "finetune_provider": os.environ.get("FINETUNE_PROVIDER", "together").lower(),
+            "deployment_preset": os.environ.get("DEPLOYMENT_PRESET", "standard").lower(),
+        },
         "features": {"agentic_triage": TRIAGE_ENABLED, "vendor_risk_scoring": True,
             "delegation_of_authority": True, "three_way_matching": True,
             "policy_engine": True, "authentication": AUTH_ENABLED,
@@ -3781,6 +3787,162 @@ mimetypes.add_type("text/css", ".css")
 @app.get("/")
 async def serve_index(): return FileResponse(FRONTEND_DIR / "index.html", media_type="text/html", headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"})
 
+# ============================================================
+# DATA GOVERNANCE API (R7, R8, R9, R6)
+# ============================================================
+
+@app.get("/api/data-governance")
+async def data_governance_overview():
+    """R7: Full data governance posture — privacy status, audit summary, controls."""
+    try:
+        from backend.llm_provider import (get_provider_info, get_audit_summary,
+                                           get_deployment_preset_info, EMBEDDING_PROVIDER,
+                                           FINETUNE_PROVIDER, PII_REDACTION)
+    except ImportError:
+        return {"error": "LLM provider not available"}
+
+    provider = get_provider_info()
+    audit = get_audit_summary()
+    preset = get_deployment_preset_info()
+
+    # Data egress map
+    egress_map = {
+        "extraction": {
+            "destination": provider.get("data_residency", "Unknown"),
+            "uses_provider_layer": True,  # R1 fix
+            "data_type": "Full document PDFs (invoices, POs, contracts)",
+            "risk": "low" if provider["provider"] in ("bedrock", "vertex", "openai") else "medium",
+        },
+        "ai_intelligence": {
+            "destination": provider.get("data_residency", "Unknown"),
+            "uses_provider_layer": True,  # R2 fix
+            "data_type": "Invoice metadata, anomaly context, vendor history",
+            "risk": "low" if provider["provider"] in ("bedrock", "vertex", "openai") else "medium",
+        },
+        "embeddings": {
+            "destination": "Local" if EMBEDDING_PROVIDER != "voyage" else "Voyage API (voyageai.com)",
+            "uses_provider_layer": False,
+            "data_type": "Vendor names, document text snippets",
+            "risk": "none" if EMBEDDING_PROVIDER != "voyage" else "medium",
+        },
+        "fine_tuning": {
+            "destination": "Local" if FINETUNE_PROVIDER != "together" else "Together.ai Cloud",
+            "uses_provider_layer": False,
+            "data_type": "Correction patterns, vendor names, field values",
+            "risk": "none" if FINETUNE_PROVIDER != "together" else "high",
+        },
+        "anomaly_detection": {
+            "destination": "Local (deterministic rules)",
+            "uses_provider_layer": False,
+            "data_type": "N/A — no LLM calls",
+            "risk": "none",
+        },
+        "matching": {
+            "destination": "Local (multi-signal scoring)",
+            "uses_provider_layer": False,
+            "data_type": "N/A — no LLM calls",
+            "risk": "none",
+        },
+        "triage": {
+            "destination": "Local (agentic classification)",
+            "uses_provider_layer": False,
+            "data_type": "N/A — no LLM calls",
+            "risk": "none",
+        },
+    }
+
+    data_leaves_org = any(
+        e["risk"] not in ("none", "low") for e in egress_map.values()
+    ) or provider["provider"] == "anthropic"
+
+    return {
+        "privacy_posture": {
+            "data_leaves_organization": data_leaves_org,
+            "llm_provider": provider,
+            "embedding_provider": EMBEDDING_PROVIDER,
+            "finetune_provider": FINETUNE_PROVIDER,
+            "pii_redaction_enabled": PII_REDACTION == "true",
+            "zero_data_retention": provider.get("zero_data_retention", False),
+        },
+        "deployment_preset": preset,
+        "egress_map": egress_map,
+        "audit_summary": audit,
+    }
+
+
+@app.get("/api/data-governance/audit-log")
+async def data_governance_audit_log(limit: int = 100, module: str = None):
+    """R6: Retrieve LLM call audit log."""
+    try:
+        from backend.llm_provider import get_audit_log, get_audit_summary
+        return {
+            "entries": get_audit_log(limit=limit, module=module),
+            "summary": get_audit_summary(),
+        }
+    except ImportError:
+        return {"entries": [], "summary": {}, "error": "Audit logging not available"}
+
+
+@app.get("/api/data-governance/presets")
+async def data_governance_presets():
+    """R8: Available deployment presets."""
+    try:
+        from backend.llm_provider import get_deployment_preset_info
+        return get_deployment_preset_info()
+    except ImportError:
+        return {"error": "Deployment presets not available"}
+
+
+@app.get("/api/data-governance/vendor-controls/{vendor}")
+async def get_vendor_controls(vendor: str):
+    """R9: Get per-vendor AI processing controls."""
+    try:
+        from backend.llm_provider import get_vendor_ai_controls
+        return {"vendor": vendor, "ai_controls": get_vendor_ai_controls(vendor)}
+    except ImportError:
+        return {"vendor": vendor, "ai_controls": {
+            "extraction_enabled": True, "intelligence_enabled": True, "include_in_training": True
+        }}
+
+
+@app.put("/api/data-governance/vendor-controls/{vendor}")
+async def update_vendor_controls(vendor: str, request: Request):
+    """R9: Set per-vendor AI processing controls."""
+    try:
+        from backend.llm_provider import set_vendor_ai_controls
+        body = await request.json()
+        result = set_vendor_ai_controls(
+            vendor,
+            extraction=body.get("extraction_enabled", True),
+            intelligence=body.get("intelligence_enabled", True),
+            training=body.get("include_in_training", True),
+        )
+        return result
+    except ImportError:
+        return {"success": False, "error": "Vendor controls not available"}
+
+
+@app.post("/api/data-governance/pii-scan")
+async def pii_scan(request: Request):
+    """R5: Scan text for PII (detection mode — does not redact)."""
+    try:
+        from backend.pii_redactor import detect_pii, get_pii_summary
+        body = await request.json()
+        text = body.get("text", "")
+        if not text:
+            return {"error": "No text provided"}
+        findings = detect_pii(text)
+        summary = get_pii_summary(text)
+        # Don't return actual PII values in the response — just types and counts
+        safe_findings = [{"type": f["type"], "label": f["label"], "position": f["start"]} for f in findings]
+        return {"findings": safe_findings, "summary": summary}
+    except ImportError:
+        return {"findings": [], "summary": {}, "error": "PII redactor not available"}
+
+
+# ============================================================
+# STATIC FILES — catch-all (must be last)
+# ============================================================
 @app.get("/{path:path}")
 async def serve_static(path: str):
     fp = FRONTEND_DIR / path
@@ -3800,4 +3962,8 @@ if __name__ == "__main__":
     print(f"Claude API: {'Connected' if USE_REAL_API else 'No API Key — extraction will fail, use Manual Entry'}")
     print(f"Triage: {'Enabled' if TRIAGE_ENABLED else 'Disabled'}")
     print(f"Vendor Risk Scoring: Enabled")
+    print(f"Data Governance: /api/data-governance")
+    print(f"PII Redaction: {os.environ.get('PII_REDACTION_ENABLED', 'false')}")
+    print(f"Embedding Provider: {os.environ.get('RAG_EMBEDDING_PROVIDER', 'voyage')}")
+    print(f"FineTune Provider: {os.environ.get('FINETUNE_PROVIDER', 'together')}")
     uvicorn.run(app, host="0.0.0.0", port=port)
