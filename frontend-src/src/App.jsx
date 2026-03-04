@@ -6398,65 +6398,18 @@ function DocModal() {
    LANDING PAGE
    ═══════════════════════════════════════════════════ */
 /* ═══════════════════════════════════════════════════
-   LANDING PAGE
+   LANDING PAGE — CFO / AP Director (30-second read)
    ═══════════════════════════════════════════════════ */
-function LandingPage({ onGo }) {
+function LandingPage({ onGo, onFeatures }) {
   const { s } = useStore();
   const ps = s.ps || {};
-  const rc = ps.rc || 17, lc = ps.lc || 10, ml = ps.ml || '';
-  const authTiers = ps.auth || [];
-  const sla = ps.sla || {};
+  const rc = ps.rc || 17;
   const ver = ps.v || '';
-  const totalRules = rc + 8;  // base rules + contract/delivery intelligence rules
-  const rc14 = 14;  // clause types
-
-  const ruleNames = (ps.rules || []).map(r => r.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()).replace('Po', 'PO').replace('Grn', 'GRN').replace('Qty', 'QTY'));
-  const oppNames = (ps.opp || []).map(r => r.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()));
-
-  const features = [
-    { icon: Zap, title: 'Ensemble Extraction', desc: 'Two frontier models extract in parallel with consensus merging and field-level confidence.', tag: 'AI', color: '#4f46e5' },
-    { icon: Brain, title: 'Agentic Dispute Resolution', desc: 'When models disagree, a third AI re-examines with vendor context and PO data.', tag: 'AI', color: '#4f46e5' },
-    { icon: Shield, title: 'RAG Anomaly Detection', desc: `${rc} rule-based checks plus AI cross-referencing past anomalies, contract clauses, and vendor behavior.`, tag: 'AI + RULES', color: '#d97706' },
-    { icon: Link2, title: '3-Way Smart Matching', desc: 'Automatically matches purchase orders, goods receipts, and invoices with AI-powered fuzzy resolution.', tag: 'AI + ALGO', color: '#059669' },
-    { icon: FileCheck, title: 'Contract Intelligence', desc: '14-clause risk analysis with health scores, obligation tracking, and price drift detection.', tag: 'AI', color: '#4f46e5' },
-    { icon: Building2, title: '9-Factor Vendor Risk', desc: 'Comprehensive vendor scoring: compliance status, payment behavior, spend concentration, delivery performance.', tag: 'AI + RULES', color: '#d97706' },
-    { icon: TrendingUp, title: 'Delivery Analytics', desc: 'Delivery performance tracking: on-time rates, short shipments, PO fulfillment gaps.', tag: 'AI + STATS', color: '#d97706' },
-    { icon: FileText, title: 'Investigation Briefs', desc: 'Auto-generated narratives citing exact amounts, contract clauses, and vendor history.', tag: 'AI', color: '#4f46e5' },
-    { icon: CheckCircle2, title: 'Plain English Anomalies', desc: 'Technical flags translated into one-sentence explanations with post-validated amounts.', tag: 'AI', color: '#4f46e5' },
-    { icon: Eye, title: 'Pattern Insights', desc: 'Statistical analysis identifies recurring vendor issues meeting significance thresholds.', tag: 'AI + STATS', color: '#d97706' },
-    { icon: ClipboardList, title: 'Smart Escalation Routing', desc: 'AI recommends the right person for every exception — AP Manager, Procurement, Legal, or Controller — based on anomaly type, amount, and authority matrix.', tag: 'AI + ALGO', color: '#059669' },
-    { icon: Shield, title: 'Complete Audit Trail', desc: 'Every action logged: who resolved it, what they did, when, and why. SOX-ready evidence trail from detection to closure.', tag: 'COMPLIANCE', color: '#dc2626' },
-    { icon: Brain, title: 'Self-Learning Intelligence', desc: 'Every resolve and dismiss trains the model. False positives auto-suppress. Severity scores adapt to your team\'s real-world decisions.', tag: 'AI + LEARN', color: '#6d28d9' },
-    { icon: Settings, title: 'Natural Language Policy', desc: 'Configure AP rules in plain English. AI translates to parameters you preview.', tag: 'AI + HUMAN', color: '#0369a1' },
-    { icon: Brain, title: 'Custom Fine-Tuning', desc: 'Your corrections train specialized adapters on vendor-specific layouts.', tag: 'AI + LEARN', color: '#6d28d9' },
-  ];
-
-  const pipeline = [
-    { n: '1', t: 'Fact Injection', d: 'Invoices, POs, contracts as structured JSON' },
-    { n: '2', t: 'Constrained Gen', d: 'Scoped prompts with anti-fabrication' },
-    { n: '3', t: 'Post-Validation', d: 'Every dollar and reference verified' },
-    { n: '4', t: 'Deterministic Fallback', d: 'Template output if AI fails' },
-  ];
-
-  const deployOptions = [
-    { title: 'Managed Cloud', tag: 'DEFAULT', color: '#2563eb', checks: ['Zero Data Retention', 'SOC 2 Type II', '5-min setup'], prov: 'Anthropic Claude API' },
-    { title: 'Private VPC', tag: 'ENTERPRISE', color: '#059669', checks: ['Data stays in your VPC', 'AWS / GCP region choice', 'HIPAA / GDPR'], prov: 'AWS Bedrock · Google Vertex AI' },
-    { title: 'Air-Gapped', tag: 'ON-PREM', color: '#7c3aed', checks: ['Zero external calls', 'Your hardware + models', 'Defense-grade'], prov: 'Self-hosted AI runtime' },
-  ];
-
-  const defaultAuth = [
-    { r: 'AP Analyst', l: 'Configurable', c: '#166534' },
-    { r: 'AP Manager', l: 'Configurable', c: '#15803d' },
-    { r: 'VP Finance', l: 'Configurable', c: '#ca8a04' },
-    { r: 'CFO', l: 'Unlimited', c: '#dc2626' },
-  ];
-
-  const langs = [['EN','#64748b'],['CN','#ef4444'],['JP','#f97316'],['KR','#3b82f6'],['HI','#eab308'],['DE','#22c55e'],['FR','#6366f1'],['ES','#a855f7'],['PT','#14b8a6'],['AR','#8b5cf6']];
-  const taxSystems = ['VAT','GST','MwSt','TVA','IVA','增值税','消費税','ICMS'];
-  const trustBadges = ['RBAC', 'JWT Auth', 'SOX-Ready', 'Audit Trail', 'SLA Tracking', `${totalRules} Rules`];
+  const totalRules = rc + 8;
 
   return (
-    <div className="min-h-screen" style={{ background: '#fafbfc' }}>
+    <div className="min-h-screen bg-white">
+
       {/* ── Nav ── */}
       <nav className="fixed top-0 inset-x-0 z-50 bg-white/80 backdrop-blur-xl border-b border-slate-200/50">
         <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
@@ -6467,558 +6420,506 @@ function LandingPage({ onGo }) {
               <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-[.15em]">AP Intelligence</div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <button onClick={onFeatures} className="px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-900 transition-colors">Features</button>
             <button onClick={onGo} className="px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-900 transition-colors">Sign In</button>
-            <button onClick={onGo} className="px-5 py-2 text-sm font-semibold text-white bg-gradient-to-r from-red-600 to-red-500 rounded-lg hover:bg-slate-800 transition-all">Get Started →</button>
+            <button onClick={onGo} className="px-5 py-2 text-sm font-semibold text-white bg-gradient-to-r from-red-600 to-red-500 rounded-lg hover:opacity-90 transition-all">Get Started →</button>
           </div>
         </div>
       </nav>
 
-      {/* ── Hero ── */}
-      <section className="pt-28 pb-12 px-6">
+      {/* ═══ HERO — Single clear message ═══ */}
+      <section className="pt-32 pb-16 px-6">
         <div className="max-w-3xl mx-auto text-center">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 text-blue-600 text-[11px] font-semibold mb-5 tracking-wide">
-            <Zap className="w-3 h-3" /> AI-POWERED AP AUTOMATION
-          </div>
-          <h1 className="text-[44px] sm:text-[52px] font-extrabold tracking-[-0.03em] text-slate-900 leading-[1.08] mb-5">
-            Audit every invoice<br /><span style={{ color: '#2563eb' }}>before you pay.</span>
+          <h1 className="text-[48px] sm:text-[56px] font-extrabold tracking-[-0.03em] text-slate-900 leading-[1.08] mb-5">
+            Every invoice audited.<br /><span style={{ color: '#2563eb' }}>Before you pay.</span>
           </h1>
-          <p className="text-base text-slate-600 max-w-xl mx-auto mb-8 leading-relaxed">
-            AI extracts, matches, and flags anomalies in under 8 seconds. Contract intelligence, 9-factor vendor risk, and delivery analytics — before you pay.
+          <p className="text-lg text-slate-500 max-w-xl mx-auto mb-8 leading-relaxed">
+            AI-powered AP audit that recovers 1–3% of spend. Every line item checked, every anomaly flagged, every match verified — in under 8 seconds.
           </p>
-          <div className="flex gap-3 justify-center mb-4">
-            <button onClick={onGo} className="px-7 py-3 text-sm font-semibold text-white bg-slate-900 rounded-xl hover:bg-slate-800 transition-all shadow-sm">Start Auditing →</button>
-            <button className="px-7 py-3 text-sm font-semibold text-slate-600 border border-slate-200 rounded-xl hover:bg-white transition-colors">Talk to Sales</button>
+          <div className="flex gap-3 justify-center mb-6">
+            <button onClick={onGo} className="px-8 py-3.5 text-sm font-semibold text-white bg-slate-900 rounded-xl hover:bg-slate-800 transition-all shadow-lg shadow-slate-200/60">Upload Your First Invoice →</button>
+            <button className="px-8 py-3.5 text-sm font-semibold text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">Talk to Sales</button>
           </div>
-          {<p className="text-xs text-slate-400 tracking-wide">Powered by Ensemble AI</p>}
         </div>
       </section>
 
-      {/* ── Stats Bar ── */}
-      <section className="px-6 pb-12">
-        <div className="max-w-4xl mx-auto flex items-center justify-center gap-8 flex-wrap">
-          {[
-            { v: '450+', l: 'invoices/hr', c: '#059669' },
-            { v: `${totalRules}`, l: 'detection rules', c: '#2563eb' },
-            { v: '9', l: 'risk factors', c: '#7c3aed' },
-            { v: `${rc14}`, l: 'clause checks', c: '#d97706' },
-            { v: '<8s', l: 'per invoice', c: '#dc2626' },
-          ].map(st => (
-            <div key={st.l} className="text-center">
-              <div className="text-3xl font-extrabold tracking-tight" style={{ color: st.c }}>{st.v}</div>
-              <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mt-1">{st.l}</div>
+      {/* ═══ BEFORE vs AFTER — The payoff ═══ */}
+      <section className="px-6 pb-16">
+        <div className="max-w-4xl mx-auto">
+          <div className="grid grid-cols-2 gap-6">
+            {/* Before */}
+            <div className="rounded-2xl bg-slate-50 border border-slate-200 p-8">
+              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-6">Manual AP Review</div>
+              <div className="space-y-5">
+                {[
+                  { val: '2–3', unit: 'invoices / hour', sub: 'Per analyst throughput' },
+                  { val: '5–15%', unit: 'sample-based', sub: 'Most invoices never reviewed' },
+                  { val: 'Days', unit: 'to close exceptions', sub: 'Manual investigation bottleneck' },
+                ].map(r => (
+                  <div key={r.unit}>
+                    <div className="text-3xl font-extrabold text-slate-300">{r.val}</div>
+                    <div className="text-sm font-semibold text-slate-500">{r.unit}</div>
+                    <div className="text-xs text-slate-400 mt-0.5">{r.sub}</div>
+                  </div>
+                ))}
+              </div>
             </div>
-          ))}
+            {/* After */}
+            <div className="rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 p-8">
+              <div className="text-[11px] font-bold text-blue-600 uppercase tracking-widest mb-6">With AuditLens</div>
+              <div className="space-y-5">
+                {[
+                  { val: '450+', unit: 'invoices / hour', sub: 'Fully automated extraction + audit' },
+                  { val: '100%', unit: 'coverage', sub: 'Every invoice, every line item' },
+                  { val: '<8 sec', unit: 'end-to-end', sub: 'Upload → extract → match → flag' },
+                ].map(r => (
+                  <div key={r.unit}>
+                    <div className="text-3xl font-extrabold text-blue-600">{r.val}</div>
+                    <div className="text-sm font-semibold text-slate-700">{r.unit}</div>
+                    <div className="text-xs text-slate-500 mt-0.5">{r.sub}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* ── Processing Pipeline (LIVE DEMO) ── */}
-      <section className="px-6 pb-12">
+      {/* ═══ THREE DIFFERENTIATORS — What makes us different ═══ */}
+      <section className="px-6 pb-16">
         <div className="max-w-5xl mx-auto">
-          <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
-              <span className="text-sm font-bold text-slate-900 uppercase tracking-wider">⚡ How AuditLens Processes Every Invoice</span>
-              <span className="shrink-0 px-2.5 py-1 rounded-md bg-emerald-600 text-white text-[11px] font-bold tracking-wider shadow-sm">LIVE DEMO</span>
+          <div className="text-center mb-10">
+            <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">Why AuditLens</h2>
+            <p className="text-sm text-slate-500 mt-2">Three capabilities no other AP tool combines.</p>
+          </div>
+
+          <div className="grid grid-cols-3 gap-5">
+            {/* Differentiator 1 */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-7 hover:shadow-lg hover:border-slate-300 transition-all">
+              <div className="w-12 h-12 rounded-xl bg-indigo-100 flex items-center justify-center mb-4"><Zap className="w-6 h-6 text-indigo-600" /></div>
+              <h3 className="text-base font-bold text-slate-900 mb-2">Ensemble AI Extraction</h3>
+              <p className="text-sm text-slate-500 leading-relaxed mb-4">
+                Two frontier AI models extract every field in parallel. A consensus engine merges results with field-level confidence scores. When they disagree, a third model re-examines with vendor history and PO context.
+              </p>
+              <div className="text-xs text-indigo-600 font-semibold">No other AP tool does this.</div>
             </div>
-            <div className="p-5 space-y-2">
-              {[
-                { icon: Zap, label: 'AI Extraction', sub: 'Ensemble models extract every field in parallel with self-correcting dispute resolution', color: '#4f46e5' },
-                { icon: Link2, label: '3-Way Matching', sub: 'Automatically match to POs and goods receipts — AI resolves fuzzy references', color: '#059669' },
-                { icon: Shield, label: 'Anomaly Detection', sub: `${rc} base rules plus AI-powered contract compliance, vendor intelligence, and delivery tracking`, color: '#d97706' },
-                { icon: FileCheck, label: 'Contract & Vendor Intelligence', sub: 'Clause risk analysis, 9-factor vendor scoring, compliance checks, delivery performance tracking', color: '#7c3aed' },
-                { icon: ClipboardList, label: 'Smart Triage', sub: 'Auto-approve clean invoices, route exceptions to the right person with SLA tracking', color: '#dc2626' },
-                { icon: FileText, label: 'Investigation Brief', sub: 'AI-generated case narrative citing exact amounts, clauses, and recommended actions', color: '#0369a1' },
-              ].map(st => (
-                <div key={st.label} className="flex gap-3 items-start p-3 rounded-xl" style={{ background: st.color + '08' }}>
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: st.color + '15' }}>
-                    <st.icon className="w-4 h-4" style={{ color: st.color }} />
-                  </div>
-                  <div>
-                    <div className="text-sm font-bold text-slate-900">{st.label}</div>
-                    <div className="text-xs text-slate-600 mt-0.5 leading-relaxed">{st.sub}</div>
-                  </div>
-                </div>
+
+            {/* Differentiator 2 */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-7 hover:shadow-lg hover:border-slate-300 transition-all">
+              <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center mb-4"><Shield className="w-6 h-6 text-amber-600" /></div>
+              <h3 className="text-base font-bold text-slate-900 mb-2">Deterministic Audit Core</h3>
+              <p className="text-sm text-slate-500 leading-relaxed mb-4">
+                {totalRules} rule-based checks — duplicates, price overcharges, contract drift, delivery shortfalls — run entirely locally with zero AI dependency. SOX-auditable by design: no hallucination risk on compliance decisions.
+              </p>
+              <div className="text-xs text-amber-600 font-semibold">70% of AuditLens needs no LLM.</div>
+            </div>
+
+            {/* Differentiator 3 */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-7 hover:shadow-lg hover:border-slate-300 transition-all">
+              <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center mb-4"><CheckCircle2 className="w-6 h-6 text-emerald-600" /></div>
+              <h3 className="text-base font-bold text-slate-900 mb-2">Your Data, Your Cloud</h3>
+              <p className="text-sm text-slate-500 leading-relaxed mb-4">
+                AI runs inside your VPC via AWS Bedrock or Google Vertex. Or go fully air-gapped with self-hosted models. PII redaction, LLM audit logs, and per-vendor AI controls — your compliance team sees everything.
+              </p>
+              <div className="text-xs text-emerald-600 font-semibold">Zero data leaves your network.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ═══ TRUST STRIP — Compact compliance signal ═══ */}
+      <section className="px-6 pb-16">
+        <div className="max-w-4xl mx-auto">
+          <div className="rounded-2xl bg-slate-50 border border-slate-200/60 px-8 py-5 flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-3 flex-wrap">
+              {['SOX 404', 'SOC 2', 'GDPR', 'RBAC', `${totalRules} Audit Rules`, 'Audit Trail', 'ZDR'].map(b => (
+                <span key={b} className="px-3 py-1 rounded-full bg-white border border-slate-200 text-xs font-semibold text-slate-600 shadow-sm">{b}</span>
               ))}
             </div>
+            <button onClick={onFeatures} className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors flex items-center gap-1">
+              Full specifications <ChevronRight className="w-3 h-3" />
+            </button>
           </div>
         </div>
       </section>
 
-      {/* ── Closed-Loop Intelligence ── */}
-      <section className="px-6 pb-12">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-6">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-50 text-purple-600 text-[11px] font-semibold mb-3 tracking-wide">
-              <Brain className="w-3 h-3" /> CLOSED-LOOP INTELLIGENCE
-            </div>
-            <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">AI that learns from your team</h2>
-            <p className="text-sm text-slate-500 mt-2 max-w-xl mx-auto">Every analyst action trains the model. False positives disappear. Severity scores adapt. Your AP intelligence gets sharper with every invoice.</p>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-white rounded-2xl border border-slate-200/60 p-5">
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center mb-3"><Check className="w-5 h-5 text-emerald-600" /></div>
-              <h3 className="text-sm font-bold text-slate-900 mb-1">Resolve → Model Learns</h3>
-              <p className="text-xs text-slate-500 leading-relaxed">When analysts correct a PO or adjust payment, the resolution type and context become training data. The model learns which anomalies require real action.</p>
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {['Corrected PO', 'Vendor Notified', 'Credit Note', 'Payment Adjusted'].map(t => (
-                  <span key={t} className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">{t}</span>
-                ))}
-              </div>
-            </div>
-            <div className="bg-white rounded-2xl border border-slate-200/60 p-5">
-              <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center mb-3"><X className="w-5 h-5 text-slate-500" /></div>
-              <h3 className="text-sm font-bold text-slate-900 mb-1">Dismiss → Noise Suppressed</h3>
-              <p className="text-xs text-slate-500 leading-relaxed">Repeated false positives for a vendor/anomaly combination are auto-suppressed. The model reduces severity for patterns your team consistently dismisses.</p>
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {['Approved Exception', 'False Positive', 'Within Tolerance', 'Duplicate'].map(t => (
-                  <span key={t} className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{t}</span>
-                ))}
-              </div>
-            </div>
-            <div className="bg-white rounded-2xl border border-slate-200/60 p-5">
-              <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center mb-3"><ClipboardList className="w-5 h-5 text-amber-600" /></div>
-              <h3 className="text-sm font-bold text-slate-900 mb-1">Escalate → Smart Routing</h3>
-              <p className="text-xs text-slate-500 leading-relaxed">AI recommends the right person based on anomaly type, amount, and your authority matrix. Terms violations go to Procurement. Budget overruns go to Controller.</p>
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {['AP Manager', 'Procurement', 'Controller', 'Legal'].map(t => (
-                  <span key={t} className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">{t}</span>
-                ))}
-              </div>
-            </div>
-          </div>
-          <div className="mt-5 bg-gradient-to-r from-purple-50 to-blue-50 rounded-2xl border border-purple-100 p-5">
-            <div className="flex items-start gap-4">
-              <div className="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center flex-shrink-0"><Shield className="w-6 h-6 text-purple-600" /></div>
-              <div>
-                <h3 className="text-sm font-bold text-slate-900 mb-1">Complete Audit Trail — SOX Ready</h3>
-                <p className="text-xs text-slate-500 leading-relaxed">Every action is logged with who, what, when, and why. From document upload to anomaly detection to analyst resolution — a complete chain of evidence for internal audit and regulatory compliance. No gaps, no manual reconciliation.</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+      {/* ═══ DEPLOY — One visual showing the three modes ═══ */}
+      <section className="px-6 pb-16">
+        <div className="max-w-4xl mx-auto text-center">
+          <h2 className="text-xl font-extrabold text-slate-900 mb-2">Deploys how you need it</h2>
+          <p className="text-sm text-slate-500 mb-8">Same product. Three privacy levels. One config change.</p>
 
-      {/* ── AP Problem + What We Catch (side by side) ── */}
-      <section className="px-6 pb-12">
-        <div className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {/* AP Problem */}
-          <div className="rounded-2xl p-6 bg-white border border-slate-200/60">
-            <div className="text-[11px] font-bold text-red-500 uppercase tracking-widest mb-2">The AP Problem</div>
-            <h3 className="text-xl font-extrabold text-slate-900 mb-2 leading-snug">AP teams lose 1–3% of spend to undetected errors.</h3>
-            <p className="text-[13px] text-slate-500 leading-relaxed mb-5">Manual review catches a fraction. AuditLens checks every invoice, every line item — before payment.</p>
-
-            {/* Before / After comparison */}
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              {/* Manual column */}
-              <div className="rounded-xl p-4 bg-red-50/80 border border-red-100">
-                <div className="text-[11px] font-bold text-red-400 uppercase tracking-widest mb-3">Manual Process</div>
-                <div className="space-y-3">
-                  <div>
-                    <div className="text-2xl font-extrabold text-red-500">2–3</div>
-                    <div className="text-xs text-slate-500">invoices per hour</div>
-                  </div>
-                  <div>
-                    <div className="text-2xl font-extrabold text-red-500">5–15%</div>
-                    <div className="text-xs text-slate-500">sample-based review</div>
-                  </div>
-                  <div>
-                    <div className="text-2xl font-extrabold text-red-500">Days</div>
-                    <div className="text-xs text-slate-500">to catch exceptions</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* AuditLens column */}
-              <div className="rounded-xl p-4 bg-emerald-50/80 border border-emerald-100">
-                <div className="text-[11px] font-bold text-emerald-500 uppercase tracking-widest mb-3">With AuditLens</div>
-                <div className="space-y-3">
-                  <div>
-                    <div className="text-2xl font-extrabold text-emerald-600">450+</div>
-                    <div className="text-xs text-slate-500">invoices per hour</div>
-                  </div>
-                  <div>
-                    <div className="text-2xl font-extrabold text-emerald-600">100%</div>
-                    <div className="text-xs text-slate-500">every invoice, every line</div>
-                  </div>
-                  <div>
-                    <div className="text-2xl font-extrabold text-emerald-600">&lt;8 sec</div>
-                    <div className="text-xs text-slate-500">per invoice, end-to-end</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Bottom stat bar */}
-            <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                <span className="text-xs text-slate-600"><span className="font-bold text-slate-800">{totalRules}</span> detection rules</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-purple-500"></div>
-                <span className="text-xs text-slate-600"><span className="font-bold text-slate-800">9</span> vendor risk factors</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-amber-500"></div>
-                <span className="text-xs text-slate-600"><span className="font-bold text-slate-800">{rc14}</span> contract clause checks</span>
-              </div>
-            </div>
-          </div>
-
-          {/* What We Catch */}
-          <div className="rounded-2xl border border-slate-200/60 bg-white p-6">
-            <div className="flex items-center gap-2 mb-3">
-              <AlertTriangle className="w-4 h-4 text-red-500" />
-              <span className="text-sm font-bold text-slate-900 uppercase tracking-wider">What We Catch</span>
-            </div>
-            <p className="text-[13px] text-slate-500 leading-relaxed mb-4">Three layers of detection — from rule-based flags to AI-powered contract and vendor intelligence.</p>
-
-            {/* Layer 1: Standard rules */}
-            <div className="mb-3">
-              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Rule-Based Audit · {rc} Checks</div>
-              {ruleNames.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {ruleNames.map(r => <span key={r} className="text-[11px] px-2 py-0.5 rounded bg-red-50 text-red-600 font-medium border border-red-100">{r}</span>)}
-                </div>
-              )}
-            </div>
-
-            {/* Layer 2: AI contract intelligence */}
-            <div className="mb-3">
-              <div className="text-[11px] font-bold text-indigo-500 uppercase tracking-widest mb-1.5">AI Contract & Vendor Intelligence</div>
-              <div className="flex flex-wrap gap-1">
-                {[
-                  {n: 'Price Drift Detection', d: 'Invoiced vs contracted rates'},
-                  {n: 'Expiry Risk Alerts', d: 'Expired or near-expiry contracts'},
-                  {n: 'Over-Utilization', d: 'Spend exceeding contract ceiling'},
-                  {n: 'Underbilling Audit', d: 'Below-contract pricing anomalies'},
-                  {n: 'Volume Commitment', d: 'Minimum purchase shortfall risk'},
-                  {n: 'Currency Validation', d: 'Cross-currency invoice checks'},
-                ].map(r => (
-                  <span key={r.n} className="text-[11px] px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 font-medium border border-indigo-100" title={r.d}>{r.n}</span>
-                ))}
-              </div>
-            </div>
-
-            {/* Layer 3: AI delivery analytics */}
-            <div className="mb-3">
-              <div className="text-[11px] font-bold text-blue-500 uppercase tracking-widest mb-1.5">AI Delivery Analytics</div>
-              <div className="flex flex-wrap gap-1">
-                {[
-                  {n: 'Chronic Short Shipment', d: 'Repeated under-delivery patterns'},
-                  {n: 'Stale PO Fulfillment', d: 'Aged POs with low completion'},
-                ].map(r => (
-                  <span key={r.n} className="text-[11px] px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-medium border border-blue-100" title={r.d}>{r.n}</span>
-                ))}
-              </div>
-            </div>
-
-            {/* Opportunity detection */}
-            {oppNames.length > 0 && (
-              <div className="mb-3">
-                <div className="text-[11px] font-bold text-amber-500 uppercase tracking-widest mb-1.5">Savings Opportunities</div>
-                <div className="flex flex-wrap gap-1">
-                  {oppNames.map(r => <span key={r} className="text-[11px] px-2 py-0.5 rounded bg-amber-50 text-amber-700 font-medium border border-amber-100">💡 {r}</span>)}
-                </div>
-              </div>
-            )}
-            <div className="pt-3 mt-3 border-t border-slate-100">
-              <div className="flex flex-wrap gap-1.5">
-                {trustBadges.map(t => <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 font-semibold border border-slate-200">{t}</span>)}
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── AI Intelligence Layer ── */}
-      <section className="px-6 pb-12">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-8">
-            <h2 className="text-3xl font-extrabold tracking-tight">AI Intelligence Layer</h2>
-            <p className="text-base text-slate-500 mt-1">AI where it matters. Rules where you need control.</p>
-          </div>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            {features.map(f => (
-              <div key={f.title} className="bg-white rounded-xl p-4 border border-slate-200/60 hover:shadow-md hover:border-slate-300/60 transition-all group">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: f.color + '10' }}>
-                    <f.icon className="w-3.5 h-3.5" style={{ color: f.color }} />
-                  </div>
-                  <span className="text-[11px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ color: f.color, background: f.color + '10' }}>{f.tag}</span>
-                </div>
-                <h3 className="text-sm font-bold text-slate-900 mb-1 leading-snug">{f.title}</h3>
-                <p className="text-xs text-slate-500 leading-relaxed">{f.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── Enterprise Trust (Authority + Global + Deploy) ── */}
-      <section className="px-6 pb-12">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-8">
-            <h2 className="text-3xl font-extrabold tracking-tight">Enterprise-Grade Trust</h2>
-            <p className="text-base text-slate-500 mt-1">Every number verified. Every decision auditable.</p>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
-            {/* Grounded AI */}
-            <div className="bg-white rounded-2xl border border-slate-200/60 p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <Shield className="w-4 h-4 text-indigo-600" />
-                <span className="text-sm font-bold text-slate-900">Grounded AI</span>
-              </div>
-              <div className="space-y-1.5">
-                {pipeline.map(x => (
-                  <div key={x.n} className="flex gap-2 items-start">
-                    <div className="w-5 h-5 rounded-md bg-indigo-600 text-white flex items-center justify-center text-[11px] font-bold flex-shrink-0 mt-0.5">{x.n}</div>
-                    <div><div className="text-xs font-semibold text-slate-800">{x.t}</div><div className="text-[11px] text-slate-400">{x.d}</div></div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Delegation of Authority */}
-            <div className="bg-white rounded-2xl border border-slate-200/60 p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <Shield className="w-4 h-4 text-emerald-600" />
-                <span className="text-sm font-bold text-slate-900">Delegation of Authority</span>
-              </div>
-              <div className="space-y-1.5">
-                {(authTiers.length ? authTiers : defaultAuth).map((a, i) => {
-                  const authLevelColors = ['#166534', '#15803d', '#ca8a04', '#dc2626'];
-                  const name = a.title || a.r || `Level ${i+1}`;
-                  const limit = a.unlimited ? 'Unlimited' : a.limit_usd ? `$${Number(a.limit_usd).toLocaleString()}` : (a.l || 'Configurable');
-                  return (
-                    <div key={i} className="flex justify-between items-center px-3 py-2 rounded-lg bg-slate-50">
-                      <span className="text-xs font-semibold" style={{ color: authLevelColors[i] || '#64748b' }}>{name}</span>
-                      <span className="text-xs text-slate-500 font-mono">{limit}</span>
-                    </div>
-                  );
-                })}
-              </div>
-              {Object.keys(sla).length > 0 && (
-                <div className="mt-3 pt-3 border-t border-slate-100">
-                  <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">SLA Targets</div>
-                  <div className="flex flex-wrap gap-1">
-                    {Object.entries(sla).map(([k, v]) => (
-                      <span key={k} className="text-[11px] px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100">{k}: <strong>{v}h</strong></span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Global Ready */}
-            <div className="bg-white rounded-2xl border border-slate-200/60 p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <CircleDot className="w-4 h-4 text-blue-500" />
-                <span className="text-sm font-bold text-slate-900">{lc} Languages · Global Tax</span>
-              </div>
-              <div className="grid grid-cols-5 gap-1.5 mb-3">
-                {langs.map(([code, clr]) => (
-                  <div key={code} className="rounded-md py-1.5 text-center" style={{ background: clr + '10', border: `1px solid ${clr}20` }}>
-                    <div className="text-xs font-bold" style={{ color: clr }}>{code}</div>
-                  </div>
-                ))}
-              </div>
-              <div className="flex flex-wrap gap-1">
-                {taxSystems.map(t => (
-                  <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 font-medium border border-slate-200">{t}</span>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Deploy Options */}
-          <div className="text-center mb-4 mt-2">
-            <h3 className="text-2xl font-extrabold tracking-tight">Deploy Anywhere</h3>
-            <p className="text-sm text-slate-600 mt-0.5">Model-agnostic by design. Your data, your infrastructure, your rules.</p>
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-            {deployOptions.map(f => (
-              <div key={f.title} className="bg-white rounded-2xl border border-slate-200/60 p-5 relative">
-                <div className="absolute top-4 right-4 px-2 py-0.5 rounded text-white text-[11px] font-bold tracking-wider" style={{ background: f.color }}>{f.tag}</div>
-                <div className="flex items-center gap-2 mb-3">
-                  <Database className="w-4 h-4" style={{ color: f.color }} />
-                  <span className="text-sm font-extrabold text-slate-900">{f.title}</span>
-                </div>
-                <div className="space-y-1.5 mb-3">
-                  {f.checks.map(c => (
-                    <div key={c} className="flex items-center gap-2 text-xs text-slate-600">
-                      <span className="font-bold" style={{ color: f.color }}>✓</span> {c}
-                    </div>
-                  ))}
-                </div>
-                <div className="text-[11px] text-slate-400 pt-3 border-t border-slate-100"><span className="font-semibold text-slate-500">Provider:</span> {f.prov}</div>
+          <div className="grid grid-cols-3 gap-4">
+            {[
+              { icon: '🚀', name: 'Cloud', desc: 'Managed Anthropic API', residency: 'Standard', badge: 'Fastest setup', color: 'blue' },
+              { icon: '🏢', name: 'Enterprise VPC', desc: 'AWS Bedrock / Vertex AI', residency: 'Your cloud account', badge: 'Most popular', color: 'emerald' },
+              { icon: '🔒', name: 'Air-Gapped', desc: 'Self-hosted vLLM / Ollama', residency: 'Zero external calls', badge: 'Gov / Banking', color: 'purple' },
+            ].map(m => (
+              <div key={m.name} className={`rounded-xl border ${m.color === 'emerald' ? 'border-emerald-300 bg-emerald-50/30' : 'border-slate-200 bg-white'} p-5 text-center`}>
+                <div className="text-2xl mb-2">{m.icon}</div>
+                <div className="text-sm font-bold text-slate-900">{m.name}</div>
+                <div className="text-xs text-slate-500 mt-1">{m.desc}</div>
+                <div className="text-[11px] text-slate-400 mt-2">{m.residency}</div>
+                {m.color === 'emerald' && <div className="mt-2 inline-block px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-100 text-emerald-700">RECOMMENDED</div>}
               </div>
             ))}
           </div>
 
-          {/* Config snippet */}
-          <div className="mt-5 flex items-center justify-center gap-4 flex-wrap">
+          <div className="mt-5">
             <div className="bg-slate-900 rounded-lg px-4 py-2 font-mono text-sm inline-flex items-center gap-1">
               <span className="text-emerald-400">LLM_PROVIDER</span><span className="text-slate-500">=</span><span className="text-amber-300">bedrock</span>
             </div>
-            <span className="text-xs text-slate-500">One config change. Same extraction, same anomaly detection, same audit trail.</span>
           </div>
         </div>
       </section>
 
-      {/* ── ERP Integrations ── */}
-      <section className="px-6 pb-12">
-        <div className="max-w-5xl mx-auto text-center">
-          <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3">Connects to your existing systems</div>
-          <div className="flex flex-wrap justify-center gap-3 mb-2">
-            {['SAP S/4HANA', 'Oracle EBS', 'NetSuite', 'Microsoft Dynamics', 'QuickBooks', 'Sage', 'Workday', 'Xero'].map(e => (
-              <span key={e} className="px-4 py-2 rounded-xl bg-white border border-slate-200 text-sm font-semibold text-slate-700 shadow-sm">{e}</span>
-            ))}
-          </div>
-          <p className="text-xs text-slate-400 mt-2">REST API + file-based integration · Batch or real-time · No ERP modifications required</p>
-        </div>
-      </section>
-
-      {/* ── DATA PRIVACY & AI GOVERNANCE ── */}
-      <section className="px-6 pb-12">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-8">
-            <div className="text-[11px] font-bold text-indigo-500 uppercase tracking-widest mb-2">Data Privacy & AI Governance</div>
-            <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">Your data never has to leave your network.</h2>
-            <p className="text-sm text-slate-500 mt-2 max-w-2xl mx-auto">Enterprise F&A teams need provable data residency. AuditLens gives you three deployment modes — from managed cloud to fully air-gapped — with zero code changes.</p>
-          </div>
-
-          {/* Deterministic Core Banner */}
-          <div className="rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 p-5 mb-6">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center flex-shrink-0"><Shield className="w-5 h-5 text-emerald-600" /></div>
-              <div>
-                <h3 className="text-sm font-bold text-emerald-800">70% of AuditLens requires zero LLM calls</h3>
-                <p className="text-xs text-emerald-600 mt-0.5">Anomaly detection ({rc} rules), PO matching, 3-way reconciliation, and triage are entirely deterministic and local. No financial data goes to any AI model for core audit functions.</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Three deployment modes */}
-          <div className="grid grid-cols-3 gap-4 mb-6">
-            {[
-              { icon: '🚀', name: 'Standard', target: 'Demo & SMBs', provider: 'Anthropic Cloud', llm: 'Claude Sonnet + Haiku', embed: 'Voyage API', train: 'Together.ai',
-                data: true, privacy: 'Standard API', color: 'blue', borderClr: 'border-blue-200', bgClr: 'bg-blue-50/40' },
-              { icon: '🏢', name: 'Enterprise VPC', target: 'SOX-regulated F&A', provider: 'AWS Bedrock / Vertex AI', llm: 'Same models, your VPC', embed: 'Local', train: 'Local PEFT/LoRA',
-                data: false, privacy: 'Private Cloud', color: 'emerald', borderClr: 'border-emerald-300', bgClr: 'bg-emerald-50/40' },
-              { icon: '🔒', name: 'Air-Gapped', target: 'Defense / Gov / Banking', provider: 'Self-hosted vLLM or Ollama', llm: 'Your infrastructure', embed: 'Local TF-IDF', train: 'Local',
-                data: false, privacy: 'Zero external calls', color: 'purple', borderClr: 'border-purple-300', bgClr: 'bg-purple-50/40' },
-            ].map(m => (
-              <div key={m.name} className={`rounded-2xl border-2 ${m.borderClr} ${m.bgClr} p-5`}>
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="text-xl">{m.icon}</span>
-                  <div>
-                    <div className="text-sm font-bold text-slate-900">{m.name}</div>
-                    <div className="text-[10px] text-slate-400">{m.target}</div>
-                  </div>
-                </div>
-                <div className="space-y-2 text-xs">
-                  <div className="flex justify-between"><span className="text-slate-400">LLM Provider</span><span className="text-slate-700 font-medium text-right">{m.provider}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-400">Embeddings</span><span className="text-slate-700 font-medium">{m.embed}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-400">Fine-tuning</span><span className="text-slate-700 font-medium">{m.train}</span></div>
-                </div>
-                <div className="mt-3 pt-3 border-t border-slate-200/60 flex items-center gap-1.5">
-                  <div className={`w-2 h-2 rounded-full ${m.data ? 'bg-amber-400' : 'bg-emerald-500'}`} />
-                  <span className={`text-[11px] font-semibold ${m.data ? 'text-amber-700' : 'text-emerald-700'}`}>{m.data ? 'Data leaves org' : 'All data stays in-network'}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Privacy feature grid */}
-          <div className="grid grid-cols-4 gap-3">
-            {[
-              { icon: '🛡️', title: 'PII Redaction', desc: 'Bank accounts, tax IDs, SSNs automatically masked before any LLM call. Reversible token mapping restores values in output.' },
-              { icon: '📋', title: 'LLM Audit Log', desc: 'Every external AI call logged: timestamp, provider, model, data type, latency, PII status. SOX-ready evidence trail.' },
-              { icon: '🔧', title: 'Vendor Controls', desc: 'Per-vendor toggle: enable/disable AI extraction, intelligence features, and training data inclusion independently.' },
-              { icon: '🚫', title: 'Zero Data Retention', desc: 'ZDR header on Anthropic calls. Bedrock/Vertex have inherent ZDR — data never stored by the model provider.' },
-            ].map(f => (
-              <div key={f.title} className="rounded-xl bg-white border border-slate-200/60 p-4">
-                <div className="text-lg mb-2">{f.icon}</div>
-                <div className="text-xs font-bold text-slate-800 mb-1">{f.title}</div>
-                <div className="text-[11px] text-slate-500 leading-relaxed">{f.desc}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Config one-liner */}
-          <div className="mt-5 flex items-center justify-center gap-4 flex-wrap">
-            <div className="bg-slate-900 rounded-lg px-4 py-2 font-mono text-xs inline-flex items-center gap-1">
-              <span className="text-emerald-400">DEPLOYMENT_PRESET</span><span className="text-slate-500">=</span><span className="text-amber-300">enterprise_private</span>
-            </div>
-            <span className="text-xs text-slate-500">One environment variable. All privacy settings configured.</span>
-          </div>
-        </div>
-      </section>
-
-      {/* ── ROI & Compliance ── */}
-      <section className="px-6 pb-12">
-        <div className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {/* ROI */}
-          <div className="rounded-2xl bg-white border border-slate-200/60 p-6">
-            <div className="text-[11px] font-bold text-emerald-600 uppercase tracking-widest mb-3">Expected Impact</div>
-            <div className="grid grid-cols-2 gap-4 mb-4">
-              {[
-                { v: '1–3%', l: 'Spend recovery', d: 'From overcharges, duplicates, contract drift' },
-                { v: '85%', l: 'Less manual review', d: 'AI auto-approves clean invoices' },
-                { v: '10×', l: 'Faster processing', d: '450+ inv/hr vs 2–3 manual' },
-                { v: '100%', l: 'Audit coverage', d: 'Every invoice, every line item' },
-              ].map(s => (
-                <div key={s.l} className="text-center">
-                  <div className="text-2xl font-extrabold text-emerald-600">{s.v}</div>
-                  <div className="text-xs font-bold text-slate-700">{s.l}</div>
-                  <div className="text-[11px] text-slate-400 mt-0.5">{s.d}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Compliance */}
-          <div className="rounded-2xl bg-white border border-slate-200/60 p-6">
-            <div className="text-[11px] font-bold text-blue-600 uppercase tracking-widest mb-3">Compliance & Security</div>
-            <div className="space-y-2">
-              {[
-                { badge: 'SOX 404', desc: 'Segregation of duties, approval workflows, complete audit trail' },
-                { badge: 'SOC 2 Type II', desc: 'Infrastructure and data handling security controls' },
-                { badge: 'GDPR / DPDP', desc: 'Data residency options, PII redaction, Zero Data Retention mode' },
-                { badge: 'RBAC', desc: '4-tier role-based access control with configurable authority limits' },
-                { badge: 'Audit Trail', desc: 'Every action, decision, and AI recommendation logged with timestamp' },
-                { badge: 'Data Governance', desc: 'Live dashboard: data egress map, LLM audit log, per-vendor AI controls' },
-              ].map(c => (
-                <div key={c.badge} className="flex gap-3 items-start">
-                  <span className="text-[11px] px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-100 whitespace-nowrap">{c.badge}</span>
-                  <span className="text-xs text-slate-600">{c.desc}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── CTA ── */}
-      <section className="px-6 pb-12">
-        <div className="max-w-5xl mx-auto">
+      {/* ═══ CTA ═══ */}
+      <section className="px-6 pb-16">
+        <div className="max-w-4xl mx-auto">
           <div className="rounded-2xl p-10 text-center text-white" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)' }}>
             <h2 className="text-3xl font-extrabold tracking-tight mb-2">See what your AP team is missing.</h2>
-            <p className="text-base text-slate-500 mb-6">Upload your first invoice — extracted, matched, and audited in under 8 seconds.</p>
-            <button onClick={onGo} className="px-8 py-3 text-sm font-semibold text-slate-900 bg-white rounded-xl hover:bg-slate-50 transition-all shadow-lg">Start Free →</button>
+            <p className="text-base text-slate-400 mb-6">Upload your first invoice — extracted, matched, and audited in under 8 seconds.</p>
+            <div className="flex gap-3 justify-center">
+              <button onClick={onGo} className="px-8 py-3 text-sm font-semibold text-slate-900 bg-white rounded-xl hover:bg-slate-50 transition-all shadow-lg">Start Free →</button>
+              <button onClick={onFeatures} className="px-8 py-3 text-sm font-semibold text-white border border-slate-600 rounded-xl hover:border-slate-400 transition-all">View All Features</button>
+            </div>
           </div>
         </div>
       </section>
 
       {/* ── Footer ── */}
-      <footer className="py-6 px-6">
+      <footer className="py-6 px-6 border-t border-slate-100">
         <div className="max-w-6xl mx-auto flex justify-between items-center text-[11px] text-slate-400">
           <span>© 2026 AuditLens{ver ? ` · v${ver}` : ''}</span>
-          <span>Enterprise AP Automation · SOX-Ready · VPC-Isolated AI</span>
+          <span>Enterprise AP Audit · SOX-Ready · VPC-Isolated AI</span>
         </div>
       </footer>
+    </div>
+  );
+}
+
+
+/* ═══════════════════════════════════════════════════
+   FEATURES & SPECIFICATIONS PAGE
+   For AP Director, IT/Security, and technical evaluators
+   ═══════════════════════════════════════════════════ */
+function FeaturesPage({ onBack, onGo }) {
+  const { s } = useStore();
+  const ps = s.ps || {};
+  const rc = ps.rc || 17;
+  const totalRules = rc + 8;
+  const ver = ps.v || '';
+  const [section, setSection] = useState('ap');
+
+  const ruleNames = (ps.rules || []).map(r => r.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()).replace('Po', 'PO').replace('Grn', 'GRN').replace('Qty', 'QTY'));
+  const oppNames = (ps.opp || []).map(r => r.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()));
+
+  const sections = [
+    { id: 'ap', label: 'For AP Teams' },
+    { id: 'ai', label: 'AI Intelligence' },
+    { id: 'security', label: 'IT & Security' },
+    { id: 'compliance', label: 'Compliance' },
+    { id: 'integrations', label: 'Integrations' },
+  ];
+
+  return (
+    <div className="min-h-screen bg-white">
+      {/* Nav */}
+      <nav className="fixed top-0 inset-x-0 z-50 bg-white/80 backdrop-blur-xl border-b border-slate-200/50">
+        <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button onClick={onBack} className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-900 transition-colors">
+              ← Back
+            </button>
+            <div className="h-5 w-px bg-slate-200" />
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-red-600 to-red-500 flex items-center justify-center"><Shield className="w-3.5 h-3.5 text-white" /></div>
+              <span className="text-base font-bold text-slate-900">AuditLens Features</span>
+            </div>
+          </div>
+          <button onClick={onGo} className="px-5 py-2 text-sm font-semibold text-white bg-gradient-to-r from-red-600 to-red-500 rounded-lg hover:opacity-90 transition-all">Get Started →</button>
+        </div>
+      </nav>
+
+      <div className="pt-20 pb-8 px-6">
+        <div className="max-w-5xl mx-auto">
+
+          {/* Section tabs */}
+          <div className="flex gap-1 mb-8 bg-slate-100 rounded-xl p-1 w-fit">
+            {sections.map(sec => (
+              <button key={sec.id} onClick={() => setSection(sec.id)}
+                className={`px-5 py-2.5 rounded-lg text-sm font-medium transition ${section === sec.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                {sec.label}
+              </button>
+            ))}
+          </div>
+
+          {/* ═══ FOR AP TEAMS ═══ */}
+          {section === 'ap' && (
+            <div className="space-y-8">
+              <div>
+                <h2 className="text-2xl font-extrabold text-slate-900 mb-1">AP Operations Features</h2>
+                <p className="text-sm text-slate-500">Everything your AP team needs from upload to resolution.</p>
+              </div>
+
+              {/* Extraction Pipeline */}
+              <FeatureBlock icon={<Zap className="w-5 h-5 text-indigo-600" />} title="Ensemble Extraction Engine" tag="AI">
+                <p>Two frontier AI models (Sonnet + Haiku) extract every field in parallel — vendor name, invoice number, line items, tax details, payment terms, and more. A consensus engine merges results with field-level confidence scoring. When critical fields disagree, a third agentic model re-examines the document with vendor history, correction patterns, and PO context to break the tie.</p>
+                <div className="grid grid-cols-3 gap-3 mt-4">
+                  <MiniStat label="Extraction time" value="3–6 sec" />
+                  <MiniStat label="Fields extracted" value="25+" />
+                  <MiniStat label="Supported formats" value="PDF, PNG, JPEG" />
+                </div>
+              </FeatureBlock>
+
+              {/* Anomaly Detection */}
+              <FeatureBlock icon={<AlertTriangle className="w-5 h-5 text-amber-600" />} title="Rule-Based Anomaly Detection" tag="DETERMINISTIC">
+                <p>{rc} anomaly rules run locally with zero LLM dependency. Every invoice is checked for duplicates, price overcharges, quantity mismatches, missing POs, tax anomalies, stale invoices, weekend submissions, and more.</p>
+                <div className="flex flex-wrap gap-1.5 mt-3">
+                  {(ruleNames.length > 0 ? ruleNames : ['Duplicate Invoice', 'Price Overcharge', 'Missing PO', 'Quantity Mismatch', 'Amount Discrepancy', 'Tax Rate Anomaly', 'Stale Invoice', 'Weekend Invoice', 'Round Number', 'Terms Violation', 'Currency Mismatch', 'Unauthorized Item', 'Line Item Mismatch', 'Unreceipted Invoice', 'Overbilled vs Received', 'Qty Received Mismatch', 'Short Shipment']).map(r => (
+                    <span key={r} className="px-2 py-0.5 text-[11px] rounded bg-amber-50 text-amber-700 border border-amber-200 font-medium">{r}</span>
+                  ))}
+                </div>
+              </FeatureBlock>
+
+              {/* Matching */}
+              <FeatureBlock icon={<Link2 className="w-5 h-5 text-emerald-600" />} title="3-Way Smart Matching" tag="AI + ALGO">
+                <p>Automatically matches invoices to purchase orders and goods receipts using multi-signal scoring: amount tolerance, vendor name fuzzy matching, date proximity, line-item cross-reference, and PO number extraction. AI-powered fuzzy resolution handles partial matches and format inconsistencies.</p>
+              </FeatureBlock>
+
+              {/* Triage */}
+              <FeatureBlock icon={<ClipboardList className="w-5 h-5 text-blue-600" />} title="Intelligent Triage" tag="RULES">
+                <p>Invoices are automatically classified into three lanes — Auto-Approve (clean, matched, within tolerance), Review (anomalies detected but recoverable), and Blocked (critical issues requiring investigation). Classification is deterministic and fully auditable.</p>
+              </FeatureBlock>
+
+              {/* Case Management */}
+              <FeatureBlock icon={<FileText className="w-5 h-5 text-purple-600" />} title="Case Management & Workflows" tag="CORE">
+                <p>Blocked and review invoices generate investigation cases with severity scoring, SLA tracking, and assignment recommendations. Cases flow through configurable workflows with escalation rules, delegation of authority, and complete audit trails.</p>
+              </FeatureBlock>
+            </div>
+          )}
+
+          {/* ═══ AI INTELLIGENCE ═══ */}
+          {section === 'ai' && (
+            <div className="space-y-8">
+              <div>
+                <h2 className="text-2xl font-extrabold text-slate-900 mb-1">AI Intelligence Layer</h2>
+                <p className="text-sm text-slate-500">AI augments every decision — grounded in your data, never hallucinated.</p>
+              </div>
+
+              <FeatureBlock icon={<Brain className="w-5 h-5 text-indigo-600" />} title="AI Investigation Briefs" tag="AI">
+                <p>One-click AI-generated investigation summaries for flagged cases. Grounded in actual invoice data, anomaly context, vendor history, and contract terms — with fact verification to prevent hallucination. Falls back to deterministic analysis when AI is unavailable.</p>
+              </FeatureBlock>
+
+              <FeatureBlock icon={<AlertCircle className="w-5 h-5 text-amber-600" />} title="Anomaly Explanations" tag="AI">
+                <p>AI explains each flagged anomaly in plain language — what was expected, what was found, and why it matters. Analysts understand the issue immediately instead of interpreting raw rule outputs.</p>
+              </FeatureBlock>
+
+              <FeatureBlock icon={<Send className="w-5 h-5 text-purple-600" />} title="Vendor Communication Drafts" tag="AI">
+                <p>AI-drafted dispute letters, information requests, debit note justifications, and payment delay notices — pre-populated with invoice details, anomaly evidence, contract references, and correct amounts.</p>
+              </FeatureBlock>
+
+              <FeatureBlock icon={<TrendingUp className="w-5 h-5 text-emerald-600" />} title="Vendor Behavior Analytics" tag="AI">
+                <p>AI-synthesized vendor insights: spending trends, anomaly patterns, risk trajectory, and procurement recommendations. Backed by 9-factor risk scoring with monthly trend analysis.</p>
+              </FeatureBlock>
+
+              <FeatureBlock icon={<Shield className="w-5 h-5 text-blue-600" />} title="Contract Intelligence" tag="AI + RULES">
+                <p>Price drift detection, expiry risk alerts, over-utilization warnings, underbilling audit, volume commitment tracking, and currency validation — combining contract clause analysis with real-time invoice data.</p>
+                <div className="flex flex-wrap gap-1.5 mt-3">
+                  {['Price Drift', 'Expiry Risk', 'Over-Utilization', 'Underbilling', 'Volume Commitment', 'Currency Validation', 'Chronic Short Shipment', 'Stale PO Fulfillment'].map(r => (
+                    <span key={r} className="px-2 py-0.5 text-[11px] rounded bg-blue-50 text-blue-700 border border-blue-200 font-medium">{r}</span>
+                  ))}
+                </div>
+              </FeatureBlock>
+
+              <FeatureBlock icon={<Brain className="w-5 h-5 text-rose-600" />} title="Continuous Learning (LoRA Fine-Tuning)" tag="AI">
+                <p>AuditLens learns from analyst corrections. When an analyst corrects an extraction error, the correction is stored and used to fine-tune a custom model via LoRA — improving accuracy for that vendor's specific invoice formats over time.</p>
+              </FeatureBlock>
+
+              {/* Grounded AI guarantee */}
+              <div className="rounded-2xl bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-200 p-6">
+                <h3 className="text-sm font-bold text-indigo-800 mb-2">Grounded AI Guarantee</h3>
+                <p className="text-sm text-indigo-600">Every AI-generated insight cites specific invoice fields, anomaly rules, or vendor statistics. AI never invents data. If the model can't ground a claim in actual numbers, the claim is not made. Deterministic fallbacks exist for every AI feature — if the LLM is unavailable, you get rule-based analysis, not a blank screen.</p>
+              </div>
+            </div>
+          )}
+
+          {/* ═══ IT & SECURITY ═══ */}
+          {section === 'security' && (
+            <div className="space-y-8">
+              <div>
+                <h2 className="text-2xl font-extrabold text-slate-900 mb-1">Data Privacy & AI Governance</h2>
+                <p className="text-sm text-slate-500">Enterprise-grade data controls. Provable data residency. Full audit trail.</p>
+              </div>
+
+              {/* Deployment Modes */}
+              <div className="grid grid-cols-3 gap-4">
+                {[
+                  { icon: '🚀', name: 'Standard', target: 'Demo & SMBs', provider: 'Anthropic Cloud', embed: 'Voyage API', train: 'Together.ai',
+                    data: true, details: 'Fastest setup. Managed API with optional ZDR.', envs: 'LLM_PROVIDER=anthropic', color: 'border-blue-200 bg-blue-50/30' },
+                  { icon: '🏢', name: 'Enterprise VPC', target: 'SOX-regulated F&A', provider: 'AWS Bedrock / Vertex AI', embed: 'Local', train: 'Local PEFT/LoRA',
+                    data: false, details: 'Same models, your cloud account. Data never leaves VPC.', envs: 'LLM_PROVIDER=bedrock', color: 'border-emerald-300 bg-emerald-50/30' },
+                  { icon: '🔒', name: 'Air-Gapped', target: 'Defense / Gov / Banking', provider: 'Self-hosted vLLM / Ollama', embed: 'Local TF-IDF', train: 'Local',
+                    data: false, details: 'Zero external network calls. Fully on-premise.', envs: 'LLM_PROVIDER=openai LLM_ENDPOINT=http://localhost:8000', color: 'border-purple-300 bg-purple-50/30' },
+                ].map(m => (
+                  <div key={m.name} className={`rounded-2xl border-2 ${m.color} p-6`}>
+                    <div className="text-2xl mb-2">{m.icon}</div>
+                    <div className="text-base font-bold text-slate-900 mb-1">{m.name}</div>
+                    <div className="text-xs text-slate-400 mb-3">{m.target}</div>
+                    <div className="space-y-2 text-xs mb-4">
+                      <div className="flex justify-between"><span className="text-slate-400">LLM</span><span className="text-slate-700 font-medium">{m.provider}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-400">Embeddings</span><span className="text-slate-700 font-medium">{m.embed}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-400">Fine-tuning</span><span className="text-slate-700 font-medium">{m.train}</span></div>
+                    </div>
+                    <p className="text-xs text-slate-500 mb-3">{m.details}</p>
+                    <code className="text-[10px] bg-slate-100 px-2 py-1 rounded text-slate-600 font-mono">{m.envs}</code>
+                    <div className="mt-3 pt-3 border-t border-slate-200/60 flex items-center gap-1.5">
+                      <div className={`w-2 h-2 rounded-full ${m.data ? 'bg-amber-400' : 'bg-emerald-500'}`} />
+                      <span className={`text-[11px] font-semibold ${m.data ? 'text-amber-700' : 'text-emerald-700'}`}>{m.data ? 'External egress' : 'All data stays in-network'}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <FeatureBlock icon={<Shield className="w-5 h-5 text-emerald-600" />} title="PII Redaction" tag="PRIVACY">
+                <p>Pre-LLM redaction layer detects and masks bank account numbers, routing numbers, SWIFT/IBAN codes, tax IDs (EIN, PAN, GSTIN, VAT), SSNs, credit cards (Luhn-validated), email addresses, and phone numbers. Redaction is reversible — tokens are replaced with placeholders and restored in the output.</p>
+              </FeatureBlock>
+
+              <FeatureBlock icon={<Activity className="w-5 h-5 text-blue-600" />} title="LLM Call Audit Log" tag="SOX">
+                <p>Every external LLM call logged with: timestamp, provider, model, module, data type (text/document), vendor name, response latency, PII redaction status, ZDR status, and success/failure. Accessible via API and the Data Governance dashboard.</p>
+              </FeatureBlock>
+
+              <FeatureBlock icon={<Settings className="w-5 h-5 text-purple-600" />} title="Per-Vendor AI Controls" tag="GOVERNANCE">
+                <p>Per-vendor toggles: enable/disable AI extraction (manual entry only), AI intelligence features (briefs, explanations, drafts), and fine-tuning data inclusion. Strategic suppliers can be excluded from all LLM processing.</p>
+              </FeatureBlock>
+
+              <FeatureBlock icon={<CheckCircle2 className="w-5 h-5 text-slate-600" />} title="Zero Data Retention" tag="PRIVACY">
+                <p>ZDR header on all Anthropic API calls. Bedrock and Vertex AI have inherent ZDR — data is never stored by the model provider. Self-hosted mode: zero external network calls.</p>
+              </FeatureBlock>
+
+              {/* Deterministic core callout */}
+              <div className="rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 p-6">
+                <h3 className="text-sm font-bold text-emerald-800 mb-2">70% of AuditLens Requires Zero LLM Calls</h3>
+                <p className="text-sm text-emerald-600">Anomaly detection ({rc} rules), PO matching (multi-signal scoring), 3-way reconciliation, and triage classification are entirely deterministic and local. Even in a complete LLM outage, your core audit capability continues uninterrupted.</p>
+              </div>
+            </div>
+          )}
+
+          {/* ═══ COMPLIANCE ═══ */}
+          {section === 'compliance' && (
+            <div className="space-y-8">
+              <div>
+                <h2 className="text-2xl font-extrabold text-slate-900 mb-1">Compliance & Controls</h2>
+                <p className="text-sm text-slate-500">Built for regulated environments.</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-5">
+                {[
+                  { badge: 'SOX Section 404', items: ['Segregation of duties via 4-tier RBAC', 'Configurable approval authority by role, amount, and currency', 'Complete audit trail — who, what, when, and why', 'Deterministic anomaly detection (no AI dependency for compliance)'] },
+                  { badge: 'SOC 2 Type II', items: ['JWT authentication with token expiration', 'Role-based access control (Analyst → Manager → Director → Admin)', 'All API endpoints authenticated', 'Activity logging for every action'] },
+                  { badge: 'GDPR / DPDP', items: ['Configurable data residency (EU Bedrock/Vertex regions)', 'PII detection and redaction before LLM calls', 'Zero Data Retention mode', 'Per-vendor data processing controls'] },
+                  { badge: 'Data Governance', items: ['Live data egress map showing all external calls', 'LLM audit log with provider, latency, PII status', 'Deployment preset system (Standard / Enterprise / Air-Gapped)', 'Data Processing Agreement (DPA) template included'] },
+                ].map(c => (
+                  <div key={c.badge} className="rounded-2xl bg-white border border-slate-200 p-6">
+                    <span className="inline-block px-3 py-1 rounded-lg bg-blue-50 text-blue-700 text-xs font-bold border border-blue-100 mb-3">{c.badge}</span>
+                    <ul className="space-y-2">
+                      {c.items.map(item => (
+                        <li key={item} className="flex items-start gap-2 text-sm text-slate-600">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 mt-0.5 flex-shrink-0" />
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+
+              {/* Authority Matrix */}
+              <FeatureBlock icon={<Users className="w-5 h-5 text-indigo-600" />} title="Delegation of Authority Matrix" tag="SOX">
+                <p>Four-tier approval hierarchy with configurable limits per role and currency. AP Analysts, Managers, Procurement, and Controllers each have defined authority thresholds. Invoices above threshold automatically escalate. All authority decisions logged.</p>
+              </FeatureBlock>
+
+              <FeatureBlock icon={<Activity className="w-5 h-5 text-slate-600" />} title="SLA Tracking & Escalation" tag="OPS">
+                <p>Configurable SLA targets per triage lane with real-time aging tracking. Cases approaching breach automatically escalate. Dashboard shows SLA compliance rates across the AP operation.</p>
+              </FeatureBlock>
+            </div>
+          )}
+
+          {/* ═══ INTEGRATIONS ═══ */}
+          {section === 'integrations' && (
+            <div className="space-y-8">
+              <div>
+                <h2 className="text-2xl font-extrabold text-slate-900 mb-1">Integrations & Deployment</h2>
+                <p className="text-sm text-slate-500">Fits your existing AP stack.</p>
+              </div>
+
+              <FeatureBlock icon={<Database className="w-5 h-5 text-blue-600" />} title="ERP Connectivity" tag="INTEGRATION">
+                <p>REST API + file-based integration with no ERP modifications required. Supports batch and real-time modes.</p>
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {['SAP S/4HANA', 'Oracle EBS', 'NetSuite', 'Microsoft Dynamics', 'QuickBooks', 'Sage', 'Workday', 'Xero'].map(e => (
+                    <span key={e} className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-semibold text-slate-700 shadow-sm">{e}</span>
+                  ))}
+                </div>
+              </FeatureBlock>
+
+              <FeatureBlock icon={<FileText className="w-5 h-5 text-emerald-600" />} title="Document Support" tag="CORE">
+                <p>PDF and image (PNG, JPEG) invoice extraction. Multi-page document support. Handles Indian number formatting (lakhs/crores), multiple currencies, and multi-language invoices ({ps.lc || 10}+ locales).</p>
+              </FeatureBlock>
+
+              <FeatureBlock icon={<Zap className="w-5 h-5 text-purple-600" />} title="API-First Architecture" tag="TECHNICAL">
+                <p>Full REST API for every operation — upload, extract, match, flag, resolve. Webhook support for real-time event notifications. Batch import for historical data migration. Export capability for reporting and compliance.</p>
+              </FeatureBlock>
+
+              <FeatureBlock icon={<UploadCloud className="w-5 h-5 text-amber-600" />} title="Deployment Options" tag="DEPLOY">
+                <p>Docker containerized. Deploy on Railway, Render, AWS, GCP, Azure, or any container platform. Single Dockerfile, environment variable configuration. No complex infrastructure requirements.</p>
+              </FeatureBlock>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Footer CTA */}
+      <div className="px-6 pb-10">
+        <div className="max-w-5xl mx-auto rounded-2xl p-8 text-center text-white" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)' }}>
+          <h2 className="text-2xl font-extrabold tracking-tight mb-2">Ready to see it on your invoices?</h2>
+          <p className="text-sm text-slate-400 mb-5">Full product. No credit card. Upload and audit in under a minute.</p>
+          <button onClick={onGo} className="px-8 py-3 text-sm font-semibold text-slate-900 bg-white rounded-xl hover:bg-slate-50 transition-all shadow-lg">Get Started →</button>
+        </div>
+      </div>
+
+      <footer className="py-6 px-6 border-t border-slate-100">
+        <div className="max-w-6xl mx-auto flex justify-between items-center text-[11px] text-slate-400">
+          <span>© 2026 AuditLens{ver ? ` · v${ver}` : ''}</span>
+          <span>Enterprise AP Audit · SOX-Ready · VPC-Isolated AI</span>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+/* Feature block helper */
+function FeatureBlock({ icon, title, tag, children }) {
+  return (
+    <div className="rounded-2xl bg-white border border-slate-200 p-6">
+      <div className="flex items-center gap-3 mb-3">
+        <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center flex-shrink-0">{icon}</div>
+        <div className="flex items-center gap-3">
+          <h3 className="text-base font-bold text-slate-900">{title}</h3>
+          <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-slate-100 text-slate-500 border border-slate-200">{tag}</span>
+        </div>
+      </div>
+      <div className="text-sm text-slate-600 leading-relaxed space-y-2 ml-[52px]">{children}</div>
+    </div>
+  );
+}
+
+/* Mini stat helper */
+function MiniStat({ label, value }) {
+  return (
+    <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 text-center">
+      <div className="text-lg font-bold text-slate-900">{value}</div>
+      <div className="text-[11px] text-slate-400">{label}</div>
     </div>
   );
 }
@@ -7500,7 +7401,8 @@ export default function App() {
     if (!s.user && !s.token && view === 'app') setView('landing');
   }, [s.user, s.token, view]);
 
-  if (view === 'landing') return <LandingPage onGo={() => setView('login')} />;
+  if (view === 'landing') return <LandingPage onGo={() => setView('login')} onFeatures={() => setView('features')} />;
+  if (view === 'features') return <FeaturesPage onBack={() => setView('landing')} onGo={() => setView('login')} />;
   if (view === 'login' && !s.user) return <LoginScreen />;
   return <ErrorBoundary><AppShell /></ErrorBoundary>;
 }
