@@ -581,19 +581,19 @@ def _math_validate(result: dict) -> list:
         if li_sum > 0:
             diff_pct = abs(li_sum - subtotal) / max(subtotal, 1) * 100
             if diff_pct > 2:
-                issues.append({fmt_amt("check": "line_item_sum", "severity": "high",
-                    "detail": f"Line items sum to {li_sum, "")} but subtotal is {fmt_amt(subtotal, "")} (diff: {diff_pct:.1f}%)"})
+                issues.append({"check": "line_item_sum", "severity": "high",
+                    "detail": f"Line items sum to {fmt_amt(li_sum, '')} but subtotal is {fmt_amt(subtotal, '')} (diff: {diff_pct:.1f}%)"})
             elif diff_pct > 0.5:
-                issues.append({fmt_amt("check": "line_item_sum", "severity": "low",
-                    "detail": f"Minor rounding: line items {li_sum, "")} vs subtotal {fmt_amt(subtotal, "")}"})
+                issues.append({"check": "line_item_sum", "severity": "low",
+                    "detail": f"Minor rounding: line items {fmt_amt(li_sum, '')} vs subtotal {fmt_amt(subtotal, '')}"})
 
     if taxes and subtotal > 0 and total > 0:
         tax_total = sum(float(t.get("amount") or 0) for t in taxes)
         expected = subtotal + tax_total
         diff_pct = abs(expected - total) / max(total, 1) * 100
         if diff_pct > 2:
-            issues.append({fmt_amt("check": "total_equals_subtotal_plus_tax", "severity": "high",
-                "detail": f"Subtotal ({subtotal, "")}) + tax ({fmt_amt(tax_total, "")}) = {fmt_amt(expected, "")}, but total is {fmt_amt(total, "")}"})
+            issues.append({"check": "total_equals_subtotal_plus_tax", "severity": "high",
+                "detail": f"Subtotal ({fmt_amt(subtotal, '')}) + tax ({fmt_amt(tax_total, '')}) = {fmt_amt(expected, '')}, but total is {fmt_amt(total, '')}"})
 
     for t in taxes:
         rate = float(t.get("rate") or 0)
@@ -603,7 +603,7 @@ def _math_validate(result: dict) -> list:
             diff_pct = abs(expected_amt - amount) / max(amount, 1) * 100
             if diff_pct > 5:
                 issues.append({"check": "tax_rate_consistency", "severity": "medium",
-                    "detail": f"{t.get('type','Tax')} at {rate}% on {fmt_amt(subtotal, "")} should be {fmt_amt(expected_amt, "")}, got {fmt_amt(amount, "")}"})
+                    "detail": f"{t.get('type','Tax')} at {rate}% on {fmt_amt(subtotal, '')} should be {fmt_amt(expected_amt, '')}, got {fmt_amt(amount, '')}"})
 
     for i, l in enumerate(li):
         qty = float(l.get("quantity") or 0)
@@ -614,7 +614,7 @@ def _math_validate(result: dict) -> list:
             diff_pct = abs(expected_lt - lt) / max(lt, 1) * 100
             if diff_pct > 2:
                 issues.append({"check": f"line_{i+1}_math", "severity": "medium",
-                    "detail": f"Line {i+1}: {qty} × {fmt_amt(price, "")} = {fmt_amt(expected_lt, "")}, but total says {fmt_amt(lt, "")}"})
+                    "detail": f"Line {i+1}: {qty} × {fmt_amt(price, '')} = {fmt_amt(expected_lt, '')}, but total says {fmt_amt(lt, '')}"})
 
     issue_d = result.get("issue_date")
     due_d = result.get("due_date")
@@ -880,8 +880,8 @@ def _vendor_cross_reference(merged: dict, db: dict) -> list:
         avg = sum(hist_amounts) / len(hist_amounts)
         max_h = max(hist_amounts)
         if ext_amount > max_h * 3:
-            deviations.append({fmt_amt("field": "total_amount", "type": "vendor_norm_deviation",
-                "detail": f"Amount {ext_amount, "")} is {ext_amount/avg:.1f}x the vendor average ({fmt_amt(avg, "")}). Highest ever: {fmt_amt(max_h, "")}",
+            deviations.append({"field": "total_amount", "type": "vendor_norm_deviation",
+                "detail": f"Amount {fmt_amt(ext_amount, '')} is {ext_amount/avg:.1f}x the vendor average ({fmt_amt(avg, '')}). Highest ever: {fmt_amt(max_h, '')}",
                 "severity": "high"})
     return deviations
 
