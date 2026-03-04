@@ -24,27 +24,35 @@ export function StoreProvider({ children }) {
     if (loading.current) return;
     loading.current = true;
     try {
-      const [dashR, invR, anomR, matchR, poR, caseR, triR, venR, conR, polR, usrR, actR, docR, tgtR, intelR] = await Promise.all([
-        api('/api/dashboard'),
-        api('/api/invoices'), api('/api/anomalies'), api('/api/matches'), api('/api/purchase-orders'),
-        api('/api/cases'), api('/api/triage'), api('/api/vendors'), api('/api/contracts'),
-        api('/api/policy'), api('/api/users'), api('/api/activity'),
-        api('/api/documents'), api('/api/together/status'), api('/api/intelligence/summary'),
-      ]);
-      d({ type: 'SET', data: {
-        dash: dashR?._err ? null : dashR,
-        intel: intelR?._err ? null : intelR,
-        invoices: invR?.invoices || invR || [], anomalies: anomR?.anomalies || anomR || [],
-        matches: matchR?.matches || matchR || [], purchaseOrders: poR?.purchase_orders || poR || [],
-        cases: caseR?.cases || caseR || [], casesData: caseR?.cases || caseR || [],
-        triage: triR?.summary || triR || {},
-        triageData: triR || {}, triageItems: triR?.items || [], vendors: venR?.vendors || venR || [],
-        contracts: conR?.contracts || conR || [], policy: polR, users: usrR?.users || usrR || [],
-        activityLog: actR?.activity || actR || [], documents: docR?.documents || docR || [],
-        docs: docR?.documents || docR || [],
-        togetherStatus: tgtR, policyHistory: polR?.history || [],
-        vendorProfiles: venR?.vendor_profiles || [], loaded: true,
-      }});
+      // Single round trip instead of 15 separate API calls
+      const r = await api('/api/bootstrap');
+      if (r && !r._err) {
+        d({ type: 'SET', data: {
+          invoices: r.invoices || [],
+          anomalies: r.anomalies || [],
+          matches: r.matches || [],
+          purchaseOrders: r.purchaseOrders || [],
+          cases: r.cases || [], casesData: r.cases || [],
+          triage: r.triage?.summary || {},
+          triageData: r.triage || {},
+          vendors: r.vendors || [],
+          contracts: r.contracts || [],
+          policy: r.policy,
+          users: r.users || [],
+          activityLog: r.activity || [],
+          documents: r.documents || [],
+          docs: r.documents || [],
+          togetherStatus: r.togetherStatus,
+          policyHistory: r.policy?.history || [],
+          vendorProfiles: r.vendors || [],
+          loaded: true,
+        }});
+      }
+      // Fetch dashboard & intel in background (non-blocking)
+      Promise.all([
+        api('/api/dashboard').then(dr => { if (dr && !dr._err) d({ type: 'SET', data: { dash: dr } }); }),
+        api('/api/intelligence/summary').then(ir => { if (ir && !ir._err) d({ type: 'SET', data: { intel: ir } }); }),
+      ]).catch(() => {});
     } catch (e) { console.error('Load failed', e); }
     loading.current = false;
   }, []);

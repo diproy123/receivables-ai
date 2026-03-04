@@ -2841,6 +2841,114 @@ def _compute_processing_speed(db):
         "speedup_factor": round(manual_ms / max(avg_total, 1)),
     }
 
+@app.get("/api/bootstrap")
+async def bootstrap(request: Request):
+    """Single endpoint that returns ALL data needed for the frontend.
+    Replaces 15 separate API calls with 1 round trip.
+    Reads the DB once instead of 15 times."""
+    user = None
+    try:
+        user = _user_from_request(request)
+    except Exception:
+        pass
+
+    db = get_db()
+    scope = get_user_vendor_scope(user) if user else None
+
+    def scoped(data):
+        return scope_by_vendor(data, scope) if scope else data
+
+    invoices = scoped(db.get("invoices", []))
+    anomalies_raw = scoped(db.get("anomalies", []))
+    matches = scoped(db.get("matches", []))
+    cases_list = scoped(db.get("cases", []))
+    contracts = db.get("contracts", [])
+    pos = db.get("purchase_orders", [])
+
+    # ── Anomalies (sorted) ──
+    anomalies_sorted = sorted(anomalies_raw, key=lambda x: x.get("detectedAt", ""), reverse=True)
+
+    # ── Triage lanes ──
+    auto_approved = [i for i in invoices if i.get("triageLane") == "AUTO_APPROVE"]
+    analyst_review = [i for i in invoices if i.get("triageLane") == "REVIEW"]
+    manager_review = [i for i in invoices if i.get("triageLane") == "MANAGER_REVIEW"]
+    vp_review = [i for i in invoices if i.get("triageLane") == "VP_REVIEW"]
+    cfo_review = [i for i in invoices if i.get("triageLane") == "CFO_REVIEW"]
+    blocked = [i for i in invoices if i.get("triageLane") == "BLOCK"]
+    all_review = analyst_review + manager_review + vp_review + cfo_review
+    total_triaged = len(auto_approved) + len(all_review) + len(blocked)
+
+    triage = {
+        "AUTO_APPROVE": auto_approved, "REVIEW": analyst_review,
+        "MANAGER_REVIEW": manager_review, "VP_REVIEW": vp_review,
+        "CFO_REVIEW": cfo_review, "BLOCK": blocked,
+        "summary": {
+            "totalInvoices": len(invoices), "totalTriaged": total_triaged,
+            "autoApproved": len(auto_approved), "review": len(all_review),
+            "blocked": len(blocked),
+            "autoApproveRate": round(len(auto_approved) / max(total_triaged, 1) * 100),
+        },
+    }
+
+    # ── Documents ──
+    documents = scoped(db.get("documents", []))
+
+    # ── Policy ──
+    policy = db.get("_policy_state", DEFAULT_POLICY)
+
+    # ── Users ──
+    users = _get_users()
+    safe_users = [{"id": u["id"], "email": u["email"], "name": u["name"], "role": u["role"],
+                   "active": u.get("active", True), "createdAt": u.get("createdAt", "")} for u in users]
+
+    # ── Activity log (last 100) ──
+    activity = sorted(db.get("activity_log", []), key=lambda x: x.get("timestamp", ""), reverse=True)[:100]
+
+    # ── Vendors ──
+    from backend.vendor import normalize_vendor
+    seen = {}
+    for i in invoices:
+        v = i.get("vendor", "")
+        if v and v not in seen:
+            seen[v] = {"name": v, "invoiceCount": 0, "totalSpend": 0, "totalAnomalies": 0}
+        if v in seen:
+            seen[v]["invoiceCount"] += 1
+            seen[v]["totalSpend"] += i.get("amount", 0)
+    for a in anomalies_raw:
+        v = a.get("vendor", "")
+        if v in seen:
+            seen[v]["totalAnomalies"] += 1
+    vendor_list = sorted(seen.values(), key=lambda x: x.get("name", ""))
+
+    # ── Together status (lightweight) ──
+    together_status = {}
+    try:
+        from backend.together_finetune import get_together_status
+        together_status = get_together_status()
+    except Exception:
+        pass
+
+    # ── Cases with SLA ──
+    for c in cases_list:
+        c["_slaStatus"] = check_sla_status(c)
+
+    return {
+        "invoices": invoices,
+        "anomalies": anomalies_sorted,
+        "matches": matches,
+        "cases": cases_list,
+        "triage": triage,
+        "documents": documents,
+        "purchaseOrders": pos,
+        "contracts": contracts,
+        "policy": policy,
+        "users": safe_users,
+        "activity": activity,
+        "vendors": vendor_list,
+        "togetherStatus": together_status,
+    }
+
+
 @app.get("/api/dashboard")
 async def get_dashboard(user: dict = Depends(get_optional_user)):
     db = get_db(); now = datetime.now()
