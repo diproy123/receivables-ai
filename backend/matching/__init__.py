@@ -28,61 +28,125 @@ def get_po_fulfillment(po_id, matches, invoices):
 
 
 def match_invoice_to_po(invoice, purchase_orders, existing_matches, all_invoices):
-    """Match a single invoice to the best PO using multi-signal scoring."""
+    """Match a single invoice to the best PO using multi-signal scoring.
+
+    Scoring signals (max 100):
+      +50  PO reference exact match
+      +25  Vendor exact / +15 partial
+      +20  Amount near-exact (<2%) / +12 close (<10%) / +5 approximate (<25%)
+      +10  Line item overlap >50%
+      +5   Within PO remaining budget
+
+    Variance penalties (applied AFTER signals):
+      -10  Variance > amount_tolerance_pct (default 2%)
+      -15  Variance > 10%
+      -25  Variance > 25%
+      -10  Absolute variance > match_tolerance_abs (default $500)
+
+    Auto-match downgrade to review_needed if:
+      - Per-invoice variance exceeds tolerance (pct OR absolute)
+      - Cumulative invoicing exceeds PO value
+      - Duplicate invoice number already matched to same PO
+    """
     policy = get_policy()
     OVER_INVOICE_PCT = policy["over_invoice_pct"]
+    AMOUNT_TOL_PCT = policy.get("amount_tolerance_pct", 2)
+    AMOUNT_TOL_ABS = policy.get("match_tolerance_abs", 500)
     best, best_score = None, 0
     inv_subtotal = _n(invoice.get("subtotal") or invoice.get("amount"))
+    inv_number = invoice.get("invoiceNumber", "")
 
     for po in purchase_orders:
-        score, signals = 0, []
+        score, signals, review_reasons = 0, [], []
 
-        # PO reference
+        # ── Signal 1: PO reference exact match (+50) ──
         if invoice.get("poReference") and invoice["poReference"] == po.get("poNumber"):
             score += 50; signals.append("po_reference_exact")
 
-        # Vendor (fuzzy)
+        # ── Signal 2: Vendor similarity (+15/+25) ──
         vs = vendor_similarity(invoice.get("vendor"), po.get("vendor"))
         if vs >= 0.95: score += 25; signals.append("vendor_exact")
         elif vs >= 0.7: score += 15; signals.append("vendor_partial")
 
-        # Amount
+        # ── Signal 3: Amount proximity (+5/+12/+20) ──
         pa = _n(po.get("amount"))
         already, cnt = get_po_fulfillment(po["id"], existing_matches, all_invoices)
         remaining = pa - already
 
+        variance_abs = 0
+        variance_pct = 0
         if inv_subtotal > 0 and pa > 0:
             target = remaining if remaining > 0 else pa
-            dp = abs(inv_subtotal - target) / max(inv_subtotal, target)
+            variance_abs = abs(inv_subtotal - target)
+            variance_pct = (variance_abs / max(inv_subtotal, target)) * 100
+            dp = variance_pct / 100  # as fraction
+
             if dp < 0.02: score += 20; signals.append("amount_near_exact")
             elif dp < 0.10: score += 12; signals.append("amount_close")
             elif dp < 0.25: score += 5; signals.append("amount_approximate")
+            else: signals.append("amount_mismatch")
+
             if remaining > 0 and inv_subtotal <= remaining * 1.1:
                 score += 5; signals.append("within_po_budget")
 
-        # Line items
+        # ── Signal 4: Line item overlap (+10) ──
         inv_set = set(((li.get("description") or "")).lower() for li in invoice.get("lineItems", []))
         po_set = set(((li.get("description") or "")).lower() for li in po.get("lineItems", []))
         if inv_set and po_set:
             if len(inv_set & po_set) / max(len(inv_set), len(po_set)) > 0.5:
                 score += 10; signals.append("line_items_overlap")
 
-        ns = min(100, score)
+        # ── Variance penalties (reduce score for large discrepancies) ──
+        if variance_pct > AMOUNT_TOL_PCT:
+            score -= 10; signals.append("variance_exceeds_pct_tolerance")
+            review_reasons.append(f"Variance {variance_pct:.1f}% exceeds {AMOUNT_TOL_PCT}% tolerance")
+        if variance_pct > 10:
+            score -= 15; signals.append("variance_over_10pct")
+        if variance_pct > 25:
+            score -= 25; signals.append("variance_over_25pct")
+        if variance_abs > AMOUNT_TOL_ABS:
+            score -= 10; signals.append("variance_exceeds_abs_tolerance")
+            review_reasons.append(f"Variance ${variance_abs:,.2f} exceeds ${AMOUNT_TOL_ABS:,.0f} threshold")
+
+        # ── Clamp score to [0, 100] ──
+        ns = max(0, min(100, score))
+
+        # ── Over-invoicing check (cumulative) ──
         over = (already + inv_subtotal) > pa * (1 + OVER_INVOICE_PCT / 100) if pa > 0 else False
         exceeds_po = (already + inv_subtotal) > pa * 1.005 if pa > 0 else False
 
+        # ── Duplicate detection: same invoice number already matched to this PO ──
+        is_dup = any(
+            m.get("invoiceNumber") == inv_number and m.get("poId") == po["id"]
+            for m in existing_matches
+        ) if inv_number else False
+
+        # ── Status determination ──
         match_status = "auto_matched" if ns >= 75 else "review_needed"
+
+        # Downgrade to review_needed if ANY tolerance is breached
+        if variance_pct > AMOUNT_TOL_PCT or variance_abs > AMOUNT_TOL_ABS:
+            match_status = "review_needed"
+            if "tolerance_breach" not in signals:
+                signals.append("tolerance_breach")
         if over or exceeds_po:
             match_status = "review_needed"
+            review_reasons.append("Cumulative invoicing exceeds PO value")
+        if is_dup:
+            match_status = "review_needed"
+            signals.append("duplicate_invoice_on_po")
+            review_reasons.append("Duplicate invoice number already matched to this PO")
 
         if ns > best_score and ns >= 40:
             best_score = ns
             best = {"poId": po["id"], "poNumber": po["poNumber"], "poAmount": pa,
                 "matchScore": ns, "signals": signals,
-                "amountDifference": round(abs(inv_subtotal - (remaining if remaining > 0 else pa)), 2),
+                "amountDifference": round(variance_abs, 2),
+                "variancePct": round(variance_pct, 1),
                 "status": match_status,
+                "reviewReasons": review_reasons,
                 "poAlreadyInvoiced": round(already, 2), "poRemaining": round(remaining, 2),
-                "poInvoiceCount": cnt, "overInvoiced": over}
+                "poInvoiceCount": cnt, "overInvoiced": over, "isDuplicate": is_dup}
     return best
 
 

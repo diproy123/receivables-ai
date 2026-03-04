@@ -1073,18 +1073,18 @@ function Matching() {
     const grn = allDocs.find(d => d.type === 'goods_receipt' && (d.poReference === m.poNumber || d.poId === m.poId));
     const isDup = matches.filter(x => x.invoiceNumber === m.invoiceNumber && x.poNumber === m.poNumber).length > 1;
 
-    // Compute review reasons
-    const reasons = [];
+    // Compute review reasons — prefer backend-provided reasons, supplement with client-side checks
+    const reasons = [...(m.reviewReasons || [])];
     const diff = m.amountDifference || 0;
     const invAmt = inv?.amount || 0;
-    const diffPct = invAmt > 0 ? (diff / invAmt * 100) : 0;
-    if (diff > tolerance.abs) reasons.push('Variance exceeds $' + tolerance.abs + ' threshold');
-    if (diffPct > tolerance.pct) reasons.push('Variance ' + Math.round(diffPct) + '% exceeds ' + tolerance.pct + '% tolerance');
-    if (m.overInvoiced) reasons.push('Cumulative invoicing exceeds PO value');
-    if (!m.signals?.includes('vendor_exact') && !m.signals?.includes('po_reference_exact')) reasons.push('Weak match signals \u2014 no exact PO ref or vendor');
-    if ((m.matchScore || 0) < tolerance.autoThreshold && (m.matchScore || 0) >= 40) reasons.push('Match score ' + m.matchScore + ' below auto-approve threshold (' + tolerance.autoThreshold + ')');
-    if (isDup) reasons.push('Duplicate invoice number matched to same PO');
-    if (m.grnStatus === 'no_grn') reasons.push('No goods receipt found \u2014 2-way match only');
+    const diffPct = m.variancePct || (invAmt > 0 ? (diff / invAmt * 100) : 0);
+    if (diff > tolerance.abs && !reasons.some(r => r.includes('threshold'))) reasons.push('Variance exceeds $' + tolerance.abs + ' threshold');
+    if (diffPct > tolerance.pct && !reasons.some(r => r.includes('tolerance'))) reasons.push('Variance ' + Math.round(diffPct) + '% exceeds ' + tolerance.pct + '% tolerance');
+    if (m.overInvoiced && !reasons.some(r => r.includes('exceeds PO'))) reasons.push('Cumulative invoicing exceeds PO value');
+    if (!m.signals?.includes('vendor_exact') && !m.signals?.includes('po_reference_exact') && !reasons.some(r => r.includes('Weak'))) reasons.push('Weak match signals \u2014 no exact PO ref or vendor');
+    if ((m.matchScore || 0) < tolerance.autoThreshold && (m.matchScore || 0) >= 40 && !reasons.some(r => r.includes('score'))) reasons.push('Match score ' + m.matchScore + ' below auto-approve threshold (' + tolerance.autoThreshold + ')');
+    if (isDup && !reasons.some(r => r.includes('Duplicate'))) reasons.push('Duplicate invoice number matched to same PO');
+    if (m.grnStatus === 'no_grn' && !reasons.some(r => r.includes('goods receipt'))) reasons.push('No goods receipt found \u2014 2-way match only');
 
     return { ...m, _inv: inv, _po: po, _grn: grn, _isDup: isDup, _reasons: reasons, _diffPct: diffPct };
   });
