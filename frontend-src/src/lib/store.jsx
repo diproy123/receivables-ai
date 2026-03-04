@@ -1,5 +1,5 @@
 import { createContext, useContext, useReducer, useCallback, useRef } from 'react';
-import { api } from './api';
+import { api, post } from './api';
 
 const Ctx = createContext();
 
@@ -9,11 +9,12 @@ function reducer(s, a) {
     case 'TOAST': return { ...s, toast: a.msg ? { msg: a.msg, type: a.t || 'info' } : null };
     case 'SEL': return { ...s, sel: a.doc };
     case 'PAGE': return { ...s, page: a.page };
+    case 'TAB': return { ...s, tab: a.tab, tabKey: (s.tabKey || 0) + 1 };
     default: return s;
   }
 }
 
-const initial = { page: 'dashboard', toast: null, sel: null, loaded: false };
+const initial = { page: 'dashboard', tab: 'dashboard', tabKey: 0, toast: null, sel: null, loaded: false };
 
 export function StoreProvider({ children }) {
   const [s, d] = useReducer(reducer, initial);
@@ -49,7 +50,32 @@ export function StoreProvider({ children }) {
     setTimeout(() => d({ type: 'TOAST', msg: null }), 3000);
   }, []);
 
-  return <Ctx.Provider value={{ s, d, load, toast }}>{children}</Ctx.Provider>;
+  const login = useCallback(async (email, password) => {
+    try {
+      const res = await post('/api/auth/login', { email, password });
+      if (res._err) return res.detail || 'Login failed';
+      localStorage.setItem('al_token', res.token);
+      d({ type: 'SET', data: { user: res.user, token: res.token } });
+      return null;
+    } catch (e) { return e.message || 'Login failed'; }
+  }, []);
+
+  const register = useCallback(async (email, password, name, role) => {
+    try {
+      const res = await post('/api/auth/register', { email, password, name, role });
+      if (res._err) return res.detail || 'Registration failed';
+      localStorage.setItem('al_token', res.token);
+      d({ type: 'SET', data: { user: res.user, token: res.token } });
+      return null;
+    } catch (e) { return e.message || 'Registration failed'; }
+  }, []);
+
+  const logout = useCallback(() => {
+    localStorage.removeItem('al_token');
+    d({ type: 'SET', data: { user: null, token: null, loaded: false } });
+  }, []);
+
+  return <Ctx.Provider value={{ s, d, load, toast, login, register, logout }}>{children}</Ctx.Provider>;
 }
 
 export function useStore() { return useContext(Ctx); }
