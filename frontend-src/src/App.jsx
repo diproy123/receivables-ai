@@ -6432,7 +6432,7 @@ function LandingPage({ onGo, onFeatures }) {
             </div>
             <div className="leading-tight">
               <div className="text-lg font-bold tracking-tight text-slate-900">AuditLens</div>
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-[.2em] -mt-0.5">AP Intelligence</div>
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-[.2em] -mt-0.5">AP Intelligence</div>
             </div>
           </div>
           <div className="flex items-center gap-3 md:gap-5">
@@ -6513,16 +6513,18 @@ function LandingPage({ onGo, onFeatures }) {
                         { inv: 'INV-2024-0848', vendor: 'Vendor B', amt: '$67,350', status: 'Matched', sc: '#34d399', anomaly: '3-way match ✓' },
                         { inv: 'INV-2024-0849', vendor: 'Vendor C', amt: '$215,000', status: 'Blocked', sc: '#f87171', anomaly: 'Duplicate of INV-2024-0712' },
                       ].map((r, i) => (
-                        <div key={r.inv} className="flex items-center justify-between px-4 py-3" style={{ background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                          <div className="flex items-center gap-4">
-                            <span className="text-xs lp-mono text-slate-400">{r.inv}</span>
-                            <span className="text-sm text-slate-200 font-medium">{r.vendor}</span>
+                        <div key={r.inv} className="px-3 md:px-4 py-2.5 md:py-3" style={{ background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 md:gap-4 min-w-0">
+                              <span className="text-[10px] md:text-xs lp-mono text-slate-500 shrink-0">{r.inv.replace('INV-2024-', '')}</span>
+                              <span className="text-xs md:text-sm text-slate-200 font-medium truncate">{r.vendor}</span>
+                            </div>
+                            <div className="flex items-center gap-2 md:gap-4 shrink-0">
+                              <span className="text-xs md:text-sm lp-mono text-white font-semibold">{r.amt}</span>
+                              <span className="px-2 py-0.5 md:px-2.5 md:py-1 rounded text-[9px] md:text-[10px] font-bold whitespace-nowrap" style={{ color: r.sc, background: `${r.sc}18` }}>{r.status}</span>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-4">
-                            <span className="text-xs text-slate-400">{r.anomaly}</span>
-                            <span className="text-sm lp-mono text-white font-semibold">{r.amt}</span>
-                            <span className="px-2.5 py-1 rounded text-[10px] font-bold" style={{ color: r.sc, background: `${r.sc}18` }}>{r.status}</span>
-                          </div>
+                          <div className="text-[10px] md:text-xs text-slate-500 mt-1 truncate">{r.anomaly}</div>
                         </div>
                       ))}
                     </div>
