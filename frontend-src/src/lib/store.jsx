@@ -38,6 +38,7 @@ export function StoreProvider({ children }) {
         triageItems: triR?.items || [], vendors: venR?.vendors || venR || [],
         contracts: conR?.contracts || conR || [], policy: polR, users: usrR?.users || usrR || [],
         activityLog: actR?.activity || actR || [], documents: docR?.documents || docR || [],
+        docs: docR?.documents || docR || [],
         togetherStatus: tgtR, policyHistory: polR?.history || [],
         vendorProfiles: venR?.vendor_profiles || [], loaded: true,
       }});

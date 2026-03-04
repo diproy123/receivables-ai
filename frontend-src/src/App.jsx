@@ -740,7 +740,7 @@ function Documents() {
 
   return (
     <div className="page-enter">
-      <PageHeader title="Documents" sub={`${s.docs.length} documents extracted`}>
+      <PageHeader title="Documents" sub={`${(s.docs || []).length} documents extracted`}>
         <div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input className="inp pl-9 w-64" placeholder="Search..." value={q} onChange={e => setQ(e.target.value)} /></div>
         <button onClick={() => d({ type: 'TAB', tab: 'upload' })} className="btn-p"><Upload className="w-4 h-4" /> Upload</button>
       </PageHeader>
