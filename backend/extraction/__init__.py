@@ -26,7 +26,7 @@ from backend.pii_redactor import redact_prompt, restore_pii, is_redaction_enable
 
 from backend.config import ENSEMBLE_PRIMARY_MODEL, ENSEMBLE_SECONDARY_MODEL, USE_REAL_API
 from backend.db import get_db
-from backend.vendor import vendor_similarity, currency_symbol
+from backend.vendor import vendor_similarity, currency_symbol, fmt_amt
 from backend.custom_model import (is_custom_model_enabled, call_custom_model,
     get_model_weights, record_model_accuracy)
 
@@ -417,7 +417,7 @@ def _build_vendor_context(vendor_hint: str, db: dict) -> str:
     amounts = [float(i.get("amount") or 0) for i in history if float(i.get("amount") or 0) > 0]
     if amounts:
         sym = currency_symbol(currencies[0] if currencies else "USD")
-        ctx.append(f"- Invoice amount range: {sym}{min(amounts):,.0f} – {sym}{max(amounts):,.0f} (avg: {sym}{sum(amounts)/len(amounts):,.0f})")
+        ctx.append(f"- Invoice amount range: {fmt_amt(min(amounts), sym)} – {fmt_amt(max(amounts), sym)} (avg: {fmt_amt(sum(amounts)/len(amounts), sym)})")
     tax_types, tax_rates = set(), set()
     for i in history:
         for t in (i.get("taxDetails") or []):
@@ -460,7 +460,7 @@ def _build_po_context(vendor_hint: str, db: dict) -> str:
         for po in open_pos[:5]:
             sym = currency_symbol(po.get("currency", "USD"))
             li_summary = ", ".join(li.get("description", "?") for li in (po.get("lineItems") or [])[:5])
-            ctx_parts.append(f"- PO {po.get('poNumber', '?')}: {sym}{float(po.get('amount',0)):,.0f} ({po.get('currency','USD')}) — Items: {li_summary or 'N/A'}")
+            ctx_parts.append(f"- PO {po.get('poNumber', '?')}: {fmt_amt(float(po.get('amount',0)), sym)} ({po.get('currency','USD')}) — Items: {li_summary or 'N/A'}")
         ctx_parts.append("If the invoice references one of these POs, extract the PO number accurately.")
     active_contracts = [c for c in db.get("contracts", [])
         if c.get("vendor") and vendor_similarity(c["vendor"], vendor_hint) >= 0.6
@@ -581,19 +581,19 @@ def _math_validate(result: dict) -> list:
         if li_sum > 0:
             diff_pct = abs(li_sum - subtotal) / max(subtotal, 1) * 100
             if diff_pct > 2:
-                issues.append({"check": "line_item_sum", "severity": "high",
-                    "detail": f"Line items sum to {li_sum:,.2f} but subtotal is {subtotal:,.2f} (diff: {diff_pct:.1f}%)"})
+                issues.append({fmt_amt("check": "line_item_sum", "severity": "high",
+                    "detail": f"Line items sum to {li_sum, "")} but subtotal is {fmt_amt(subtotal, "")} (diff: {diff_pct:.1f}%)"})
             elif diff_pct > 0.5:
-                issues.append({"check": "line_item_sum", "severity": "low",
-                    "detail": f"Minor rounding: line items {li_sum:,.2f} vs subtotal {subtotal:,.2f}"})
+                issues.append({fmt_amt("check": "line_item_sum", "severity": "low",
+                    "detail": f"Minor rounding: line items {li_sum, "")} vs subtotal {fmt_amt(subtotal, "")}"})
 
     if taxes and subtotal > 0 and total > 0:
         tax_total = sum(float(t.get("amount") or 0) for t in taxes)
         expected = subtotal + tax_total
         diff_pct = abs(expected - total) / max(total, 1) * 100
         if diff_pct > 2:
-            issues.append({"check": "total_equals_subtotal_plus_tax", "severity": "high",
-                "detail": f"Subtotal ({subtotal:,.2f}) + tax ({tax_total:,.2f}) = {expected:,.2f}, but total is {total:,.2f}"})
+            issues.append({fmt_amt("check": "total_equals_subtotal_plus_tax", "severity": "high",
+                "detail": f"Subtotal ({subtotal, "")}) + tax ({fmt_amt(tax_total, "")}) = {fmt_amt(expected, "")}, but total is {fmt_amt(total, "")}"})
 
     for t in taxes:
         rate = float(t.get("rate") or 0)
@@ -603,7 +603,7 @@ def _math_validate(result: dict) -> list:
             diff_pct = abs(expected_amt - amount) / max(amount, 1) * 100
             if diff_pct > 5:
                 issues.append({"check": "tax_rate_consistency", "severity": "medium",
-                    "detail": f"{t.get('type','Tax')} at {rate}% on {subtotal:,.2f} should be {expected_amt:,.2f}, got {amount:,.2f}"})
+                    "detail": f"{t.get('type','Tax')} at {rate}% on {fmt_amt(subtotal, "")} should be {fmt_amt(expected_amt, "")}, got {fmt_amt(amount, "")}"})
 
     for i, l in enumerate(li):
         qty = float(l.get("quantity") or 0)
@@ -614,7 +614,7 @@ def _math_validate(result: dict) -> list:
             diff_pct = abs(expected_lt - lt) / max(lt, 1) * 100
             if diff_pct > 2:
                 issues.append({"check": f"line_{i+1}_math", "severity": "medium",
-                    "detail": f"Line {i+1}: {qty} × {price:,.2f} = {expected_lt:,.2f}, but total says {lt:,.2f}"})
+                    "detail": f"Line {i+1}: {qty} × {fmt_amt(price, "")} = {fmt_amt(expected_lt, "")}, but total says {fmt_amt(lt, "")}"})
 
     issue_d = result.get("issue_date")
     due_d = result.get("due_date")
@@ -880,8 +880,8 @@ def _vendor_cross_reference(merged: dict, db: dict) -> list:
         avg = sum(hist_amounts) / len(hist_amounts)
         max_h = max(hist_amounts)
         if ext_amount > max_h * 3:
-            deviations.append({"field": "total_amount", "type": "vendor_norm_deviation",
-                "detail": f"Amount {ext_amount:,.2f} is {ext_amount/avg:.1f}x the vendor average ({avg:,.2f}). Highest ever: {max_h:,.2f}",
+            deviations.append({fmt_amt("field": "total_amount", "type": "vendor_norm_deviation",
+                "detail": f"Amount {ext_amount, "")} is {ext_amount/avg:.1f}x the vendor average ({fmt_amt(avg, "")}). Highest ever: {fmt_amt(max_h, "")}",
                 "severity": "high"})
     return deviations
 

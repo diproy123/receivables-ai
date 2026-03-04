@@ -33,7 +33,7 @@ from datetime import datetime
 from difflib import SequenceMatcher
 
 from backend.policy import get_policy
-from backend.vendor import currency_symbol, severity_for_amount
+from backend.vendor import currency_symbol, severity_for_amount, fmt_amt
 from backend.db import _n
 from backend.config import USE_REAL_API, ENSEMBLE_PRIMARY_MODEL
 
@@ -258,7 +258,7 @@ def detect_anomalies_rule_based(invoice, po, contract, history, tolerances=None)
         if diff > 0.50:
             anomalies.append({"type": "LINE_ITEM_TOTAL_MISMATCH",
                 "severity": severity_for_amount(diff, inv_subtotal),
-                "description": f"Sum of line items ({sym}{li_sum:,.2f}) does not match subtotal ({sym}{inv_subtotal:,.2f}). Difference: {sym}{diff:,.2f}",
+                "description": f"Sum of line items ({fmt_amt(li_sum, sym)}) does not match subtotal ({fmt_amt(inv_subtotal, sym)}). Difference: {fmt_amt(diff, sym)}",
                 "amount_at_risk": round(diff, 2), "contract_clause": None,
                 "recommendation": "Verify line item totals. Possible hidden charges or calculation error."})
 
@@ -358,7 +358,7 @@ def detect_anomalies_rule_based(invoice, po, contract, history, tolerances=None)
                         "severity": severity_for_amount(risk, po_amt),
                         "description": f"'{inv_li['description']}': Billed {iq} units, PO authorized {pq}. {extra} unauthorized.",
                         "amount_at_risk": round(risk, 2), "contract_clause": None,
-                        "recommendation": f"Dispute {extra} extra units ({sym}{risk:,.2f})"})
+                        "recommendation": f"Dispute {extra} extra units ({fmt_amt(risk, sym)})"})
 
                 ip, pp = _n(inv_li.get("unitPrice")), _n(matched.get("unitPrice"))
                 price_tol = pp * (prc_tol_pct / 100)
@@ -367,15 +367,15 @@ def detect_anomalies_rule_based(invoice, po, contract, history, tolerances=None)
                     line_item_risk_total += risk
                     anomalies.append({"type": "PRICE_OVERCHARGE",
                         "severity": severity_for_amount(risk, po_amt),
-                        "description": f"'{inv_li['description']}': {sym}{ip:,.2f}/unit vs PO {sym}{pp:,.2f}/unit{risk_note}",
+                        "description": f"'{inv_li['description']}': {fmt_amt(ip, sym)}/unit vs PO {fmt_amt(pp, sym)}/unit{risk_note}",
                         "amount_at_risk": round(risk, 2), "contract_clause": None,
-                        "recommendation": f"Request credit: {sym}{risk:,.2f}"})
+                        "recommendation": f"Request credit: {fmt_amt(risk, sym)}"})
             else:
                 if _n(inv_li.get("total")) > 0:
                     line_item_risk_total += _n(inv_li.get("total"))
                     anomalies.append({"type": "UNAUTHORIZED_ITEM",
                         "severity": severity_for_amount(inv_li["total"], po_amt) if po_amt > 0 else "medium",
-                        "description": f"'{inv_li['description']}' ({sym}{inv_li['total']:,.2f}) not found in purchase order.",
+                        "description": f"'{inv_li['description']}' ({fmt_amt(inv_li['total'], sym)}) not found in purchase order.",
                         "amount_at_risk": inv_li["total"], "contract_clause": None,
                         "recommendation": "Verify authorization before payment."})
 
@@ -384,11 +384,11 @@ def detect_anomalies_rule_based(invoice, po, contract, history, tolerances=None)
             _tax_note = " Note: subtotal unavailable — using total which may include tax, inflating the variance." if _subtotal_is_fallback else ""
             anomalies.append({"type": "AMOUNT_DISCREPANCY",
                 "severity": severity_for_amount(unexplained, po_amt) if not _subtotal_is_fallback else "medium",
-                "description": f"Invoice subtotal ({sym}{compare_amt:,.2f}) exceeds PO total ({sym}{po_amt:,.2f}) by {sym}{po_level_diff:,.2f}"
-                    + (f". {sym}{line_item_risk_total:,.2f} explained by line-item overcharges, {sym}{unexplained:,.2f} unexplained." if line_item_risk_total > 0 else f", representing a {po_level_diff/po_amt*100:.2f}% variance which exceeds the {amt_tol_pct}% tolerance threshold{risk_note}.")
+                "description": f"Invoice subtotal ({fmt_amt(compare_amt, sym)}) exceeds PO total ({fmt_amt(po_amt, sym)}) by {fmt_amt(po_level_diff, sym)}"
+                    + (f". {fmt_amt(line_item_risk_total, sym)} explained by line-item overcharges, {fmt_amt(unexplained, sym)} unexplained." if line_item_risk_total > 0 else f", representing a {po_level_diff/po_amt*100:.2f}% variance which exceeds the {amt_tol_pct}% tolerance threshold{risk_note}.")
                     + _tax_note,
                 "amount_at_risk": round(unexplained, 2), "contract_clause": "Purchase order authorization limits",
-                "recommendation": f"Reject invoice pending price correction to match contracted rates. Total should be {sym}{po_amt:,.2f} based on contract pricing."})
+                "recommendation": f"Reject invoice pending price correction to match contracted rates. Total should be {fmt_amt(po_amt, sym)} based on contract pricing."})
 
     # ── 4. CONTRACT PRICING CHECK ──
     if contract:
@@ -424,10 +424,10 @@ def detect_anomalies_rule_based(invoice, po, contract, history, tolerances=None)
                         risk = diff * qty
                         anomalies.append({"type": "PRICE_OVERCHARGE",
                             "severity": severity_for_amount(risk, inv_total) if inv_total > 0 else "medium",
-                            "description": f"'{inv_li['description']}': {sym}{inv_rate:,.2f}/{pt.get('unit', 'unit')} vs contract rate {sym}{contracted_rate:,.2f}/{pt.get('unit', 'unit')}",
+                            "description": f"'{inv_li['description']}': {fmt_amt(inv_rate, sym)}/{pt.get('unit', 'unit')} vs contract rate {fmt_amt(contracted_rate, sym)}/{pt.get('unit', 'unit')}",
                             "amount_at_risk": round(risk, 2),
-                            "contract_clause": f"Contract pricing: {pt.get('item')} at {sym}{contracted_rate:,.2f}/{pt.get('unit', 'unit')}",
-                            "recommendation": f"Vendor overcharging vs contract. Dispute {sym}{risk:,.2f}"})
+                            "contract_clause": f"Contract pricing: {pt.get('item')} at {fmt_amt(contracted_rate, sym)}/{pt.get('unit', 'unit')}",
+                            "recommendation": f"Vendor overcharging vs contract. Dispute {fmt_amt(risk, sym)}"})
                     break
 
     # Contract payment terms mismatch
@@ -486,7 +486,7 @@ def detect_anomalies_rule_based(invoice, po, contract, history, tolerances=None)
             if dup_score >= 60:
                 anomalies.append({"type": "DUPLICATE_INVOICE",
                     "severity": "high" if dup_score >= 80 else "medium",
-                    "description": f"Likely duplicate of {h.get('invoiceNumber', '?')} ({sym}{h.get('amount', 0):,.2f}). Signals: {', '.join(dup_reasons)}. Confidence: {dup_score}%",
+                    "description": f"Likely duplicate of {h.get('invoiceNumber', '?')} ({fmt_amt(h.get('amount', 0), sym)}). Signals: {', '.join(dup_reasons)}. Confidence: {dup_score}%",
                     "amount_at_risk": inv_total, "contract_clause": None,
                     "recommendation": "Verify this is not a duplicate payment. Do not process until confirmed."})
 
@@ -495,10 +495,10 @@ def detect_anomalies_rule_based(invoice, po, contract, history, tolerances=None)
     if epd and epd.get("discount_percent") and epd.get("days"):
         savings = inv_subtotal * (epd["discount_percent"] / 100)
         anomalies.append({"type": "EARLY_PAYMENT_DISCOUNT", "severity": "low",
-            "description": f"Eligible for {epd['discount_percent']}% discount ({sym}{savings:,.2f}) on subtotal if paid within {epd['days']} days",
+            "description": f"Eligible for {epd['discount_percent']}% discount ({fmt_amt(savings, sym)}) on subtotal if paid within {epd['days']} days",
             "amount_at_risk": round(-savings, 2),
             "contract_clause": f"Terms: {invoice.get('paymentTerms', '')}",
-            "recommendation": f"Pay within {epd['days']} days to save {sym}{savings:,.2f}"})
+            "recommendation": f"Pay within {epd['days']} days to save {fmt_amt(savings, sym)}"})
 
     # ── 7. TAX RATE SANITY CHECK (locale-aware) ──
     tax_details = invoice.get("taxDetails", [])
@@ -515,7 +515,7 @@ def detect_anomalies_rule_based(invoice, po, contract, history, tolerances=None)
 
         if effective_rate > tax_ceiling:
             anomalies.append({"type": "TAX_RATE_ANOMALY", "severity": "medium",
-                "description": f"Effective tax rate is {effective_rate:.1f}% ({sym}{total_tax:,.2f} on {sym}{inv_subtotal:,.2f}). Exceeds {inv_locale} ceiling of {tax_ceiling}%.",
+                "description": f"Effective tax rate is {effective_rate:.1f}% ({fmt_amt(total_tax, sym)} on {fmt_amt(inv_subtotal, sym)}). Exceeds {inv_locale} ceiling of {tax_ceiling}%.",
                 "amount_at_risk": round(total_tax, 2), "contract_clause": None,
                 "recommendation": f"Verify tax calculation. Rate exceeds the expected maximum of {tax_ceiling}% for {locale_profile.get('name', inv_locale)}."})
         elif effective_rate > 0 and effective_rate < 1:
@@ -546,9 +546,9 @@ def detect_anomalies_rule_based(invoice, po, contract, history, tolerances=None)
                     tax_type_name = td.get('type', 'tax')
                     partial_note = " (tax may apply to only some line items)" if n_items > 1 else ""
                     anomalies.append({"type": "TAX_RATE_ANOMALY", "severity": "medium",
-                        "description": f"Tax amount {sym}{tax_amount:,.2f} doesn't match stated {tax_type_name} rate of {stated_rate}%. Expected {sym}{expected_tax:,.2f}, difference: {sym}{tax_diff:,.2f}.{partial_note}",
+                        "description": f"Tax amount {fmt_amt(tax_amount, sym)} doesn't match stated {tax_type_name} rate of {stated_rate}%. Expected {fmt_amt(expected_tax, sym)}, difference: {fmt_amt(tax_diff, sym)}.{partial_note}",
                         "amount_at_risk": round(tax_diff, 2), "contract_clause": None,
-                        "recommendation": f"Verify {tax_type_name} calculation. Stated rate {stated_rate}% on {sym}{inv_subtotal:,.2f} should be {sym}{expected_tax:,.2f}. Check if tax applies to all items."})
+                        "recommendation": f"Verify {tax_type_name} calculation. Stated rate {stated_rate}% on {fmt_amt(inv_subtotal, sym)} should be {fmt_amt(expected_tax, sym)}. Check if tax applies to all items."})
 
     # ── 8. CURRENCY MISMATCH ──
     if po:
@@ -565,7 +565,7 @@ def detect_anomalies_rule_based(invoice, po, contract, history, tolerances=None)
         rn_threshold = policy.get("round_number_threshold", 1000)
         if inv_total >= rn_threshold and inv_total == round(inv_total, -3):
             anomalies.append({"type": "ROUND_NUMBER_INVOICE", "severity": "low",
-                "description": f"Suspiciously round invoice amount: {sym}{inv_total:,.2f}. Legitimate invoices rarely land on exact thousands.",
+                "description": f"Suspiciously round invoice amount: {fmt_amt(inv_total, sym)}. Legitimate invoices rarely land on exact thousands.",
                 "amount_at_risk": 0, "contract_clause": None,
                 "recommendation": "Verify invoice is for actual goods/services delivered."})
 
@@ -639,10 +639,10 @@ def detect_grn_anomalies(invoice: dict, po: dict, grn_info: dict, db: dict) -> l
         anomalies.append({
             "type": "OVERBILLED_VS_RECEIVED",
             "severity": "high" if diff > inv_subtotal * 0.1 else "medium",
-            "description": f"Invoice subtotal ({sym}{inv_subtotal:,.2f}) exceeds total received value ({sym}{total_received:,.2f}) by {sym}{diff:,.2f}.",
+            "description": f"Invoice subtotal ({fmt_amt(inv_subtotal, sym)}) exceeds total received value ({fmt_amt(total_received, sym)}) by {fmt_amt(diff, sym)}.",
             "amount_at_risk": round(diff, 2),
             "contract_clause": "Three-way match: pay only for goods/services actually received",
-            "recommendation": f"Reduce invoice to match received value ({sym}{total_received:,.2f}) or obtain additional GRN."
+            "recommendation": f"Reduce invoice to match received value ({fmt_amt(total_received, sym)}) or obtain additional GRN."
         })
 
     inv_items = {(li.get("description") or "").lower().strip(): li for li in invoice.get("lineItems", [])}
@@ -686,7 +686,7 @@ def detect_grn_anomalies(invoice: dict, po: dict, grn_info: dict, db: dict) -> l
             anomalies.append({
                 "type": "SHORT_SHIPMENT",
                 "severity": "low",
-                "description": f"Only {sym}{total_received:,.2f} of {sym}{po_amt:,.2f} PO value received ({short_pct}% short). Partial delivery.",
+                "description": f"Only {fmt_amt(total_received, sym)} of {fmt_amt(po_amt, sym)} PO value received ({short_pct}% short). Partial delivery.",
                 "amount_at_risk": 0,
                 "contract_clause": "PO fulfillment tracking",
                 "recommendation": f"Track remaining delivery. {short_pct}% of PO value outstanding."

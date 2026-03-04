@@ -81,7 +81,7 @@ from backend.extraction import (
 from backend.vendor import (
     normalize_vendor, vendor_similarity, currency_symbol, severity_for_amount,
     compute_vendor_risk_score, get_dynamic_tolerances, update_vendor_profile,
-    find_vendor_contract,
+    find_vendor_contract, fmt_amt,
 )
 from backend.policy import (
     DEFAULT_POLICY, get_policy, update_policy, reset_policy,
@@ -926,8 +926,8 @@ async def upload_document(request: Request, file: UploadFile = File(...), docume
                     "invoiceNumber": po_num, "vendor": record["vendor"],
                     "currency": record.get("currency", "USD"), "detectedAt": datetime.now().isoformat(),
                     "status": "open", "type": "AMOUNT_DISCREPANCY", "severity": "high",
-                    "description": f"PO amount {sym}{po_amt:,.2f} exceeds contract liability cap {sym}{cap:,.2f} by {sym}{diff:,.2f}.",
-                    "amount_at_risk": round(diff, 2), "contract_clause": f"Liability cap: {sym}{cap:,.2f}",
+                    "description": f"PO amount {fmt_amt(po_amt, sym)} exceeds contract liability cap {fmt_amt(cap, sym)} by {fmt_amt(diff, sym)}.",
+                    "amount_at_risk": round(diff, 2), "contract_clause": f"Liability cap: {fmt_amt(cap, sym)}",
                     "recommendation": "PO exceeds contractual limits. Renegotiate or split into multiple POs."}
                 new_anomalies.append(anom); db["anomalies"].append(anom)
 
@@ -997,7 +997,7 @@ async def upload_document(request: Request, file: UploadFile = File(...), docume
                     "invoiceNumber": doc_num, "vendor": record["vendor"],
                     "currency": record.get("currency", "USD"), "detectedAt": datetime.now().isoformat(),
                     "status": "open", "type": "AMOUNT_DISCREPANCY", "severity": "high",
-                    "description": f"{dt_label} amount {sym}{cn_amount:,.2f} exceeds original invoice {orig_ref} amount {sym}{orig['amount']:,.2f} by {sym}{diff:,.2f}.",
+                    "description": f"{dt_label} amount {fmt_amt(cn_amount, sym)} exceeds original invoice {orig_ref} amount {fmt_amt(orig['amount'], sym)} by {fmt_amt(diff, sym)}.",
                     "amount_at_risk": round(diff, 2), "contract_clause": None,
                     "recommendation": f"Do not process. {dt_label} cannot exceed original invoice."})
                 db["anomalies"].append(new_anomalies[-1])
@@ -1630,7 +1630,7 @@ async def update_invoice_status(iid: str, request: Request, status: str = Form(.
                 role_limit = get_authority_limit(role, inv_currency)
                 if inv_amount > role_limit:
                     required = get_required_approver(inv_amount, inv_currency)
-                    raise HTTPException(403, f"Insufficient authority. {currency_symbol(inv_currency)}{inv_amount:,.2f} requires {required['title']} approval (your limit: {currency_symbol(inv_currency)}{role_limit:,.0f})")
+                    raise HTTPException(403, f"Insufficient authority. {fmt_amt(inv_amount, currency_symbol(inv_currency))} requires {required['title']} approval (your limit: {fmt_amt(role_limit, currency_symbol(inv_currency))})")
             old = i["status"]; i["status"] = status
             if status == "paid": i["paidAt"] = datetime.now().isoformat()
             if status == "disputed": i["disputedAt"] = datetime.now().isoformat()
@@ -1654,7 +1654,7 @@ async def mark_paid(iid: str, request: Request):
             role_limit = get_authority_limit(role, inv_currency)
             if inv_amount > role_limit:
                 required = get_required_approver(inv_amount, inv_currency)
-                raise HTTPException(403, f"Insufficient authority. {currency_symbol(inv_currency)}{inv_amount:,.2f} requires {required['title']} approval")
+                raise HTTPException(403, f"Insufficient authority. {fmt_amt(inv_amount, currency_symbol(inv_currency))} requires {required['title']} approval")
             old = i["status"]; i["status"] = "paid"; i["paidAt"] = datetime.now().isoformat()
             db["activity_log"].append({"id": str(uuid.uuid4())[:8], "action": "status_changed",
                 "documentId": iid, "documentNumber": i.get("invoiceNumber"),
@@ -3445,7 +3445,7 @@ async def batch_import(request: Request):
                                 "currency": record.get("currency", "USD"),
                                 "detectedAt": datetime.now().isoformat(), "status": "open",
                                 "type": "AMOUNT_DISCREPANCY", "severity": "high",
-                                "description": f"PO amount {sym}{po_amt:,.2f} exceeds contract liability cap {sym}{cap:,.2f}.",
+                                "description": f"PO amount {fmt_amt(po_amt, sym)} exceeds contract liability cap {fmt_amt(cap, sym)}.",
                                 "amount_at_risk": round(diff, 2),
                                 "recommendation": "PO exceeds contractual limits."}
                         new_anomalies.append(anom); db["anomalies"].append(anom)
@@ -3543,7 +3543,7 @@ async def batch_import(request: Request):
                                 "currency": record.get("currency", "USD"),
                                 "detectedAt": datetime.now().isoformat(), "status": "open",
                                 "type": "AMOUNT_DISCREPANCY", "severity": "high",
-                                "description": f"{dt_label} amount {sym}{cn_amount:,.2f} exceeds original invoice {orig_ref} amount {sym}{orig['amount']:,.2f} by {sym}{diff:,.2f}.",
+                                "description": f"{dt_label} amount {fmt_amt(cn_amount, sym)} exceeds original invoice {orig_ref} amount {fmt_amt(orig['amount'], sym)} by {fmt_amt(diff, sym)}.",
                                 "amount_at_risk": round(diff, 2), "contract_clause": None,
                                 "recommendation": f"Do not process. {dt_label} cannot exceed original invoice."}
                         new_anomalies.append(anom); db["anomalies"].append(anom)

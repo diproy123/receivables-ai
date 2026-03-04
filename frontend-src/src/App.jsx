@@ -868,7 +868,7 @@ function Anomalies() {
 
   async function escalate(anom) {
     const route = escalationRouting[anom.type] || { primary: 'AP Manager', secondary: 'Controller' };
-    const desc = `Anomaly: ${anom.description}\nVendor: ${anom.vendor}\nAmount at Risk: ${anom.amount_at_risk ? '$' + Number(anom.amount_at_risk).toLocaleString() : 'N/A'}\nEscalated to: ${route.primary}\n${anom.recommendation ? 'Recommendation: ' + anom.recommendation : ''}`;
+    const desc = `Anomaly: ${anom.description}\nVendor: ${anom.vendor}\nAmount at Risk: ${anom.amount_at_risk ? $(anom.amount_at_risk) : 'N/A'}\nEscalated to: ${route.primary}\n${anom.recommendation ? 'Recommendation: ' + anom.recommendation : ''}`;
     await post('/api/cases', {
       title: `Escalation: ${anom.invoiceNumber || anom.id} — ${anom.type}`,
       description: desc,
@@ -6017,9 +6017,9 @@ function DocModal() {
                   const pdfUrl = doc.uploadedFile ? `${window.location.origin}/api/uploads/${encodeURIComponent(doc.uploadedFile)}` : '';
                   const fields = [
                     ['Type', docType], ['Document #', docNum], ['Vendor', doc.vendor],
-                    ['Amount', doc.amount ? `${doc.currency || 'USD'} ${Number(doc.amount).toLocaleString()}` : '—'],
-                    ['Subtotal', doc.subtotal ? `${doc.currency || 'USD'} ${Number(doc.subtotal).toLocaleString()}` : '—'],
-                    ['Tax', doc.tax ? `${doc.currency || 'USD'} ${Number(doc.tax).toLocaleString()}` : '—'],
+                    ['Amount', doc.amount ? $(doc.amount, doc.currency || 'USD') : '—'],
+                    ['Subtotal', doc.subtotal ? $(doc.subtotal, doc.currency || 'USD') : '—'],
+                    ['Tax', doc.tax ? $(doc.tax, doc.currency || 'USD') : '—'],
                     ['Currency', doc.currency || '—'],
                     ['Issue Date', doc.issueDate || doc.effectiveDate || '—'],
                     ['Due Date', doc.dueDate || doc.endDate || '—'],

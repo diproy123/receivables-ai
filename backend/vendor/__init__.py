@@ -47,6 +47,14 @@ def currency_symbol(currency: str) -> str:
     return CURRENCY_SYMBOLS.get(currency, currency or "$")
 
 
+def fmt_amt(v, sym="$"):
+    """Format amount: $45,000 (no decimals) or $45,199.60 (with cents)."""
+    n = float(v or 0)
+    if n == int(n):
+        return f"{sym}{int(n):,}"
+    return f"{sym}{n:,.2f}"
+
+
 def severity_for_amount(amount_at_risk: float, invoice_amount: float) -> str:
     """Determine severity based on risk/invoice ratio."""
     if invoice_amount <= 0:
