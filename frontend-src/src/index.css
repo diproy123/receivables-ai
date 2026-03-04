@@ -1,0 +1,111 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    @apply bg-slate-50 text-slate-900 antialiased;
+  }
+}
+
+@layer components {
+  .card { @apply bg-white rounded-2xl border border-slate-200/60 shadow-sm; }
+  .inp { @apply w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all; }
+  .btn-p { @apply inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition-all shadow-sm disabled:opacity-50 disabled:pointer-events-none; }
+  .btn-d { @apply inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 transition-all shadow-sm disabled:opacity-50; }
+  .btn-o { @apply inline-flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-700 rounded-xl text-sm font-semibold hover:bg-slate-50 transition-all disabled:opacity-50; }
+  .btn-g { @apply inline-flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-xs font-semibold hover:bg-slate-200 transition-all; }
+  .badge { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase; }
+  .badge-muted { @apply bg-slate-100 text-slate-500; }
+  .badge-success { @apply bg-emerald-100 text-emerald-700; }
+  .badge-danger { @apply bg-red-100 text-red-700; }
+  .badge-warning { @apply bg-amber-100 text-amber-700; }
+  .badge-info { @apply bg-blue-100 text-blue-700; }
+}
+
+@layer utilities {
+  .page-enter { animation: pageIn 0.3s ease-out; }
+  .animate-fade-in { animation: fadeIn 0.4s ease-out; }
+}
+
+@keyframes pageIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* ═══ Landing Page Premium Styles ═══ */
+
+/* Staggered reveal animations */
+@keyframes revealUp {
+  from { opacity: 0; transform: translateY(32px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes revealScale {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes floatSlow {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-12px); }
+}
+@keyframes pulseGlow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.7; }
+}
+@keyframes pipelineFlow {
+  0% { stroke-dashoffset: 200; }
+  100% { stroke-dashoffset: 0; }
+}
+@keyframes slideNumber {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.lp-reveal { opacity: 0; animation: revealUp 0.7s ease-out forwards; }
+.lp-reveal-1 { animation-delay: 0.1s; }
+.lp-reveal-2 { animation-delay: 0.2s; }
+.lp-reveal-3 { animation-delay: 0.35s; }
+.lp-reveal-4 { animation-delay: 0.5s; }
+.lp-reveal-5 { animation-delay: 0.65s; }
+.lp-scale { opacity: 0; animation: revealScale 0.6s ease-out forwards; animation-delay: 0.3s; }
+.lp-float { animation: floatSlow 6s ease-in-out infinite; }
+.lp-glow { animation: pulseGlow 4s ease-in-out infinite; }
+.lp-number { opacity: 0; animation: slideNumber 0.5s ease-out forwards; animation-delay: 0.6s; }
+
+/* Pipeline flow animation */
+.pipeline-path {
+  stroke-dasharray: 200;
+  stroke-dashoffset: 200;
+  animation: pipelineFlow 1.5s ease-out forwards;
+  animation-delay: 0.8s;
+}
+
+/* Card hover lift */
+.lp-card-lift {
+  transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+}
+.lp-card-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 40px -12px rgba(0,0,0,0.12);
+}
+
+/* Gradient text */
+.lp-gradient-text {
+  background: linear-gradient(135deg, #3b82f6 0%, #6366f1 50%, #8b5cf6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Noise texture overlay */
+.lp-noise::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Serif headline */
+.lp-serif { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; }
+.lp-mono { font-family: 'JetBrains Mono', 'Fira Code', monospace; }

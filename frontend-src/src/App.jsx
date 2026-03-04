@@ -6398,7 +6398,11 @@ function DocModal() {
    LANDING PAGE
    ═══════════════════════════════════════════════════ */
 /* ═══════════════════════════════════════════════════
-   LANDING PAGE — CFO / AP Director (30-second read)
+   LANDING PAGE
+   ═══════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════
+   LANDING PAGE — Editorial Fintech Design
+   Dark hero → Pipeline → AI Proof → Differentiators → Deploy → CTA
    ═══════════════════════════════════════════════════ */
 function LandingPage({ onGo, onFeatures }) {
   const { s } = useStore();
@@ -6408,202 +6412,417 @@ function LandingPage({ onGo, onFeatures }) {
   const totalRules = rc + 8;
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white overflow-hidden">
 
-      {/* ── Nav ── */}
-      <nav className="fixed top-0 inset-x-0 z-50 bg-white/80 backdrop-blur-xl border-b border-slate-200/50">
-        <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+      {/* ═══ NAV — Frosted glass ═══ */}
+      <nav className="fixed top-0 inset-x-0 z-50" style={{ background: 'rgba(255,255,255,0.72)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-600 to-red-500 shadow-lg shadow-red-200/60 flex items-center justify-center"><Shield className="w-4.5 h-4.5 text-white" /></div>
-            <div>
-              <div className="text-xl font-extrabold tracking-tight text-slate-900">AuditLens</div>
-              <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-[.15em]">AP Intelligence</div>
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #dc2626, #b91c1c)' }}>
+              <Shield className="w-4 h-4 text-white" />
+            </div>
+            <div className="leading-tight">
+              <div className="text-base font-bold tracking-tight text-slate-900">AuditLens</div>
+              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-[.2em] -mt-0.5">AP Intelligence</div>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <button onClick={onFeatures} className="px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-900 transition-colors">Features</button>
-            <button onClick={onGo} className="px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-900 transition-colors">Sign In</button>
-            <button onClick={onGo} className="px-5 py-2 text-sm font-semibold text-white bg-gradient-to-r from-red-600 to-red-500 rounded-lg hover:opacity-90 transition-all">Get Started →</button>
+          <div className="flex items-center gap-5">
+            <button onClick={onFeatures} className="text-[13px] font-medium text-slate-500 hover:text-slate-900 transition-colors">Features</button>
+            <button onClick={onGo} className="text-[13px] font-medium text-slate-500 hover:text-slate-900 transition-colors">Sign In</button>
+            <button onClick={onGo} className="px-5 py-2 text-[13px] font-semibold text-white rounded-lg transition-all hover:opacity-90" style={{ background: 'linear-gradient(135deg, #0f172a, #1e293b)' }}>Get Started →</button>
           </div>
         </div>
       </nav>
 
-      {/* ═══ HERO — Single clear message ═══ */}
-      <section className="pt-32 pb-16 px-6">
-        <div className="max-w-3xl mx-auto text-center">
-          <h1 className="text-[48px] sm:text-[56px] font-extrabold tracking-[-0.03em] text-slate-900 leading-[1.08] mb-5">
-            Every invoice audited.<br /><span style={{ color: '#2563eb' }}>Before you pay.</span>
-          </h1>
-          <p className="text-lg text-slate-500 max-w-xl mx-auto mb-8 leading-relaxed">
-            AI-powered AP audit that recovers 1–3% of spend. Every line item checked, every anomaly flagged, every match verified — in under 8 seconds.
-          </p>
-          <div className="flex gap-3 justify-center mb-6">
-            <button onClick={onGo} className="px-8 py-3.5 text-sm font-semibold text-white bg-slate-900 rounded-xl hover:bg-slate-800 transition-all shadow-lg shadow-slate-200/60">Upload Your First Invoice →</button>
-            <button className="px-8 py-3.5 text-sm font-semibold text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">Talk to Sales</button>
-          </div>
-        </div>
-      </section>
+      {/* ═══ HERO — Dark, editorial, with product visual ═══ */}
+      <section className="relative pt-16" style={{ background: 'linear-gradient(180deg, #0a0f1e 0%, #111827 60%, #1e293b 100%)' }}>
+        {/* Ambient orbs */}
+        <div className="absolute top-20 left-1/4 w-[500px] h-[500px] rounded-full lp-glow" style={{ background: 'radial-gradient(circle, rgba(59,130,246,0.08) 0%, transparent 70%)' }} />
+        <div className="absolute top-40 right-1/4 w-[400px] h-[400px] rounded-full lp-glow" style={{ background: 'radial-gradient(circle, rgba(139,92,246,0.06) 0%, transparent 70%)', animationDelay: '2s' }} />
 
-      {/* ═══ BEFORE vs AFTER — The payoff ═══ */}
-      <section className="px-6 pb-16">
-        <div className="max-w-4xl mx-auto">
-          <div className="grid grid-cols-2 gap-6">
-            {/* Before */}
-            <div className="rounded-2xl bg-slate-50 border border-slate-200 p-8">
-              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-6">Manual AP Review</div>
-              <div className="space-y-5">
+        <div className="relative z-10 max-w-6xl mx-auto px-6 pt-20 pb-24">
+          <div className="grid grid-cols-12 gap-8 items-center">
+            {/* Left: Copy */}
+            <div className="col-span-5">
+              <div className="lp-reveal lp-reveal-1 inline-flex items-center gap-2 px-3 py-1.5 rounded-full mb-6" style={{ background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.2)' }}>
+                <div className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                <span className="text-[11px] font-semibold text-blue-300 tracking-wide">AI-POWERED AP AUDIT</span>
+              </div>
+
+              <h1 className="lp-reveal lp-reveal-2 lp-serif text-[46px] font-extrabold leading-[1.05] tracking-[-0.02em] text-white mb-5">
+                Every invoice<br />audited.<br /><span className="lp-gradient-text">Before you pay.</span>
+              </h1>
+
+              <p className="lp-reveal lp-reveal-3 text-[15px] text-slate-400 leading-relaxed mb-8 max-w-md">
+                AI extracts, matches, and flags anomalies across every line item — recovering 1–3% of spend that manual review misses.
+              </p>
+
+              <div className="lp-reveal lp-reveal-4 flex gap-3 mb-8">
+                <button onClick={onGo} className="px-6 py-3 text-sm font-semibold text-slate-900 bg-white rounded-xl hover:bg-slate-100 transition-all shadow-lg shadow-white/10">Upload Your First Invoice →</button>
+                <button onClick={onFeatures} className="px-6 py-3 text-sm font-semibold text-slate-300 border border-slate-700 rounded-xl hover:border-slate-500 hover:text-white transition-all">See Features</button>
+              </div>
+
+              {/* Micro-stats */}
+              <div className="lp-reveal lp-reveal-5 flex gap-6">
                 {[
-                  { val: '2–3', unit: 'invoices / hour', sub: 'Per analyst throughput' },
-                  { val: '5–15%', unit: 'sample-based', sub: 'Most invoices never reviewed' },
-                  { val: 'Days', unit: 'to close exceptions', sub: 'Manual investigation bottleneck' },
-                ].map(r => (
-                  <div key={r.unit}>
-                    <div className="text-3xl font-extrabold text-slate-300">{r.val}</div>
-                    <div className="text-sm font-semibold text-slate-500">{r.unit}</div>
-                    <div className="text-xs text-slate-400 mt-0.5">{r.sub}</div>
+                  { val: '<8s', label: 'End-to-end' },
+                  { val: `${totalRules}`, label: 'Audit rules' },
+                  { val: '100%', label: 'Coverage' },
+                ].map(s => (
+                  <div key={s.label}>
+                    <div className="lp-number text-xl font-bold text-white lp-mono">{s.val}</div>
+                    <div className="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">{s.label}</div>
                   </div>
                 ))}
               </div>
             </div>
-            {/* After */}
-            <div className="rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 p-8">
-              <div className="text-[11px] font-bold text-blue-600 uppercase tracking-widest mb-6">With AuditLens</div>
-              <div className="space-y-5">
-                {[
-                  { val: '450+', unit: 'invoices / hour', sub: 'Fully automated extraction + audit' },
-                  { val: '100%', unit: 'coverage', sub: 'Every invoice, every line item' },
-                  { val: '<8 sec', unit: 'end-to-end', sub: 'Upload → extract → match → flag' },
-                ].map(r => (
-                  <div key={r.unit}>
-                    <div className="text-3xl font-extrabold text-blue-600">{r.val}</div>
-                    <div className="text-sm font-semibold text-slate-700">{r.unit}</div>
-                    <div className="text-xs text-slate-500 mt-0.5">{r.sub}</div>
+
+            {/* Right: Product mockup */}
+            <div className="col-span-7 lp-scale">
+              <div className="relative lp-float" style={{ animationDuration: '8s' }}>
+                {/* Dashboard mockup */}
+                <div className="rounded-2xl overflow-hidden border border-slate-700/50 shadow-2xl shadow-black/40" style={{ background: 'linear-gradient(145deg, #1e293b, #0f172a)' }}>
+                  {/* Title bar */}
+                  <div className="flex items-center gap-2 px-4 py-2.5 border-b border-slate-700/50">
+                    <div className="flex gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-red-500/70" /><div className="w-2.5 h-2.5 rounded-full bg-amber-500/70" /><div className="w-2.5 h-2.5 rounded-full bg-emerald-500/70" /></div>
+                    <div className="text-[10px] text-slate-500 ml-2 lp-mono">auditlens.app/dashboard</div>
                   </div>
-                ))}
+                  {/* Simulated dashboard content */}
+                  <div className="p-5 grid grid-cols-4 gap-3">
+                    {[
+                      { label: 'Invoices Processed', val: '2,847', delta: '+124 today', color: '#3b82f6' },
+                      { label: 'Anomalies Flagged', val: '183', delta: '6.4% rate', color: '#f59e0b' },
+                      { label: 'Spend Recovered', val: '$847K', delta: '2.1% of total', color: '#10b981' },
+                      { label: 'Auto-Approved', val: '71%', delta: 'Straight-through', color: '#8b5cf6' },
+                    ].map(m => (
+                      <div key={m.label} className="rounded-lg p-3" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                        <div className="text-[9px] text-slate-500 uppercase tracking-wider mb-1">{m.label}</div>
+                        <div className="text-lg font-bold text-white lp-mono">{m.val}</div>
+                        <div className="text-[10px] mt-0.5" style={{ color: m.color }}>{m.delta}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Simulated table rows */}
+                  <div className="px-5 pb-4">
+                    <div className="rounded-lg overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+                      {[
+                        { inv: 'INV-2024-0847', vendor: 'Acme Logistics', amt: '$124,800', status: 'Flagged', sc: '#f59e0b', anomaly: 'Price overcharge +$4,200 vs contract' },
+                        { inv: 'INV-2024-0848', vendor: 'Global Shipping Co', amt: '$67,350', status: 'Matched', sc: '#10b981', anomaly: '3-way match ✓' },
+                        { inv: 'INV-2024-0849', vendor: 'TechServe Ltd', amt: '$215,000', status: 'Blocked', sc: '#ef4444', anomaly: 'Duplicate of INV-2024-0712' },
+                      ].map((r, i) => (
+                        <div key={r.inv} className="flex items-center justify-between px-3 py-2" style={{ background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                          <div className="flex items-center gap-3">
+                            <span className="text-[10px] lp-mono text-slate-400">{r.inv}</span>
+                            <span className="text-[11px] text-slate-300">{r.vendor}</span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-[10px] text-slate-400">{r.anomaly}</span>
+                            <span className="text-[10px] lp-mono text-white">{r.amt}</span>
+                            <span className="px-2 py-0.5 rounded text-[9px] font-bold" style={{ color: r.sc, background: `${r.sc}15` }}>{r.status}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         </div>
+
+        {/* Gradient fade to white */}
+        <div className="h-24" style={{ background: 'linear-gradient(180deg, #1e293b, #ffffff)' }} />
       </section>
 
-      {/* ═══ THREE DIFFERENTIATORS — What makes us different ═══ */}
-      <section className="px-6 pb-16">
+      {/* ═══ ENSEMBLE PIPELINE — The technical differentiator, visualized ═══ */}
+      <section className="px-6 pb-20 -mt-4">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-10">
-            <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">Why AuditLens</h2>
+            <div className="text-[11px] font-bold text-blue-500 uppercase tracking-[.15em] mb-2">How It Works</div>
+            <h2 className="lp-serif text-3xl font-extrabold text-slate-900 tracking-tight">Two AI models. One source of truth.</h2>
+            <p className="text-sm text-slate-500 mt-2 max-w-lg mx-auto">Every other AP tool runs one model and hopes it's right. AuditLens runs two, compares every field, and resolves disputes with your data.</p>
+          </div>
+
+          {/* Pipeline visualization */}
+          <div className="relative rounded-2xl p-8 overflow-hidden" style={{ background: 'linear-gradient(135deg, #f8fafc, #f1f5f9)', border: '1px solid #e2e8f0' }}>
+            <div className="flex items-center justify-between gap-4">
+              {/* Step 1: Document */}
+              <div className="flex-shrink-0 text-center">
+                <div className="w-16 h-20 rounded-xl mx-auto mb-2 flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #1e293b, #334155)' }}>
+                  <FileText className="w-7 h-7 text-white" />
+                </div>
+                <div className="text-xs font-bold text-slate-700">Invoice PDF</div>
+                <div className="text-[10px] text-slate-400">uploaded</div>
+              </div>
+
+              {/* Arrow */}
+              <div className="flex-shrink-0"><ChevronRight className="w-5 h-5 text-slate-300" /></div>
+
+              {/* Step 2: Parallel models */}
+              <div className="flex-1">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-xl p-4 lp-card-lift" style={{ background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)', border: '1px solid #c7d2fe' }}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-6 h-6 rounded-md bg-indigo-500 flex items-center justify-center"><Zap className="w-3 h-3 text-white" /></div>
+                      <span className="text-xs font-bold text-indigo-800">Model A · Sonnet</span>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[10px]"><span className="text-indigo-400">vendor</span><span className="text-indigo-700 font-semibold lp-mono">Acme Corp</span></div>
+                      <div className="flex justify-between text-[10px]"><span className="text-indigo-400">total</span><span className="text-indigo-700 font-semibold lp-mono">$124,800.00</span></div>
+                      <div className="flex justify-between text-[10px]"><span className="text-indigo-400">tax</span><span className="text-indigo-700 font-semibold lp-mono">$11,232.00</span></div>
+                    </div>
+                  </div>
+                  <div className="rounded-xl p-4 lp-card-lift" style={{ background: 'linear-gradient(135deg, #f0fdf4, #dcfce7)', border: '1px solid #bbf7d0' }}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-6 h-6 rounded-md bg-emerald-500 flex items-center justify-center"><Zap className="w-3 h-3 text-white" /></div>
+                      <span className="text-xs font-bold text-emerald-800">Model B · Haiku</span>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[10px]"><span className="text-emerald-400">vendor</span><span className="text-emerald-700 font-semibold lp-mono">Acme Corp</span></div>
+                      <div className="flex justify-between text-[10px]"><span className="text-emerald-400">total</span><span className="text-emerald-700 font-semibold lp-mono">$124,800.00</span></div>
+                      <div className="flex justify-between text-[10px]"><span className="text-emerald-400">tax</span><span className="font-semibold lp-mono text-amber-600">$11,322.00</span></div>
+                    </div>
+                  </div>
+                </div>
+                <div className="text-center mt-2">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold" style={{ background: 'rgba(245,158,11,0.1)', color: '#d97706', border: '1px solid rgba(245,158,11,0.2)' }}>
+                    <AlertTriangle className="w-3 h-3" /> Tax field disputed — $90 difference
+                  </span>
+                </div>
+              </div>
+
+              {/* Arrow */}
+              <div className="flex-shrink-0"><ChevronRight className="w-5 h-5 text-slate-300" /></div>
+
+              {/* Step 3: Resolution */}
+              <div className="flex-shrink-0 text-center">
+                <div className="w-16 h-16 rounded-xl mx-auto mb-2 flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #3b82f6, #6366f1)', boxShadow: '0 8px 24px -4px rgba(99,102,241,0.3)' }}>
+                  <Brain className="w-7 h-7 text-white" />
+                </div>
+                <div className="text-xs font-bold text-slate-700">Agentic Resolver</div>
+                <div className="text-[10px] text-slate-400">re-examines with<br/>vendor history</div>
+              </div>
+
+              {/* Arrow */}
+              <div className="flex-shrink-0"><ChevronRight className="w-5 h-5 text-slate-300" /></div>
+
+              {/* Step 4: Result */}
+              <div className="flex-shrink-0">
+                <div className="rounded-xl p-4" style={{ background: 'linear-gradient(135deg, #0f172a, #1e293b)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                  <div className="text-[9px] font-bold text-emerald-400 uppercase tracking-wider mb-2">✓ Verified Result</div>
+                  <div className="space-y-1">
+                    <div className="flex justify-between gap-4 text-[10px]"><span className="text-slate-500">total</span><span className="text-white font-semibold lp-mono">$124,800</span></div>
+                    <div className="flex justify-between gap-4 text-[10px]"><span className="text-slate-500">tax</span><span className="text-emerald-400 font-semibold lp-mono">$11,232</span></div>
+                    <div className="flex justify-between gap-4 text-[10px]"><span className="text-slate-500">confidence</span><span className="text-blue-400 font-bold lp-mono">98.7%</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ═══ AI CAUGHT THIS — Real proof moment ═══ */}
+      <section className="px-6 pb-20">
+        <div className="max-w-5xl mx-auto">
+          <div className="rounded-2xl overflow-hidden" style={{ background: 'linear-gradient(135deg, #0f172a, #1a2744)' }}>
+            <div className="grid grid-cols-2">
+              {/* Left: The story */}
+              <div className="p-10">
+                <div className="text-[11px] font-bold text-amber-400 uppercase tracking-[.15em] mb-4">AI Caught This</div>
+                <h3 className="lp-serif text-2xl font-extrabold text-white leading-tight mb-4">
+                  $47,200 overcharge<br />flagged in 3 seconds.
+                </h3>
+                <p className="text-sm text-slate-400 leading-relaxed mb-6">
+                  A logistics vendor submitted a $172,400 invoice. AuditLens extracted every line item, matched against the purchase order, and flagged a unit price increase of $8.40/unit across 5,619 items — a $47,200 variance from the contracted rate. The AI drafted the dispute letter with contract reference, PO number, and corrected amount.
+                </p>
+                <div className="flex gap-4">
+                  <div>
+                    <div className="text-2xl font-bold text-white lp-mono">$47.2K</div>
+                    <div className="text-[10px] text-slate-500 uppercase tracking-wider">Overcharge caught</div>
+                  </div>
+                  <div className="w-px bg-slate-700" />
+                  <div>
+                    <div className="text-2xl font-bold text-white lp-mono">3.1s</div>
+                    <div className="text-[10px] text-slate-500 uppercase tracking-wider">Detection time</div>
+                  </div>
+                  <div className="w-px bg-slate-700" />
+                  <div>
+                    <div className="text-2xl font-bold text-white lp-mono">Auto</div>
+                    <div className="text-[10px] text-slate-500 uppercase tracking-wider">Dispute drafted</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right: The evidence */}
+              <div className="p-8 flex items-center" style={{ background: 'rgba(255,255,255,0.02)' }}>
+                <div className="w-full space-y-3">
+                  {/* Anomaly card */}
+                  <div className="rounded-xl p-4" style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.15)' }}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-400" />
+                      <span className="text-xs font-bold text-amber-300">PRICE_OVERCHARGE · High Severity</span>
+                    </div>
+                    <div className="space-y-1.5 text-[11px]">
+                      <div className="flex justify-between"><span className="text-slate-500">Invoice unit price</span><span className="text-red-400 lp-mono font-semibold">$22.40</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">Contract rate</span><span className="text-emerald-400 lp-mono font-semibold">$14.00</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">Qty affected</span><span className="text-white lp-mono">5,619 units</span></div>
+                      <div className="flex justify-between pt-1 border-t border-slate-700"><span className="text-slate-400 font-semibold">Overpayment risk</span><span className="text-amber-400 lp-mono font-bold">$47,199.60</span></div>
+                    </div>
+                  </div>
+                  {/* Match card */}
+                  <div className="rounded-xl p-3" style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.12)' }}>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                      <span className="text-[11px] text-emerald-400">Matched to PO-2024-1847 · Contract CNT-0094</span>
+                    </div>
+                  </div>
+                  {/* AI draft card */}
+                  <div className="rounded-xl p-3" style={{ background: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.12)' }}>
+                    <div className="flex items-center gap-2">
+                      <Send className="w-3.5 h-3.5 text-purple-400" />
+                      <span className="text-[11px] text-purple-300">AI drafted vendor dispute — ready to send</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ═══ THREE PILLARS — Asymmetric differentiator layout ═══ */}
+      <section className="px-6 pb-20">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-10">
+            <h2 className="lp-serif text-3xl font-extrabold text-slate-900 tracking-tight">Built different.</h2>
             <p className="text-sm text-slate-500 mt-2">Three capabilities no other AP tool combines.</p>
           </div>
 
-          <div className="grid grid-cols-3 gap-5">
-            {/* Differentiator 1 */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-7 hover:shadow-lg hover:border-slate-300 transition-all">
-              <div className="w-12 h-12 rounded-xl bg-indigo-100 flex items-center justify-center mb-4"><Zap className="w-6 h-6 text-indigo-600" /></div>
-              <h3 className="text-base font-bold text-slate-900 mb-2">Ensemble AI Extraction</h3>
-              <p className="text-sm text-slate-500 leading-relaxed mb-4">
-                Two frontier AI models extract every field in parallel. A consensus engine merges results with field-level confidence scores. When they disagree, a third model re-examines with vendor history and PO context.
+          <div className="grid grid-cols-12 gap-5">
+            {/* Pillar 1: Ensemble AI — takes more space */}
+            <div className="col-span-5 rounded-2xl p-7 lp-card-lift" style={{ background: 'linear-gradient(160deg, #eef2ff 0%, #e0e7ff 100%)', border: '1px solid #c7d2fe' }}>
+              <div className="w-11 h-11 rounded-xl bg-indigo-500 flex items-center justify-center mb-5 shadow-lg shadow-indigo-200/60">
+                <Zap className="w-5 h-5 text-white" />
+              </div>
+              <h3 className="text-lg font-extrabold text-slate-900 mb-2">Ensemble AI Extraction</h3>
+              <p className="text-sm text-slate-600 leading-relaxed mb-4">
+                Two frontier models cross-check every field. Consensus merging with field-level confidence. Agentic dispute resolution with vendor context.
               </p>
-              <div className="text-xs text-indigo-600 font-semibold">No other AP tool does this.</div>
+              <div className="text-xs font-bold text-indigo-600">↳ Higher accuracy than any single-model approach</div>
             </div>
 
-            {/* Differentiator 2 */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-7 hover:shadow-lg hover:border-slate-300 transition-all">
-              <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center mb-4"><Shield className="w-6 h-6 text-amber-600" /></div>
-              <h3 className="text-base font-bold text-slate-900 mb-2">Deterministic Audit Core</h3>
-              <p className="text-sm text-slate-500 leading-relaxed mb-4">
-                {totalRules} rule-based checks — duplicates, price overcharges, contract drift, delivery shortfalls — run entirely locally with zero AI dependency. SOX-auditable by design: no hallucination risk on compliance decisions.
-              </p>
-              <div className="text-xs text-amber-600 font-semibold">70% of AuditLens needs no LLM.</div>
-            </div>
+            {/* Right column: two stacked */}
+            <div className="col-span-7 flex flex-col gap-5">
+              {/* Pillar 2: Deterministic Core */}
+              <div className="flex-1 rounded-2xl p-7 lp-card-lift" style={{ background: 'linear-gradient(160deg, #fffbeb 0%, #fef3c7 100%)', border: '1px solid #fde68a' }}>
+                <div className="flex gap-5">
+                  <div className="w-11 h-11 rounded-xl bg-amber-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-amber-200/60">
+                    <Shield className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-extrabold text-slate-900 mb-1">Deterministic Audit Core</h3>
+                    <p className="text-sm text-slate-600 leading-relaxed">
+                      {totalRules} rule-based checks run locally. No LLM dependency for compliance-critical decisions. Same result every time — auditor-grade consistency.
+                    </p>
+                    <div className="text-xs font-bold text-amber-600 mt-2">↳ 70% of capability requires zero AI calls</div>
+                  </div>
+                </div>
+              </div>
 
-            {/* Differentiator 3 */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-7 hover:shadow-lg hover:border-slate-300 transition-all">
-              <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center mb-4"><CheckCircle2 className="w-6 h-6 text-emerald-600" /></div>
-              <h3 className="text-base font-bold text-slate-900 mb-2">Your Data, Your Cloud</h3>
-              <p className="text-sm text-slate-500 leading-relaxed mb-4">
-                AI runs inside your VPC via AWS Bedrock or Google Vertex. Or go fully air-gapped with self-hosted models. PII redaction, LLM audit logs, and per-vendor AI controls — your compliance team sees everything.
-              </p>
-              <div className="text-xs text-emerald-600 font-semibold">Zero data leaves your network.</div>
+              {/* Pillar 3: Data Privacy */}
+              <div className="flex-1 rounded-2xl p-7 lp-card-lift" style={{ background: 'linear-gradient(160deg, #ecfdf5 0%, #d1fae5 100%)', border: '1px solid #a7f3d0' }}>
+                <div className="flex gap-5">
+                  <div className="w-11 h-11 rounded-xl bg-emerald-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-emerald-200/60">
+                    <CheckCircle2 className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-extrabold text-slate-900 mb-1">Your Data, Your Cloud</h3>
+                    <p className="text-sm text-slate-600 leading-relaxed">
+                      AI runs inside your VPC via AWS Bedrock or Google Vertex. PII redaction, LLM audit logs, per-vendor controls. Or go fully air-gapped.
+                    </p>
+                    <div className="text-xs font-bold text-emerald-600 mt-2">↳ Zero data leaves your network</div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* ═══ TRUST STRIP — Compact compliance signal ═══ */}
-      <section className="px-6 pb-16">
-        <div className="max-w-4xl mx-auto">
-          <div className="rounded-2xl bg-slate-50 border border-slate-200/60 px-8 py-5 flex items-center justify-between flex-wrap gap-4">
-            <div className="flex items-center gap-3 flex-wrap">
-              {['SOX 404', 'SOC 2', 'GDPR', 'RBAC', `${totalRules} Audit Rules`, 'Audit Trail', 'ZDR'].map(b => (
-                <span key={b} className="px-3 py-1 rounded-full bg-white border border-slate-200 text-xs font-semibold text-slate-600 shadow-sm">{b}</span>
+      {/* ═══ DEPLOY MODES — Refined, no emojis ═══ */}
+      <section className="px-6 pb-20">
+        <div className="max-w-5xl mx-auto">
+          <div className="rounded-2xl p-8" style={{ background: 'linear-gradient(135deg, #f8fafc, #f1f5f9)', border: '1px solid #e2e8f0' }}>
+            <div className="text-center mb-8">
+              <h2 className="lp-serif text-2xl font-extrabold text-slate-900">Deploys how you need it</h2>
+              <p className="text-sm text-slate-500 mt-1">Same product. Three privacy levels. One config change.</p>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4">
+              {[
+                { name: 'Standard', desc: 'Managed API', for: 'Demo & SMBs', icon: <Zap className="w-4 h-4" />, color: '#3b82f6', bg: '#eff6ff', border: '#bfdbfe' },
+                { name: 'Enterprise VPC', desc: 'Bedrock / Vertex AI', for: 'SOX-regulated F&A', icon: <Building2 className="w-4 h-4" />, color: '#059669', bg: '#ecfdf5', border: '#a7f3d0', recommended: true },
+                { name: 'Air-Gapped', desc: 'Self-hosted vLLM', for: 'Defense / Gov / Banking', icon: <Shield className="w-4 h-4" />, color: '#7c3aed', bg: '#f5f3ff', border: '#ddd6fe' },
+              ].map(m => (
+                <div key={m.name} className="rounded-xl p-5 text-center lp-card-lift relative" style={{ background: m.bg, border: `1.5px solid ${m.border}` }}>
+                  {m.recommended && <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full text-[9px] font-bold text-white" style={{ background: m.color }}>RECOMMENDED</div>}
+                  <div className="w-10 h-10 rounded-xl mx-auto mb-3 flex items-center justify-center" style={{ background: m.color, color: 'white' }}>{m.icon}</div>
+                  <div className="text-sm font-bold text-slate-900">{m.name}</div>
+                  <div className="text-xs text-slate-500 mt-1">{m.desc}</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">{m.for}</div>
+                </div>
               ))}
             </div>
-            <button onClick={onFeatures} className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors flex items-center gap-1">
-              Full specifications <ChevronRight className="w-3 h-3" />
-            </button>
-          </div>
-        </div>
-      </section>
 
-      {/* ═══ DEPLOY — One visual showing the three modes ═══ */}
-      <section className="px-6 pb-16">
-        <div className="max-w-4xl mx-auto text-center">
-          <h2 className="text-xl font-extrabold text-slate-900 mb-2">Deploys how you need it</h2>
-          <p className="text-sm text-slate-500 mb-8">Same product. Three privacy levels. One config change.</p>
-
-          <div className="grid grid-cols-3 gap-4">
-            {[
-              { icon: '🚀', name: 'Cloud', desc: 'Managed Anthropic API', residency: 'Standard', badge: 'Fastest setup', color: 'blue' },
-              { icon: '🏢', name: 'Enterprise VPC', desc: 'AWS Bedrock / Vertex AI', residency: 'Your cloud account', badge: 'Most popular', color: 'emerald' },
-              { icon: '🔒', name: 'Air-Gapped', desc: 'Self-hosted vLLM / Ollama', residency: 'Zero external calls', badge: 'Gov / Banking', color: 'purple' },
-            ].map(m => (
-              <div key={m.name} className={`rounded-xl border ${m.color === 'emerald' ? 'border-emerald-300 bg-emerald-50/30' : 'border-slate-200 bg-white'} p-5 text-center`}>
-                <div className="text-2xl mb-2">{m.icon}</div>
-                <div className="text-sm font-bold text-slate-900">{m.name}</div>
-                <div className="text-xs text-slate-500 mt-1">{m.desc}</div>
-                <div className="text-[11px] text-slate-400 mt-2">{m.residency}</div>
-                {m.color === 'emerald' && <div className="mt-2 inline-block px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-100 text-emerald-700">RECOMMENDED</div>}
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-5">
-            <div className="bg-slate-900 rounded-lg px-4 py-2 font-mono text-sm inline-flex items-center gap-1">
-              <span className="text-emerald-400">LLM_PROVIDER</span><span className="text-slate-500">=</span><span className="text-amber-300">bedrock</span>
+            <div className="mt-6 text-center">
+              <code className="lp-mono text-xs px-4 py-2 rounded-lg inline-block" style={{ background: '#0f172a', color: '#94a3b8' }}>
+                <span style={{ color: '#34d399' }}>DEPLOYMENT_PRESET</span><span style={{ color: '#475569' }}>=</span><span style={{ color: '#fbbf24' }}>enterprise_private</span>
+              </code>
             </div>
           </div>
         </div>
       </section>
 
-      {/* ═══ CTA ═══ */}
-      <section className="px-6 pb-16">
-        <div className="max-w-4xl mx-auto">
-          <div className="rounded-2xl p-10 text-center text-white" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)' }}>
-            <h2 className="text-3xl font-extrabold tracking-tight mb-2">See what your AP team is missing.</h2>
-            <p className="text-base text-slate-400 mb-6">Upload your first invoice — extracted, matched, and audited in under 8 seconds.</p>
+      {/* ═══ TRUST — Compact horizontal ═══ */}
+      <section className="px-6 pb-20">
+        <div className="max-w-4xl mx-auto flex items-center justify-center gap-3 flex-wrap">
+          {['SOX 404', 'SOC 2', 'GDPR', 'RBAC', 'ZDR', 'Audit Trail', `${totalRules} Rules`, 'PII Redaction'].map(b => (
+            <span key={b} className="px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200/80 text-[11px] font-semibold text-slate-500">{b}</span>
+          ))}
+          <button onClick={onFeatures} className="px-3 py-1.5 rounded-lg text-[11px] font-semibold text-blue-600 hover:text-blue-800 hover:bg-blue-50 transition-all">
+            View all →
+          </button>
+        </div>
+      </section>
+
+      {/* ═══ CTA — Dark premium ═══ */}
+      <section className="px-6 pb-20">
+        <div className="max-w-4xl mx-auto relative overflow-hidden rounded-2xl" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1a2744 100%)' }}>
+          {/* Ambient gradient */}
+          <div className="absolute top-0 right-0 w-64 h-64 rounded-full" style={{ background: 'radial-gradient(circle, rgba(59,130,246,0.12) 0%, transparent 70%)' }} />
+          <div className="relative z-10 p-12 text-center">
+            <h2 className="lp-serif text-3xl font-extrabold text-white tracking-tight mb-3">See what your AP team is missing.</h2>
+            <p className="text-sm text-slate-400 mb-8 max-w-md mx-auto">Upload your first invoice — extracted, matched, and audited in under 8 seconds. No credit card required.</p>
             <div className="flex gap-3 justify-center">
-              <button onClick={onGo} className="px-8 py-3 text-sm font-semibold text-slate-900 bg-white rounded-xl hover:bg-slate-50 transition-all shadow-lg">Start Free →</button>
-              <button onClick={onFeatures} className="px-8 py-3 text-sm font-semibold text-white border border-slate-600 rounded-xl hover:border-slate-400 transition-all">View All Features</button>
+              <button onClick={onGo} className="px-8 py-3.5 text-sm font-semibold text-slate-900 bg-white rounded-xl hover:bg-slate-100 transition-all shadow-lg shadow-white/10">Start Auditing →</button>
+              <button onClick={onFeatures} className="px-8 py-3.5 text-sm font-semibold text-slate-300 border border-slate-600 rounded-xl hover:border-slate-400 hover:text-white transition-all">Full Feature Specs</button>
             </div>
           </div>
         </div>
       </section>
 
       {/* ── Footer ── */}
-      <footer className="py-6 px-6 border-t border-slate-100">
+      <footer className="py-8 px-6" style={{ borderTop: '1px solid #f1f5f9' }}>
         <div className="max-w-6xl mx-auto flex justify-between items-center text-[11px] text-slate-400">
           <span>© 2026 AuditLens{ver ? ` · v${ver}` : ''}</span>
-          <span>Enterprise AP Audit · SOX-Ready · VPC-Isolated AI</span>
+          <span className="lp-mono">Enterprise AP Audit · SOX-Ready · VPC-Isolated AI</span>
         </div>
       </footer>
     </div>
   );
 }
 
-
-/* ═══════════════════════════════════════════════════
-   FEATURES & SPECIFICATIONS PAGE
-   For AP Director, IT/Security, and technical evaluators
-   ═══════════════════════════════════════════════════ */
 function FeaturesPage({ onBack, onGo }) {
   const { s } = useStore();
   const ps = s.ps || {};
@@ -6626,7 +6845,7 @@ function FeaturesPage({ onBack, onGo }) {
   return (
     <div className="min-h-screen bg-white">
       {/* Nav */}
-      <nav className="fixed top-0 inset-x-0 z-50 bg-white/80 backdrop-blur-xl border-b border-slate-200/50">
+      <nav className="fixed top-0 inset-x-0 z-50" style={{ background: 'rgba(255,255,255,0.72)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
         <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button onClick={onBack} className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-900 transition-colors">
@@ -6659,7 +6878,7 @@ function FeaturesPage({ onBack, onGo }) {
           {section === 'ap' && (
             <div className="space-y-8">
               <div>
-                <h2 className="text-2xl font-extrabold text-slate-900 mb-1">AP Operations Features</h2>
+                <h2 className="text-2xl font-extrabold text-slate-900 mb-1 lp-serif">AP Operations Features</h2>
                 <p className="text-sm text-slate-500">Everything your AP team needs from upload to resolution.</p>
               </div>
 
@@ -6704,7 +6923,7 @@ function FeaturesPage({ onBack, onGo }) {
           {section === 'ai' && (
             <div className="space-y-8">
               <div>
-                <h2 className="text-2xl font-extrabold text-slate-900 mb-1">AI Intelligence Layer</h2>
+                <h2 className="text-2xl font-extrabold text-slate-900 mb-1 lp-serif">AI Intelligence Layer</h2>
                 <p className="text-sm text-slate-500">AI augments every decision — grounded in your data, never hallucinated.</p>
               </div>
 
@@ -6749,7 +6968,7 @@ function FeaturesPage({ onBack, onGo }) {
           {section === 'security' && (
             <div className="space-y-8">
               <div>
-                <h2 className="text-2xl font-extrabold text-slate-900 mb-1">Data Privacy & AI Governance</h2>
+                <h2 className="text-2xl font-extrabold text-slate-900 mb-1 lp-serif">Data Privacy & AI Governance</h2>
                 <p className="text-sm text-slate-500">Enterprise-grade data controls. Provable data residency. Full audit trail.</p>
               </div>
 
@@ -6810,7 +7029,7 @@ function FeaturesPage({ onBack, onGo }) {
           {section === 'compliance' && (
             <div className="space-y-8">
               <div>
-                <h2 className="text-2xl font-extrabold text-slate-900 mb-1">Compliance & Controls</h2>
+                <h2 className="text-2xl font-extrabold text-slate-900 mb-1 lp-serif">Compliance & Controls</h2>
                 <p className="text-sm text-slate-500">Built for regulated environments.</p>
               </div>
 
@@ -6850,7 +7069,7 @@ function FeaturesPage({ onBack, onGo }) {
           {section === 'integrations' && (
             <div className="space-y-8">
               <div>
-                <h2 className="text-2xl font-extrabold text-slate-900 mb-1">Integrations & Deployment</h2>
+                <h2 className="text-2xl font-extrabold text-slate-900 mb-1 lp-serif">Integrations & Deployment</h2>
                 <p className="text-sm text-slate-500">Fits your existing AP stack.</p>
               </div>
 
@@ -6901,12 +7120,12 @@ function FeaturesPage({ onBack, onGo }) {
 /* Feature block helper */
 function FeatureBlock({ icon, title, tag, children }) {
   return (
-    <div className="rounded-2xl bg-white border border-slate-200 p-6">
+    <div className="rounded-2xl bg-white p-6 lp-card-lift" style={{ border: '1px solid #e2e8f0' }}>
       <div className="flex items-center gap-3 mb-3">
-        <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center flex-shrink-0">{icon}</div>
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>{icon}</div>
         <div className="flex items-center gap-3">
           <h3 className="text-base font-bold text-slate-900">{title}</h3>
-          <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-slate-100 text-slate-500 border border-slate-200">{tag}</span>
+          <span className="px-2 py-0.5 text-[10px] font-bold rounded lp-mono" style={{ background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0' }}>{tag}</span>
         </div>
       </div>
       <div className="text-sm text-slate-600 leading-relaxed space-y-2 ml-[52px]">{children}</div>
