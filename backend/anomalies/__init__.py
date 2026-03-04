@@ -33,7 +33,7 @@ from datetime import datetime
 from difflib import SequenceMatcher
 
 from backend.policy import get_policy
-from backend.vendor import currency_symbol, severity_for_amount, fmt_amt
+from backend.vendor import currency_symbol, severity_for_amount, fmt_amt, fmt_pct
 from backend.db import _n
 from backend.config import USE_REAL_API, ENSEMBLE_PRIMARY_MODEL
 
@@ -385,7 +385,7 @@ def detect_anomalies_rule_based(invoice, po, contract, history, tolerances=None)
             anomalies.append({"type": "AMOUNT_DISCREPANCY",
                 "severity": severity_for_amount(unexplained, po_amt) if not _subtotal_is_fallback else "medium",
                 "description": f"Invoice subtotal ({fmt_amt(compare_amt, sym)}) exceeds PO total ({fmt_amt(po_amt, sym)}) by {fmt_amt(po_level_diff, sym)}"
-                    + (f". {fmt_amt(line_item_risk_total, sym)} explained by line-item overcharges, {fmt_amt(unexplained, sym)} unexplained." if line_item_risk_total > 0 else f", representing a {po_level_diff/po_amt*100:.2f}% variance which exceeds the {amt_tol_pct}% tolerance threshold{risk_note}.")
+                    + (f". {fmt_amt(line_item_risk_total, sym)} explained by line-item overcharges, {fmt_amt(unexplained, sym)} unexplained." if line_item_risk_total > 0 else f", representing a {fmt_pct(po_level_diff/po_amt*100)} variance which exceeds the {amt_tol_pct}% tolerance threshold{risk_note}.")
                     + _tax_note,
                 "amount_at_risk": round(unexplained, 2), "contract_clause": "Purchase order authorization limits",
                 "recommendation": f"Reject invoice pending price correction to match contracted rates. Total should be {fmt_amt(po_amt, sym)} based on contract pricing."})

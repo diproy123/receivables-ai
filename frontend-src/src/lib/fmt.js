@@ -11,7 +11,11 @@ export const $f = (v, cur = 'USD') => {
   return $(n, cur);
 };
 export const num = v => (parseFloat(v) || 0).toLocaleString();
-export const pct = v => (parseFloat(v) || 0).toFixed(1) + '%';
+export const pct = v => {
+  const n = parseFloat(v) || 0;
+  if (n === Math.round(n)) return Math.round(n) + '%';
+  return n.toFixed(1) + '%';
+};
 export const date = d => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
 export const dateTime = d => d ? new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
 export const cn = (...args) => args.filter(Boolean).join(' ');

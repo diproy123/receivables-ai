@@ -306,3 +306,11 @@ def find_vendor_contract(vendor_name: str, contracts: list) -> dict:
         if score > best_score and score >= 0.6:
             best, best_score = c, score
     return best
+
+
+def fmt_pct(v):
+    """Format percentage: 100% (no decimals) or 84.7% (with decimals)."""
+    n = float(v or 0)
+    if n == int(n):
+        return f"{int(n)}%"
+    return f"{n:.1f}%"

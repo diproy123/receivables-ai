@@ -4658,7 +4658,7 @@ function ConfidenceWeightsEditor({ policy, save }) {
         ))}
       </div>
       <div className={cn('mt-3 text-sm font-semibold text-center py-2 rounded-lg', isValid ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700')}>
-        Total: {(total * 100).toFixed(1)}% {isValid ? '✓' : '— must equal 100%'}
+        Total: {pct(total * 100)} {isValid ? '✓' : '— must equal 100%'}
       </div>
     </div>
   );
