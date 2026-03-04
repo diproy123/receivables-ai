@@ -6435,10 +6435,10 @@ function LandingPage({ onGo, onFeatures }) {
               <div className="text-[10px] font-bold text-slate-400 uppercase tracking-[.2em] -mt-0.5">AP Intelligence</div>
             </div>
           </div>
-          <div className="flex items-center gap-5">
-            <button onClick={onFeatures} className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors">Features</button>
-            <button onClick={onGo} className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors">Sign In</button>
-            <button onClick={onGo} className="px-5 py-2.5 text-sm font-semibold text-white rounded-lg transition-all hover:opacity-90" style={{ background: 'linear-gradient(135deg, #0f172a, #1e293b)' }}>Get Started →</button>
+          <div className="flex items-center gap-3 md:gap-5">
+            <button onClick={onFeatures} className="hidden sm:inline text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors">Features</button>
+            <button onClick={onGo} className="hidden sm:inline text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors">Sign In</button>
+            <button onClick={onGo} className="px-4 md:px-5 py-2 md:py-2.5 text-sm font-semibold text-white rounded-lg transition-all hover:opacity-90" style={{ background: 'linear-gradient(135deg, #0f172a, #1e293b)' }}>Get Started →</button>
           </div>
         </div>
       </nav>
@@ -6465,12 +6465,12 @@ function LandingPage({ onGo, onFeatures }) {
                 AI extracts, matches, and flags anomalies across every line item — recovering 1–3% of spend that manual review misses.
               </p>
 
-              <div className="lp-reveal lp-reveal-4 flex gap-3 mb-10">
-                <button onClick={onGo} className="px-7 py-3.5 text-sm font-semibold text-slate-900 bg-white rounded-xl hover:bg-slate-100 transition-all shadow-lg shadow-white/10">Upload Your First Invoice →</button>
-                <button onClick={onFeatures} className="px-7 py-3.5 text-sm font-semibold text-slate-200 border border-slate-600 rounded-xl hover:border-slate-400 hover:text-white transition-all">See Features</button>
+              <div className="lp-reveal lp-reveal-4 flex flex-col sm:flex-row gap-3 mb-10">
+                <button onClick={onGo} className="px-7 py-3.5 text-sm font-semibold text-slate-900 bg-white rounded-xl hover:bg-slate-100 transition-all shadow-lg shadow-white/10 text-center">Upload Your First Invoice →</button>
+                <button onClick={onFeatures} className="px-7 py-3.5 text-sm font-semibold text-slate-200 border border-slate-600 rounded-xl hover:border-slate-400 hover:text-white transition-all text-center">See Features</button>
               </div>
 
-              <div className="lp-reveal lp-reveal-5 flex gap-8">
+              <div className="lp-reveal lp-reveal-5 flex gap-5 md:gap-8">
                 {[
                   { val: '<8s', label: 'End-to-end' },
                   { val: `${totalRules}`, label: 'Audit rules' },
@@ -6485,7 +6485,7 @@ function LandingPage({ onGo, onFeatures }) {
             </div>
 
             {/* Right: Product mockup */}
-            <div className="col-span-7 lp-scale">
+            <div className="col-span-1 lg:col-span-7 lp-scale">
               <div className="relative lp-float" style={{ animationDuration: '8s' }}>
                 <div className="rounded-2xl overflow-hidden shadow-2xl shadow-black/50" style={{ background: 'linear-gradient(145deg, #1e293b, #0f172a)', border: '1px solid rgba(255,255,255,0.08)' }}>
                   <div className="flex items-center gap-2 px-4 py-3 border-b" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
@@ -6540,7 +6540,7 @@ function LandingPage({ onGo, onFeatures }) {
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-10">
             <div className="text-xs font-bold text-indigo-500 uppercase tracking-[.15em] mb-2">12 AI Capabilities</div>
-            <h2 className="lp-serif text-3xl font-extrabold text-slate-900 tracking-tight">AI at every step of the AP workflow</h2>
+            <h2 className="lp-serif text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">AI at every step of the AP workflow</h2>
             <p className="text-sm text-slate-500 mt-3 max-w-2xl mx-auto">Not a chatbot bolted onto legacy software. AI is woven into extraction, matching, anomaly detection, investigation, and vendor management — each grounded in your actual data.</p>
           </div>
 
@@ -6569,7 +6569,7 @@ function LandingPage({ onGo, onFeatures }) {
           </div>
 
           {/* AI guarantee bar */}
-          <div className="rounded-xl px-6 py-4 flex items-center gap-4" style={{ background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)', border: '1px solid #c7d2fe' }}>
+          <div className="rounded-xl px-4 md:px-6 py-4 flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4" style={{ background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)', border: '1px solid #c7d2fe' }}>
             <div className="w-10 h-10 rounded-lg bg-indigo-500 flex items-center justify-center flex-shrink-0"><CheckCircle2 className="w-5 h-5 text-white" /></div>
             <div>
               <div className="text-sm font-bold text-indigo-900">Grounded AI — No Hallucinations</div>
@@ -6584,12 +6584,13 @@ function LandingPage({ onGo, onFeatures }) {
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-8">
             <div className="text-xs font-bold text-blue-500 uppercase tracking-[.15em] mb-2">Core Innovation</div>
-            <h2 className="lp-serif text-3xl font-extrabold text-slate-900 tracking-tight">Two AI models. One source of truth.</h2>
+            <h2 className="lp-serif text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">Two AI models. One source of truth.</h2>
             <p className="text-sm text-slate-500 mt-2 max-w-lg mx-auto">Every other AP tool runs one model and hopes it's right. AuditLens runs two, compares every field, and resolves disputes with your data.</p>
           </div>
 
-          <div className="relative rounded-2xl p-8 overflow-hidden" style={{ background: 'linear-gradient(135deg, #f8fafc, #f1f5f9)', border: '1px solid #e2e8f0' }}>
-            <div className="flex items-center justify-between gap-4">
+          <div className="relative rounded-2xl p-5 md:p-8 overflow-hidden" style={{ background: 'linear-gradient(135deg, #f8fafc, #f1f5f9)', border: '1px solid #e2e8f0' }}>
+            {/* Desktop: full horizontal pipeline */}
+            <div className="hidden md:flex items-center justify-between gap-4">
               <div className="flex-shrink-0 text-center">
                 <div className="w-16 h-20 rounded-xl mx-auto mb-2 flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #1e293b, #334155)' }}>
                   <FileText className="w-7 h-7 text-white" />
@@ -6600,7 +6601,7 @@ function LandingPage({ onGo, onFeatures }) {
               <div className="flex-shrink-0"><ChevronRight className="w-5 h-5 text-slate-300" /></div>
 
               <div className="flex-1">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-3">
                   <div className="rounded-xl p-4 lp-card-lift" style={{ background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)', border: '1px solid #c7d2fe' }}>
                     <div className="flex items-center gap-2 mb-2">
                       <div className="w-6 h-6 rounded-md bg-indigo-500 flex items-center justify-center"><Zap className="w-3 h-3 text-white" /></div>
@@ -6654,6 +6655,44 @@ function LandingPage({ onGo, onFeatures }) {
                 </div>
               </div>
             </div>
+
+            {/* Mobile: vertical stacked pipeline */}
+            <div className="md:hidden space-y-4">
+              <div className="flex items-center gap-3 rounded-xl p-4" style={{ background: '#f1f5f9', border: '1px solid #e2e8f0' }}>
+                <div className="w-12 h-14 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'linear-gradient(135deg, #1e293b, #334155)' }}><FileText className="w-5 h-5 text-white" /></div>
+                <div><div className="text-sm font-bold text-slate-800">Invoice PDF uploaded</div><div className="text-xs text-slate-500">Sent to dual AI extraction</div></div>
+              </div>
+              <div className="flex justify-center"><ChevronDown className="w-5 h-5 text-slate-300" /></div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl p-3" style={{ background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)', border: '1px solid #c7d2fe' }}>
+                  <div className="text-xs font-bold text-indigo-800 mb-1">Model A · Sonnet</div>
+                  <div className="text-xs text-indigo-600">tax: <span className="font-semibold lp-mono">$11,232</span></div>
+                </div>
+                <div className="rounded-xl p-3" style={{ background: 'linear-gradient(135deg, #f0fdf4, #dcfce7)', border: '1px solid #bbf7d0' }}>
+                  <div className="text-xs font-bold text-emerald-800 mb-1">Model B · Haiku</div>
+                  <div className="text-xs text-amber-600">tax: <span className="font-semibold lp-mono">$11,322 ✗</span></div>
+                </div>
+              </div>
+              <div className="text-center">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold" style={{ background: 'rgba(245,158,11,0.12)', color: '#b45309', border: '1px solid rgba(245,158,11,0.25)' }}>
+                  <AlertTriangle className="w-3 h-3" /> Tax disputed — $90 diff
+                </span>
+              </div>
+              <div className="flex justify-center"><ChevronDown className="w-5 h-5 text-slate-300" /></div>
+              <div className="flex items-center gap-3 rounded-xl p-4" style={{ background: 'linear-gradient(135deg, #eff6ff, #dbeafe)', border: '1px solid #bfdbfe' }}>
+                <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'linear-gradient(135deg, #3b82f6, #6366f1)' }}><Brain className="w-5 h-5 text-white" /></div>
+                <div><div className="text-sm font-bold text-slate-800">Agentic Resolver</div><div className="text-xs text-slate-500">Re-examines with vendor history</div></div>
+              </div>
+              <div className="flex justify-center"><ChevronDown className="w-5 h-5 text-slate-300" /></div>
+              <div className="rounded-xl p-4" style={{ background: 'linear-gradient(135deg, #0f172a, #1e293b)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                <div className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-2">✓ Verified Result</div>
+                <div className="flex gap-4 text-xs">
+                  <span><span className="text-slate-400">total</span> <span className="text-white font-semibold lp-mono">$124,800</span></span>
+                  <span><span className="text-slate-400">tax</span> <span className="text-emerald-400 font-semibold lp-mono">$11,232</span></span>
+                  <span><span className="text-slate-400">conf</span> <span className="text-blue-400 font-bold lp-mono">98.7%</span></span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -6663,15 +6702,15 @@ function LandingPage({ onGo, onFeatures }) {
         <div className="max-w-5xl mx-auto">
           <div className="rounded-2xl overflow-hidden" style={{ background: 'linear-gradient(135deg, #0f172a, #1a2744)' }}>
             <div className="grid grid-cols-1 md:grid-cols-2">
-              <div className="p-10">
+              <div className="p-6 md:p-10">
                 <div className="text-xs font-bold text-amber-400 uppercase tracking-[.15em] mb-4">AI In Action</div>
-                <h3 className="lp-serif text-3xl font-extrabold text-white leading-tight mb-4">
+                <h3 className="lp-serif text-2xl md:text-3xl font-extrabold text-white leading-tight mb-4">
                   $47,200 overcharge<br />flagged in 3 seconds.
                 </h3>
                 <p className="text-sm text-slate-300 leading-relaxed mb-6">
                   A vendor submitted a $172,400 invoice. AuditLens extracted every line item, matched against the purchase order, and flagged a unit price increase of $8.40/unit across 5,619 items — a $47,200 variance from the contracted rate. The AI drafted the dispute letter with contract reference and corrected amount.
                 </p>
-                <div className="flex gap-6">
+                <div className="flex gap-4 md:gap-6">
                   {[
                     { val: '$47.2K', label: 'Overcharge caught' },
                     { val: '3.1s', label: 'Detection time' },
@@ -6722,12 +6761,12 @@ function LandingPage({ onGo, onFeatures }) {
       <section className="px-6 pb-20">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-10">
-            <h2 className="lp-serif text-3xl font-extrabold text-slate-900 tracking-tight">Built different.</h2>
+            <h2 className="lp-serif text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">Built different.</h2>
             <p className="text-sm text-slate-500 mt-2">Three capabilities no other AP tool combines.</p>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-            <div className="col-span-5 rounded-2xl p-7 lp-card-lift" style={{ background: 'linear-gradient(160deg, #eef2ff 0%, #e0e7ff 100%)', border: '1px solid #c7d2fe' }}>
+            <div className="col-span-1 lg:col-span-5 rounded-2xl p-7 lp-card-lift" style={{ background: 'linear-gradient(160deg, #eef2ff 0%, #e0e7ff 100%)', border: '1px solid #c7d2fe' }}>
               <div className="w-12 h-12 rounded-xl bg-indigo-500 flex items-center justify-center mb-5 shadow-lg shadow-indigo-200/60">
                 <Zap className="w-5 h-5 text-white" />
               </div>
@@ -6738,7 +6777,7 @@ function LandingPage({ onGo, onFeatures }) {
               <div className="text-sm font-bold text-indigo-600">↳ Higher accuracy than any single-model approach</div>
             </div>
 
-            <div className="col-span-7 flex flex-col gap-5">
+            <div className="col-span-1 lg:col-span-7 flex flex-col gap-5">
               <div className="flex-1 rounded-2xl p-7 lp-card-lift" style={{ background: 'linear-gradient(160deg, #fffbeb 0%, #fef3c7 100%)', border: '1px solid #fde68a' }}>
                 <div className="flex gap-5">
                   <div className="w-12 h-12 rounded-xl bg-amber-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-amber-200/60">
@@ -6776,7 +6815,7 @@ function LandingPage({ onGo, onFeatures }) {
       {/* ═══ DEPLOY MODES ═══ */}
       <section className="px-6 pb-20">
         <div className="max-w-5xl mx-auto">
-          <div className="rounded-2xl p-8" style={{ background: 'linear-gradient(135deg, #f8fafc, #f1f5f9)', border: '1px solid #e2e8f0' }}>
+          <div className="rounded-2xl p-5 md:p-8" style={{ background: 'linear-gradient(135deg, #f8fafc, #f1f5f9)', border: '1px solid #e2e8f0' }}>
             <div className="text-center mb-8">
               <h2 className="lp-serif text-2xl font-extrabold text-slate-900">Deploys how you need it</h2>
               <p className="text-sm text-slate-500 mt-1">Same product. Three privacy levels. One config change.</p>
@@ -6819,19 +6858,19 @@ function LandingPage({ onGo, onFeatures }) {
       <section className="px-6 pb-20">
         <div className="max-w-4xl mx-auto relative overflow-hidden rounded-2xl" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1a2744 100%)' }}>
           <div className="absolute top-0 right-0 w-64 h-64 rounded-full" style={{ background: 'radial-gradient(circle, rgba(59,130,246,0.15) 0%, transparent 70%)' }} />
-          <div className="relative z-10 p-12 text-center">
-            <h2 className="lp-serif text-3xl font-extrabold text-white tracking-tight mb-3">See what your AP team is missing.</h2>
+          <div className="relative z-10 p-8 md:p-12 text-center">
+            <h2 className="lp-serif text-2xl md:text-3xl font-extrabold text-white tracking-tight mb-3">See what your AP team is missing.</h2>
             <p className="text-sm text-slate-300 mb-8 max-w-md mx-auto">Upload your first invoice — extracted, matched, and audited in under 8 seconds. No credit card required.</p>
-            <div className="flex gap-3 justify-center">
-              <button onClick={onGo} className="px-8 py-3.5 text-sm font-semibold text-slate-900 bg-white rounded-xl hover:bg-slate-100 transition-all shadow-lg shadow-white/10">Start Auditing →</button>
-              <button onClick={onFeatures} className="px-8 py-3.5 text-sm font-semibold text-slate-200 border border-slate-600 rounded-xl hover:border-slate-400 hover:text-white transition-all">Full Feature Specs</button>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <button onClick={onGo} className="px-8 py-3.5 text-sm font-semibold text-slate-900 bg-white rounded-xl hover:bg-slate-100 transition-all shadow-lg shadow-white/10 text-center">Start Auditing →</button>
+              <button onClick={onFeatures} className="px-8 py-3.5 text-sm font-semibold text-slate-200 border border-slate-600 rounded-xl hover:border-slate-400 hover:text-white transition-all text-center">Full Feature Specs</button>
             </div>
           </div>
         </div>
       </section>
 
       <footer className="py-8 px-6" style={{ borderTop: '1px solid #f1f5f9' }}>
-        <div className="max-w-6xl mx-auto flex justify-between items-center text-xs text-slate-400">
+        <div className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-2 text-xs text-slate-400">
           <span>© 2026 AuditLens{ver ? ` · v${ver}` : ''}</span>
           <span className="lp-mono">Enterprise AP Audit · SOX-Ready · VPC-Isolated AI</span>
         </div>
