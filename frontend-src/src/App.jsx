@@ -225,38 +225,182 @@ function Dashboard() {
   ].filter(d => d.value > 0);
   const aging = [{ name: '0-30d', v: ag['0-30'] || 0 }, { name: '31-60d', v: ag['31-60'] || 0 }, { name: '61-90d', v: ag['61-90'] || 0 }, { name: '90d+', v: ag['90+'] || 0 }];
 
+  // ── AI Intelligence data ──
+  const [aiInsights, setAiInsights] = useState(null);
+  const [loadingInsights, setLoadingInsights] = useState(false);
+  const [paymentPri, setPaymentPri] = useState(null);
+
+  useEffect(() => {
+    api('/api/rag/stats').then(r => { if (r && !r._err) setAiInsights(prev => ({ ...prev, rag: r })); });
+    api('/api/custom-model').then(r => { if (r && !r._err) setAiInsights(prev => ({ ...prev, model: r })); });
+    api('/api/correction-patterns').then(r => { if (r && !r._err) setAiInsights(prev => ({ ...prev, corrections: r })); });
+  }, [s.tabKey]);
+
+  // ── Compute intelligence metrics ──
+  const allAnoms = s.anomalies || [];
+  const resolvedAnoms = allAnoms.filter(a => a.status === 'resolved' || a.status === 'dismissed');
+  const highRiskAnoms = oa.filter(a => a.severity === 'high');
+  const totalRisk = oa.reduce((s, a) => s + Math.abs(a.amount_at_risk || 0), 0);
+  const correctionCount = aiInsights?.corrections?.patterns?.length || aiInsights?.corrections?.total || d.correction_patterns || 0;
+  const ragChunks = aiInsights?.rag?.total_chunks || 0;
+  const modelStatus = aiInsights?.model?.enabled ? 'Active' : correctionCount >= 50 ? 'Ready to Train' : 'Learning';
+
+  // ── Vendor risk radar ──
+  const vendorProfiles = s.vendors || [];
+  const riskyVendors = vendorProfiles.filter(v => v.riskLevel === 'high' || (v.anomalyCount || 0) > 3).slice(0, 5);
+
+  // ── Expiring contracts & cases ──
+  const intel = s.intel || {};
+  const exp = intel.expiring_contracts || [];
+  const ch = intel.contract_health || [];
+  const activeCases = (s.casesData || []).filter(c => c.status !== 'resolved' && c.status !== 'closed');
+
   return (
     <div className="page-enter space-y-6">
-      <PageHeader title="Dashboard" sub="Real-time AP audit intelligence" />
+      <PageHeader title="Dashboard" sub="AP Intelligence Command Center" />
 
-      {/* ── Savings Discovered Banner (only confirmed/resolved anomalies) ── */}
-      {sv > 0 && (
-        <div className="rounded-2xl p-6 text-white" style={{ background: 'linear-gradient(135deg, #059669, #047857)' }}>
-          <div className="flex justify-between items-center flex-wrap gap-4">
-            <div>
-              <div className="text-sm font-medium opacity-85 mb-1">✔ Confirmed Savings</div>
-              <div className="text-4xl font-extrabold tracking-tight">{$(sv)}</div>
-              <div className="text-sm opacity-70 mt-1">From {num(d.total_documents || 0)} documents processed</div>
-            </div>
-            <div className="flex gap-6 flex-wrap">
-              {svb.overcharges > 0 && <div className="text-center"><div className="text-xl font-bold">{$(svb.overcharges)}</div><div className="text-xs opacity-75">Overcharges</div></div>}
-              {svb.duplicates_prevented > 0 && <div className="text-center"><div className="text-xl font-bold">{$(svb.duplicates_prevented)}</div><div className="text-xs opacity-75">Duplicates</div></div>}
-              {svb.contract_violations > 0 && <div className="text-center"><div className="text-xl font-bold">{$(svb.contract_violations)}</div><div className="text-xs opacity-75">Contract</div></div>}
-              {svb.unauthorized_items > 0 && <div className="text-center"><div className="text-xl font-bold">{$(svb.unauthorized_items)}</div><div className="text-xs opacity-75">Unauthorized</div></div>}
-              {svb.early_payment_opportunities > 0 && <div className="text-center"><div className="text-xl font-bold">{$(svb.early_payment_opportunities)}</div><div className="text-xs opacity-75">Early Pay</div></div>}
-            </div>
+      {/* ── INTELLIGENCE HERO BANNER ── */}
+      <div className="rounded-2xl p-6 text-white" style={{ background: 'linear-gradient(135deg, #1e293b, #334155)' }}>
+        <div className="flex justify-between items-start flex-wrap gap-6">
+          <div>
+            <div className="text-xs font-medium opacity-60 uppercase tracking-wider mb-2">Intelligence Summary</div>
+            <div className="text-3xl font-extrabold tracking-tight">{$(totalRisk)} <span className="text-base opacity-60 font-normal">total risk identified</span></div>
+            <div className="text-sm opacity-70 mt-1">{oa.length} open anomalies across {num(sb.total_invoices || 0)} invoices from {vendorProfiles.length} vendors</div>
+          </div>
+          <div className="flex gap-6 flex-wrap text-center">
+            <div><div className="text-2xl font-bold text-emerald-400">{sv > 0 ? $(sv) : '$0'}</div><div className="text-xs opacity-60">Savings Found</div></div>
+            <div><div className="text-2xl font-bold text-amber-400">{highRiskAnoms.length}</div><div className="text-xs opacity-60">High Risk</div></div>
+            <div><div className="text-2xl font-bold text-blue-400">{activeCases.length}</div><div className="text-xs opacity-60">Active Cases</div></div>
+            <div><div className="text-2xl font-bold text-purple-400">{correctionCount}</div><div className="text-xs opacity-60">AI Learned</div></div>
           </div>
         </div>
-      )}
+      </div>
 
-      {/* ── Processing Speed Banner ── */}
+      {/* ── LEARNING LOOP INDICATOR (Rec #3) ── */}
+      <div className="rounded-2xl border border-purple-200 bg-gradient-to-r from-purple-50 to-indigo-50 p-5">
+        <div className="flex items-center gap-3 mb-3">
+          <div className="w-9 h-9 rounded-xl bg-purple-100 flex items-center justify-center"><Brain className="w-5 h-5 text-purple-600" /></div>
+          <div>
+            <div className="text-sm font-bold text-purple-900">System Learning Status</div>
+            <div className="text-xs text-purple-600">AuditLens gets smarter with every correction</div>
+          </div>
+          <div className="ml-auto"><Badge c={modelStatus === 'Active' ? 'ok' : modelStatus === 'Ready to Train' ? 'warn' : 'info'}>{modelStatus}</Badge></div>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="p-3 bg-white/70 rounded-xl">
+            <div className="text-xl font-extrabold text-purple-700">{correctionCount}</div>
+            <div className="text-[11px] text-purple-500">Corrections Learned</div>
+          </div>
+          <div className="p-3 bg-white/70 rounded-xl">
+            <div className="text-xl font-extrabold text-indigo-700">{ragChunks}</div>
+            <div className="text-[11px] text-indigo-500">RAG Knowledge Chunks</div>
+          </div>
+          <div className="p-3 bg-white/70 rounded-xl">
+            <div className="text-xl font-extrabold text-blue-700">{pct(sb.avg_confidence)}</div>
+            <div className="text-[11px] text-blue-500">Avg Extraction Accuracy</div>
+          </div>
+          <div className="p-3 bg-white/70 rounded-xl">
+            <div className="text-xl font-extrabold text-violet-700">{resolvedAnoms.length}/{allAnoms.length}</div>
+            <div className="text-[11px] text-violet-500">Anomalies Resolved</div>
+          </div>
+        </div>
+        {correctionCount > 0 && (
+          <div className="mt-3 text-xs text-purple-600 flex items-center gap-1.5">
+            <TrendingUp className="w-3.5 h-3.5" />
+            {correctionCount >= 50
+              ? `Custom model ready — ${correctionCount} vendor-specific corrections available for fine-tuning`
+              : `${50 - correctionCount} more corrections until custom model training is available`}
+          </div>
+        )}
+      </div>
+
+      {/* ── PROACTIVE AI RECOMMENDATIONS (Rec #2) ── */}
+      {(() => {
+        const recommendations = [];
+        // Duplicate pattern detection
+        const dupAnoms = (s.anomalies || []).filter(a => a.type === 'DUPLICATE_INVOICE' && a.status === 'open');
+        if (dupAnoms.length > 0) {
+          const vendors = [...new Set(dupAnoms.map(a => a.vendor).filter(Boolean))];
+          const risk = dupAnoms.reduce((s, a) => s + Math.abs(a.amount_at_risk || 0), 0);
+          recommendations.push({ icon: '🔄', severity: 'high', color: 'red',
+            title: `${dupAnoms.length} potential duplicate${dupAnoms.length > 1 ? 's' : ''} detected`,
+            detail: `${vendors.join(', ')} — ${$(risk)} at risk. Review immediately to prevent double payment.` });
+        }
+        // Over-invoicing pattern
+        const overInvAnoms = (s.anomalies || []).filter(a => (a.type === 'AMOUNT_DISCREPANCY' || a.type === 'PRICE_OVERCHARGE') && a.status === 'open');
+        if (overInvAnoms.length >= 2) {
+          const vendors = [...new Set(overInvAnoms.map(a => a.vendor).filter(Boolean))];
+          recommendations.push({ icon: '📈', severity: 'medium', color: 'amber',
+            title: `Escalating over-invoicing from ${vendors.length} vendor${vendors.length > 1 ? 's' : ''}`,
+            detail: `${vendors.slice(0, 2).join(', ')}${vendors.length > 2 ? ` + ${vendors.length - 2} more` : ''} — consider tightening PO tolerance or scheduling vendor review.` });
+        }
+        // Stale invoices
+        const staleAnoms = (s.anomalies || []).filter(a => a.type === 'STALE_INVOICE' && a.status === 'open');
+        if (staleAnoms.length > 0) {
+          recommendations.push({ icon: '⏰', severity: 'low', color: 'blue',
+            title: `${staleAnoms.length} stale invoice${staleAnoms.length > 1 ? 's' : ''} aging beyond policy`,
+            detail: `Consider resolving or archiving to improve working capital metrics and audit posture.` });
+        }
+        // Missing PO
+        const missingPo = (s.anomalies || []).filter(a => a.type === 'MISSING_PO' && a.status === 'open');
+        if (missingPo.length >= 3) {
+          recommendations.push({ icon: '📋', severity: 'medium', color: 'amber',
+            title: `${missingPo.length} invoices without PO reference`,
+            detail: `Indicates possible maverick spending. Consider enforcing PO-mandatory policy for these vendors.` });
+        }
+        // Early pay opportunities
+        const earlyPay = (s.anomalies || []).filter(a => a.type === 'EARLY_PAYMENT_DISCOUNT' && a.status === 'open');
+        if (earlyPay.length > 0) {
+          const savings = earlyPay.reduce((s, a) => s + Math.abs(a.amount_at_risk || 0), 0);
+          recommendations.push({ icon: '💰', severity: 'opportunity', color: 'emerald',
+            title: `${$(savings)} in early payment discounts available`,
+            detail: `${earlyPay.length} invoice${earlyPay.length > 1 ? 's' : ''} eligible for 2% discount. Use Payment Optimizer below to capture savings.` });
+        }
+        // Learning loop readiness
+        if (correctionCount >= 50 && modelStatus !== 'Active') {
+          recommendations.push({ icon: '🧠', severity: 'opportunity', color: 'purple',
+            title: 'Custom model ready for training',
+            detail: `${correctionCount} corrections accumulated — fine-tuning will improve extraction accuracy for your vendor patterns. Go to Training page to initiate.` });
+        }
+        if (recommendations.length === 0) return null;
+        const colorMap = { red: 'border-red-200 bg-red-50', amber: 'border-amber-200 bg-amber-50', blue: 'border-blue-200 bg-blue-50', emerald: 'border-emerald-200 bg-emerald-50', purple: 'border-purple-200 bg-purple-50' };
+        const textMap = { red: 'text-red-700', amber: 'text-amber-700', blue: 'text-blue-700', emerald: 'text-emerald-700', purple: 'text-purple-700' };
+        return (
+          <div className="card p-5">
+            <h3 className="text-[11px] font-bold text-slate-900 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <Brain className="w-4 h-4 text-indigo-500" /> AI Recommendations ({recommendations.length})
+            </h3>
+            <div className="space-y-2">
+              {recommendations.map((r, i) => (
+                <div key={i} className={cn('flex items-start gap-3 p-3 rounded-xl border', colorMap[r.color])}>
+                  <span className="text-lg">{r.icon}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className={cn('text-sm font-semibold', textMap[r.color])}>{r.title}</div>
+                    <div className="text-xs text-slate-600 mt-0.5">{r.detail}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── PRIMARY STAT CARDS ── */}
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+        <StatCard icon={FileText} label="Total Invoices" value={num(sb.total_invoices || 0)} color="#3b82f6" />
+        <StatCard icon={Zap} label="Auto-Approved" value={pct(sb.auto_approve_rate)} sub={`${tri.auto_approved || 0} invoices`} color="#10b981" />
+        <StatCard icon={AlertTriangle} label="Open Anomalies" value={oa.length} sub={`${short(sb.total_risk || 0, 'USD')} at risk`} color="#ef4444" />
+        <StatCard icon={Shield} label="Avg Confidence" value={pct(sb.avg_confidence)} color="#8b5cf6" />
+      </div>
+
+      {/* ── Processing Speed ── */}
       {sp.documents_with_timing > 0 && (
-        <div className="rounded-2xl p-6 text-white" style={{ background: 'linear-gradient(135deg, #1e40af, #3b82f6)' }}>
+        <div className="rounded-2xl p-5 text-white" style={{ background: 'linear-gradient(135deg, #1e40af, #3b82f6)' }}>
           <div className="flex justify-between items-center flex-wrap gap-4">
             <div>
               <div className="text-sm font-medium opacity-85 mb-1">⚡ Processing Speed</div>
-              <div className="text-3xl font-extrabold tracking-tight">{sp.avg_total_seconds || 0}s <span className="text-base opacity-75">avg per document</span></div>
-              <div className="text-sm opacity-70 mt-1">vs 15 min manual — <strong>{sp.speedup_factor || 0}x faster</strong></div>
+              <div className="text-2xl font-extrabold">{sp.avg_total_seconds || 0}s <span className="text-sm opacity-75">avg per document</span></div>
+              <div className="text-xs opacity-70 mt-1">vs 15 min manual — <strong>{sp.speedup_factor || 0}x faster</strong></div>
             </div>
             <div className="flex gap-5 flex-wrap">
               <div className="text-center"><div className="text-lg font-bold">{sp.avg_extraction_ms || 0}ms</div><div className="text-xs opacity-75">Extraction</div></div>
@@ -268,40 +412,87 @@ function Dashboard() {
         </div>
       )}
 
-      {/* ── Primary Stat Cards (original 4) ── */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        <StatCard icon={FileText} label="Total Invoices" value={num(sb.total_invoices || 0)} color="#3b82f6" />
-        <StatCard icon={Zap} label="Auto-Approved" value={pct(sb.auto_approve_rate)} sub={`${tri.auto_approved || 0} invoices`} color="#10b981" />
-        <StatCard icon={AlertTriangle} label="Open Anomalies" value={oa.length} sub={`${short(sb.total_risk || 0, 'USD')} at risk`} color="#ef4444" />
-        <StatCard icon={Shield} label="Avg Confidence" value={pct(sb.avg_confidence)} color="#8b5cf6" />
-      </div>
-
-      {/* ── Extended Stat Cards ── */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        <StatCard icon={FileCheck} label="Total Outstanding" value={$(d.total_ap || 0)} sub={`${num(d.unpaid_count || 0)} unpaid`} color="#3b82f6" />
-        <StatCard icon={Link2} label="Auto-Matched" value={num(d.auto_matched || 0)} sub={`${d.review_needed || 0} need review`} color="#10b981" />
-        <StatCard icon={Building2} label="High Risk Vendors" value={num(vr.high_risk || 0)} sub={vr.worsening ? `${vr.worsening} worsening` : 'All stable'} color="#f59e0b" />
-        <StatCard icon={Brain} label="AI Pipeline" value={num(d.correction_patterns || 0)} sub={d.correction_patterns ? 'learned patterns' : 'Ensemble + RAG'} color="#7c3aed" />
-      </div>
-
-      {/* ── Intelligence Stat Cards ── */}
-      {(() => {
-        const il = s.intel || {};
-        const ch = il.contract_health || [];
-        const hasAnyIntel = ch.length > 0 || il.grn_count > 0;
-        if (!hasAnyIntel) return null;
-        const healthy = ch.filter(c => c.health_level === 'good').length;
-        const warning = ch.filter(c => c.health_level === 'warning').length;
-        const critical = ch.filter(c => c.health_level === 'critical').length;
-        return (
-          <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-            <StatCard icon={FileCheck} label="Contract Health" value={`${healthy}/${ch.length}`} sub={critical > 0 ? `${critical} critical` : warning > 0 ? `${warning} warning` : 'All healthy'} color={critical > 0 ? '#ef4444' : warning > 0 ? '#f59e0b' : '#10b981'} />
-            <StatCard icon={Shield} label="Clause Risks" value={num(il.high_risk_clauses || 0)} sub="High-risk clauses" color={il.high_risk_clauses > 0 ? '#dc2626' : '#10b981'} />
-            <StatCard icon={Clock} label="Expiring Contracts" value={num(il.expiring_count || 0)} sub={il.expiring_count > 0 ? `within 90 days` : 'None expiring'} color={il.expiring_count > 0 ? '#f59e0b' : '#10b981'} />
-            <StatCard icon={TrendingUp} label="Delivery Tracking" value={num(il.grn_count || 0)} sub={il.grn_open_anomalies > 0 ? `${il.grn_open_anomalies} open alerts` : 'Deliveries tracked'} color={il.grn_open_anomalies > 0 ? '#ef4444' : '#3b82f6'} />
+      {/* ── ACTION REQUIRED + RISK RADAR (Rec #2) ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Action Required Panel */}
+        <div className="card p-5">
+          <h3 className="text-[11px] font-bold text-slate-900 uppercase tracking-wider mb-4 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-red-500" /> Action Required
+          </h3>
+          <div className="space-y-2">
+            {highRiskAnoms.length > 0 && (
+              <div className="flex items-center gap-3 p-3 bg-red-50 rounded-xl border border-red-100">
+                <div className="w-2 h-2 rounded-full bg-red-500" />
+                <div className="flex-1 text-sm"><span className="font-bold text-red-700">{highRiskAnoms.length} high-severity anomalies</span> need investigation</div>
+                <div className="text-sm font-bold text-red-600 font-mono">{$(highRiskAnoms.reduce((s, a) => s + Math.abs(a.amount_at_risk || 0), 0))}</div>
+              </div>
+            )}
+            {activeCases.filter(c => c.priority === 'critical').length > 0 && (
+              <div className="flex items-center gap-3 p-3 bg-amber-50 rounded-xl border border-amber-100">
+                <div className="w-2 h-2 rounded-full bg-amber-500" />
+                <div className="flex-1 text-sm"><span className="font-bold text-amber-700">{activeCases.filter(c => c.priority === 'critical').length} critical cases</span> awaiting resolution</div>
+              </div>
+            )}
+            {exp.length > 0 && (
+              <div className="flex items-center gap-3 p-3 bg-orange-50 rounded-xl border border-orange-100">
+                <div className="w-2 h-2 rounded-full bg-orange-500" />
+                <div className="flex-1 text-sm"><span className="font-bold text-orange-700">{exp.length} contract{exp.length > 1 ? 's' : ''}</span> expiring within 90 days</div>
+              </div>
+            )}
+            {(tri.blocked || 0) > 0 && (
+              <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <div className="w-2 h-2 rounded-full bg-slate-500" />
+                <div className="flex-1 text-sm"><span className="font-bold text-slate-700">{tri.blocked} invoices blocked</span> in triage queue</div>
+              </div>
+            )}
+            {highRiskAnoms.length === 0 && activeCases.length === 0 && exp.length === 0 && (
+              <div className="text-center py-6 text-slate-400 text-sm">All clear — no immediate actions needed</div>
+            )}
           </div>
-        );
-      })()}
+        </div>
+
+        {/* Vendor Risk Radar */}
+        <div className="card p-5">
+          <h3 className="text-[11px] font-bold text-slate-900 uppercase tracking-wider mb-4 flex items-center gap-2">
+            <Building2 className="w-4 h-4 text-amber-500" /> Vendor Risk Radar
+          </h3>
+          {riskyVendors.length > 0 ? (
+            <div className="space-y-3">{riskyVendors.map((v, i) => {
+              const riskPct = Math.min(100, (v.riskScore || v.anomalyCount * 15 || 30));
+              const riskColor = riskPct >= 70 ? '#ef4444' : riskPct >= 40 ? '#f59e0b' : '#10b981';
+              return (
+                <div key={i}>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="font-medium text-slate-700">{v.vendor || v.name || 'Unknown'}</span>
+                    <span className="text-xs"><Badge c={v.riskLevel === 'high' ? 'err' : v.riskLevel === 'medium' ? 'warn' : 'ok'}>{v.riskLevel}</Badge></span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full transition-all" style={{ width: `${riskPct}%`, background: riskColor }} />
+                    </div>
+                    <span className="text-xs font-mono text-slate-500">{v.anomalyCount || 0} flags</span>
+                  </div>
+                </div>
+              );
+            })}</div>
+          ) : tv.length > 0 ? (
+            <div className="space-y-3">{tv.map((v, i) => {
+              const p = tv[0]?.spend > 0 ? (v.spend / tv[0].spend) * 100 : 0;
+              return (
+                <div key={i}>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-slate-600 font-medium">{v.vendor || 'Unknown'}</span>
+                    <span className="font-mono font-semibold text-xs">{$(v.spend)}</span>
+                  </div>
+                  <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${p}%`, background: 'linear-gradient(90deg, #3b82f6, #7c3aed)' }} />
+                  </div>
+                </div>
+              );
+            })}</div>
+          ) : <div className="text-center py-6 text-slate-400 text-sm">Upload invoices to build vendor risk profiles</div>}
+        </div>
+      </div>
 
       {/* ── Charts Row ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -324,42 +515,104 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* ── Top Vendors by Spend ── */}
-      {tv.length > 0 && (
-        <div className="card p-6">
-          <h3 className="text-[11px] font-bold text-slate-900 uppercase tracking-wider mb-5">Top Vendors by Spend</h3>
-          <div className="space-y-3">{tv.map((v, i) => {
-            const p = tv[0]?.spend > 0 ? (v.spend / tv[0].spend) * 100 : 0;
-            return (
-              <div key={i}>
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="text-slate-600 font-medium">{v.vendor || 'Unknown'}</span>
-                  <span className="font-mono font-semibold">{$(v.spend)}</span>
-                </div>
-                <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                  <div className="h-full rounded-full" style={{ width: `${p}%`, background: 'linear-gradient(90deg, #3b82f6, #7c3aed)' }} />
-                </div>
-              </div>
-            );
-          })}</div>
-        </div>
-      )}
-
-      {/* ── Recent Anomalies ── */}
-      {oa.length > 0 && (
-        <div className="card p-6">
-          <h3 className="text-[11px] font-bold text-slate-900 uppercase tracking-wider mb-4">Recent Anomalies</h3>
-          <div className="space-y-2">{oa.slice(0, 5).map(a => (
-            <div key={a.id} className="flex items-center gap-4 p-3 rounded-xl bg-slate-50 hover:bg-slate-100 transition-colors">
-              <div className={cn('w-2 h-2 rounded-full', a.severity === 'high' ? 'bg-red-500' : a.severity === 'medium' ? 'bg-amber-500' : 'bg-emerald-500')} />
-              <div className="flex-1 min-w-0"><div className="text-sm font-medium truncate">{a.description}</div><div className="text-xs text-slate-500">{a.invoiceNumber} · {a.vendor}</div></div>
-              <div className="text-sm font-bold text-red-600 font-mono">{$(Math.abs(a.amount_at_risk || 0))}</div>
+      {/* ── Savings Banner ── */}
+      {sv > 0 && (
+        <div className="rounded-2xl p-5 text-white" style={{ background: 'linear-gradient(135deg, #059669, #047857)' }}>
+          <div className="flex justify-between items-center flex-wrap gap-4">
+            <div>
+              <div className="text-sm font-medium opacity-85 mb-1">✔ Confirmed Savings</div>
+              <div className="text-3xl font-extrabold">{$(sv)}</div>
             </div>
-          ))}</div>
+            <div className="flex gap-6 flex-wrap">
+              {svb.overcharges > 0 && <div className="text-center"><div className="text-xl font-bold">{$(svb.overcharges)}</div><div className="text-xs opacity-75">Overcharges</div></div>}
+              {svb.duplicates_prevented > 0 && <div className="text-center"><div className="text-xl font-bold">{$(svb.duplicates_prevented)}</div><div className="text-xs opacity-75">Duplicates</div></div>}
+              {svb.early_payment_opportunities > 0 && <div className="text-center"><div className="text-xl font-bold">{$(svb.early_payment_opportunities)}</div><div className="text-xs opacity-75">Early Pay</div></div>}
+            </div>
+          </div>
         </div>
       )}
 
-      {/* ── AI Intelligence Insights ── */}
+      {/* ── PAYMENT PRIORITIES (Rec #1 — last unwired AI feature) ── */}
+      {(() => {
+        const [payPri, setPayPri] = useState(null);
+        const [payLoading, setPayLoading] = useState(false);
+        const [payBudget, setPayBudget] = useState(50000);
+        async function loadPayPri(budget) {
+          setPayLoading(true);
+          const r = await api(`/api/ai/payment-priorities?budget_limit=${budget}`);
+          setPayLoading(false);
+          if (r && !r._err) setPayPri(r);
+        }
+        const approvedInvs = (s.docs || []).filter(d => d.type === 'invoice' && (d.triageLane === 'AUTO_APPROVE' || d.status === 'approved'));
+        if (approvedInvs.length === 0 && !payPri) return null;
+        return (
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-[11px] font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-emerald-500" /> AI Payment Optimization
+              </h3>
+              <div className="flex items-center gap-3">
+                <label className="text-xs text-slate-500">Budget:</label>
+                <input type="range" min={10000} max={200000} step={5000} value={payBudget}
+                  onChange={e => setPayBudget(Number(e.target.value))}
+                  className="w-32 accent-emerald-500" />
+                <span className="text-sm font-bold font-mono text-emerald-700">{$(payBudget)}</span>
+                <button onClick={() => loadPayPri(payBudget)} disabled={payLoading}
+                  className="btn bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-xs flex items-center gap-1.5 border border-emerald-200">
+                  <Brain className="w-3.5 h-3.5" /> {payLoading ? 'Optimizing...' : 'Optimize Run'}
+                </button>
+              </div>
+            </div>
+            {payPri ? (
+              <div>
+                {payPri.summary && (
+                  <div className="grid grid-cols-3 gap-3 mb-4">
+                    <div className="bg-emerald-50 rounded-xl p-3 border border-emerald-100">
+                      <div className="text-xl font-extrabold text-emerald-700">{$(payPri.summary.total_payable || payPri.summary.totalPayable || 0)}</div>
+                      <div className="text-[10px] text-emerald-500 uppercase font-semibold">Recommended Payment</div>
+                    </div>
+                    <div className="bg-blue-50 rounded-xl p-3 border border-blue-100">
+                      <div className="text-xl font-extrabold text-blue-700">{$(payPri.summary.early_discount_savings || payPri.summary.discountSavings || 0)}</div>
+                      <div className="text-[10px] text-blue-500 uppercase font-semibold">Early Pay Savings</div>
+                    </div>
+                    <div className="bg-amber-50 rounded-xl p-3 border border-amber-100">
+                      <div className="text-xl font-extrabold text-amber-700">{payPri.summary.invoice_count || payPri.summary.invoiceCount || 0}</div>
+                      <div className="text-[10px] text-amber-500 uppercase font-semibold">Invoices in Run</div>
+                    </div>
+                  </div>
+                )}
+                {payPri.priorities && payPri.priorities.length > 0 && (
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {payPri.priorities.slice(0, 8).map((p, i) => (
+                      <div key={i} className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-100">
+                        <div className="flex items-center gap-3">
+                          <div className={cn("w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white",
+                            i < 3 ? "bg-emerald-500" : "bg-slate-400")}>{i + 1}</div>
+                          <div>
+                            <div className="text-sm font-semibold text-slate-800">{p.invoice_number || p.invoiceNumber || p.vendor}</div>
+                            <div className="text-xs text-slate-500">{p.vendor}{p.reason ? ` · ${p.reason}` : ''}</div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm font-bold font-mono">{$(p.amount || 0)}</div>
+                          {p.discount_available && <div className="text-[10px] text-emerald-600 font-medium">💰 {p.discount_pct || '2%'} discount</div>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {payPri.narrative && <div className="mt-3 text-xs text-slate-600 bg-slate-50 rounded-xl p-3 border border-slate-100 leading-relaxed">{payPri.narrative}</div>}
+              </div>
+            ) : (
+              <div className="text-center py-6 text-slate-400 text-sm">
+                Set a budget and click <strong>Optimize Run</strong> to get AI-prioritized payment recommendations
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* ── Contract Intelligence (existing) ── */}
       {(() => {
         const intel = s.intel || {};
         const exp = intel.expiring_contracts || [];
@@ -464,12 +717,59 @@ function Documents() {
   const { s, d } = useStore();
   const [q, setQ] = useState('');
   const docs = (s.docs || []).filter(x => !q || JSON.stringify(x).toLowerCase().includes(q.toLowerCase()));
+  const [learningStats, setLearningStats] = useState(null);
+  useEffect(() => {
+    Promise.all([
+      api('/api/correction-patterns'),
+      api('/api/custom-model'),
+    ]).then(([cp, cm]) => {
+      if (cp && !cp._err) setLearningStats(prev => ({ ...prev, corrections: cp }));
+      if (cm && !cm._err) setLearningStats(prev => ({ ...prev, model: cm }));
+    });
+  }, [s.tabKey]);
+
+  const corrCount = learningStats?.corrections?.patterns?.length || learningStats?.corrections?.total || 0;
+  const modelActive = learningStats?.model?.enabled;
+  // Group corrections by vendor
+  const vendorCorrections = {};
+  (learningStats?.corrections?.patterns || []).forEach(p => {
+    if (p.vendor) vendorCorrections[p.vendor] = (vendorCorrections[p.vendor] || 0) + 1;
+  });
+  const topVendors = Object.entries(vendorCorrections).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
   return (
     <div className="page-enter">
       <PageHeader title="Documents" sub={`${s.docs.length} documents extracted`}>
         <div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input className="inp pl-9 w-64" placeholder="Search..." value={q} onChange={e => setQ(e.target.value)} /></div>
         <button onClick={() => d({ type: 'TAB', tab: 'upload' })} className="btn-p"><Upload className="w-4 h-4" /> Upload</button>
       </PageHeader>
+
+      {/* ── Learning Loop Indicator (Rec #3) ── */}
+      {corrCount > 0 && (
+        <div className="mb-4 rounded-xl border border-purple-200 bg-gradient-to-r from-purple-50 to-indigo-50 px-4 py-3">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center"><Brain className="w-4 h-4 text-purple-600" /></div>
+              <div>
+                <div className="text-sm font-bold text-purple-900">Extraction Learning Active</div>
+                <div className="text-xs text-purple-600">
+                  {corrCount} corrections learned{modelActive ? ' · Custom model active' : corrCount >= 50 ? ' · Ready for fine-tuning' : ` · ${Math.max(0, 50 - corrCount)} more until fine-tuning`}
+                </div>
+              </div>
+            </div>
+            {topVendors.length > 0 && (
+              <div className="flex gap-2">
+                {topVendors.map(([v, c]) => (
+                  <span key={v} className="text-[10px] px-2 py-1 bg-white/70 rounded-lg text-purple-700 border border-purple-100">
+                    {v.split(' ')[0]}: <strong>{c}</strong> fixes
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <Table
         cols={[
           { label: 'Document', render: r => <div><div className="font-semibold text-slate-900">{r.contractNumber || r.invoiceNumber || r.poNumber || r.grnNumber || r.documentNumber || r.id}</div><div className="text-xs text-slate-500">{r.vendor}</div></div> },
@@ -864,6 +1164,39 @@ function Anomalies() {
               </div>
             )}
 
+            {/* AI Explanation (Rec #1) */}
+            {(() => {
+              const [aiExplain, setAiExplain] = useState(null);
+              const [aiLoading, setAiLoading] = useState(false);
+              async function explainAnomaly() {
+                setAiLoading(true);
+                const r = await api(`/api/ai/explain-anomaly/${sel.id}`);
+                setAiLoading(false);
+                if (r && !r._err) setAiExplain(r);
+              }
+              return (
+                <div className="mb-4">
+                  {!aiExplain && (
+                    <button onClick={explainAnomaly} disabled={aiLoading}
+                      className="w-full btn bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs py-2.5 flex items-center justify-center gap-2 rounded-xl border border-indigo-200">
+                      <Brain className="w-3.5 h-3.5" /> {aiLoading ? 'AI Analyzing...' : 'Explain in Plain English'}
+                    </button>
+                  )}
+                  {aiExplain && (
+                    <div className="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Brain className="w-4 h-4 text-indigo-600" />
+                        <span className="text-xs font-bold text-indigo-700 uppercase tracking-wider">AI Explanation</span>
+                      </div>
+                      <div className="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap">{aiExplain.explanation || aiExplain.plain_english || JSON.stringify(aiExplain)}</div>
+                      {aiExplain.risk_assessment && <div className="mt-2 text-xs text-indigo-600 font-medium">Risk: {aiExplain.risk_assessment}</div>}
+                      {aiExplain.recommended_action && <div className="mt-1 text-xs text-purple-600 font-medium">Action: {aiExplain.recommended_action}</div>}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* Contract Clause */}
             {sel.contract_clause && (
               <div className="mb-4">
@@ -1155,6 +1488,9 @@ function Matching() {
         <div className="flex rounded-lg border border-slate-200 overflow-hidden">
           <button onClick={() => setViewMode('review')} className={cn("px-3 py-1.5 text-xs font-semibold transition-colors", viewMode === 'review' ? "bg-slate-800 text-white" : "bg-white text-slate-600 hover:bg-slate-50")}>Match Review</button>
           <button onClick={() => setViewMode('consumption')} className={cn("px-3 py-1.5 text-xs font-semibold transition-colors", viewMode === 'consumption' ? "bg-slate-800 text-white" : "bg-white text-slate-600 hover:bg-slate-50")}>PO Consumption</button>
+          <button onClick={() => setViewMode('unmatched')} className={cn("px-3 py-1.5 text-xs font-semibold transition-colors", viewMode === 'unmatched' ? "bg-slate-800 text-white" : "bg-white text-slate-600 hover:bg-slate-50")}>
+            Unmatched {(() => { const unm = (s.docs || []).filter(d => d.type === 'invoice' && !matches.some(m => m.invoiceId === d.id)); return unm.length > 0 ? `(${unm.length})` : ''; })()}
+          </button>
         </div>
       </PageHeader>
 
@@ -1401,6 +1737,43 @@ function Matching() {
                   </div>
                 )}
 
+                {/* AI Smart Match */}
+                {(() => {
+                  const [smartMatch, setSmartMatch] = useState(null);
+                  const [smLoading, setSmLoading] = useState(false);
+                  async function runSmartMatch() {
+                    setSmLoading(true);
+                    const r = await api(`/api/ai/smart-match/${selMatch.invoiceId || selMatch._inv?.id}`);
+                    setSmLoading(false);
+                    if (r && !r._err) setSmartMatch(r);
+                    else toast(r?.detail || 'Smart match requires ANTHROPIC_API_KEY', 'warning');
+                  }
+                  return (
+                    <div>
+                      {!smartMatch && (
+                        <button onClick={runSmartMatch} disabled={smLoading}
+                          className="w-full btn bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs py-2 flex items-center justify-center gap-2 rounded-xl border border-indigo-200">
+                          <Brain className="w-3.5 h-3.5" /> {smLoading ? 'AI Analyzing...' : 'AI Smart Match Analysis'}
+                        </button>
+                      )}
+                      {smartMatch && (
+                        <div className="bg-gradient-to-br from-indigo-50 to-blue-50 border border-indigo-200 rounded-xl p-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <Brain className="w-4 h-4 text-indigo-600" />
+                              <span className="text-xs font-bold text-indigo-700 uppercase tracking-wider">AI Match Analysis</span>
+                            </div>
+                            <button onClick={() => setSmartMatch(null)} className="text-xs text-slate-400 hover:text-slate-600">dismiss</button>
+                          </div>
+                          <div className="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap">{smartMatch.analysis || smartMatch.narrative || smartMatch.explanation || JSON.stringify(smartMatch, null, 2)}</div>
+                          {smartMatch.confidence && <div className="mt-2 text-xs text-indigo-600 font-medium">AI Confidence: {smartMatch.confidence}</div>}
+                          {smartMatch.recommended_action && <div className="mt-1 text-xs text-purple-600 font-medium">Recommendation: {smartMatch.recommended_action}</div>}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {/* Actions */}
                 {(selMatch.status === 'review_needed' || selMatch.status === 'pending_review') && (
                   <div className="pt-3 border-t border-slate-200">
@@ -1457,6 +1830,78 @@ function Matching() {
           )}
         </div>
       )}
+
+      {/* ══════ UNMATCHED INVOICES VIEW ══════ */}
+      {viewMode === 'unmatched' && (() => {
+        const unmatchedInvs = (s.docs || []).filter(d => d.type === 'invoice' && !matches.some(m => m.invoiceId === d.id));
+        return (
+          <div>
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="rounded-xl px-4 py-3 border bg-amber-50 border-amber-100">
+                <div className="text-2xl font-extrabold text-amber-700">{unmatchedInvs.length}</div>
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-amber-500">Unmatched Invoices</div>
+              </div>
+              <div className="rounded-xl px-4 py-3 border bg-slate-50 border-slate-100">
+                <div className="text-lg font-extrabold">{$(unmatchedInvs.reduce((s, i) => s + (i.amount || 0), 0))}</div>
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Total Value</div>
+              </div>
+              <div className="rounded-xl px-4 py-3 border bg-slate-50 border-slate-100">
+                <div className="text-lg font-extrabold">{unmatchedInvs.filter(i => !i.poReference).length}</div>
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Missing PO Ref</div>
+              </div>
+            </div>
+            {unmatchedInvs.length > 0 ? (
+              <div className="space-y-2">
+                {unmatchedInvs.map(inv => {
+                  const SmartMatchBtn = () => {
+                    const [result, setResult] = useState(null);
+                    const [loading, setLoading] = useState(false);
+                    async function run() {
+                      setLoading(true);
+                      const r = await api(`/api/ai/smart-match/${inv.id}`);
+                      setLoading(false);
+                      if (r && !r._err) setResult(r);
+                      else toast(r?.detail || 'Smart match requires ANTHROPIC_API_KEY', 'warning');
+                    }
+                    return (
+                      <div>
+                        <div className="flex items-center justify-between p-4 bg-white rounded-xl border border-slate-200 hover:border-slate-300 transition-all">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
+                              <AlertTriangle className="w-4 h-4 text-amber-600" />
+                            </div>
+                            <div>
+                              <div className="text-sm font-semibold text-slate-800">{inv.invoiceNumber || inv.id}</div>
+                              <div className="text-xs text-slate-500">{inv.vendor} · {$(inv.amount, inv.currency)}{inv.poReference ? ` · PO: ${inv.poReference}` : ' · No PO reference'}</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-slate-400">{date(inv.issueDate)}</span>
+                            <button onClick={run} disabled={loading}
+                              className="btn bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs flex items-center gap-1.5 border border-indigo-200">
+                              <Brain className="w-3.5 h-3.5" /> {loading ? 'Analyzing...' : 'AI Smart Match'}
+                            </button>
+                          </div>
+                        </div>
+                        {result && (
+                          <div className="ml-11 mt-1 bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl p-3 border border-indigo-200">
+                            <div className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">{result.analysis || result.narrative || result.explanation || JSON.stringify(result, null, 2)}</div>
+                            {result.suggested_po && <div className="mt-1 text-xs font-medium text-indigo-700">Suggested PO: {result.suggested_po}</div>}
+                            {result.recommended_action && <div className="mt-1 text-xs font-medium text-purple-600">Action: {result.recommended_action}</div>}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  };
+                  return <SmartMatchBtn key={inv.id} />;
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-12 text-slate-400 text-sm">All invoices are matched — no unmatched invoices</div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -2271,6 +2716,40 @@ function Triage() {
                   </>);
                 })()}
 
+                {/* ── AI ROUTING SUGGESTION (Rec #1) ── */}
+                {sel && selLane !== 'AUTO_APPROVE' && (() => {
+                  const [routing, setRouting] = useState(null);
+                  const [routeLoading, setRouteLoading] = useState(false);
+                  async function getRouting() {
+                    setRouteLoading(true);
+                    const caseForInv = (s.casesData || []).find(c => c.invoiceId === sel.id);
+                    if (caseForInv) {
+                      const r = await api(`/api/ai/route-case/${caseForInv.id}`);
+                      if (r && !r._err) setRouting(r);
+                    } else {
+                      setRouting({ suggestion: 'Create a case first to get AI routing recommendations', fallback: true });
+                    }
+                    setRouteLoading(false);
+                  }
+                  return routing ? (
+                    <div className="px-6 py-3 bg-gradient-to-r from-indigo-50 to-purple-50 border-t border-indigo-100">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Brain className="w-3.5 h-3.5 text-indigo-600" />
+                        <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider">AI Suggested Assignment</span>
+                      </div>
+                      <div className="text-xs text-slate-700">{routing.recommended_assignee || routing.primary || routing.suggestion || 'See details'}</div>
+                      {routing.reason && <div className="text-[10px] text-indigo-500 mt-0.5">{routing.reason}</div>}
+                    </div>
+                  ) : (
+                    <div className="px-6 pt-2">
+                      <button onClick={getRouting} disabled={routeLoading}
+                        className="w-full text-[11px] text-indigo-600 hover:text-indigo-800 font-medium py-1.5 flex items-center justify-center gap-1.5">
+                        <Brain className="w-3 h-3" /> {routeLoading ? 'Analyzing...' : 'Get AI Routing Suggestion'}
+                      </button>
+                    </div>
+                  );
+                })()}
+
                 {/* ── ACTIONS (always visible at bottom) ── */}
                 {selLane !== 'AUTO_APPROVE' && (
                   <div className="mt-6 pt-4 border-t border-slate-200">
@@ -2431,6 +2910,89 @@ function Cases() {
               <div><div className="text-[11px] font-semibold text-slate-500 uppercase">Created</div><div className="text-sm">{dateTime(detail.createdAt)}</div></div>
             </div>
             {detail.description && <div className="p-3 bg-slate-50 rounded-xl text-sm text-slate-600 mb-4">{detail.description}</div>}
+
+            {/* AI Intelligence Panel (Rec #1) */}
+            {(() => {
+              const [brief, setBrief] = useState(null);
+              const [briefLoading, setBriefLoading] = useState(false);
+              const [vendorDraft, setVendorDraft] = useState(null);
+              const [draftLoading, setDraftLoading] = useState(false);
+              const [draftType, setDraftType] = useState('dispute');
+
+              async function genBrief() {
+                setBriefLoading(true);
+                const r = await api(`/api/ai/investigation-brief/${detail.id}`);
+                setBriefLoading(false);
+                if (r && !r._err) setBrief(r);
+                else toast(r?.detail || 'AI brief failed — ensure ANTHROPIC_API_KEY is set', 'warning');
+              }
+              async function genDraft(type) {
+                setDraftLoading(true);
+                const r = await post(`/api/ai/vendor-draft/${detail.id}`, { comm_type: type });
+                setDraftLoading(false);
+                if (r && !r._err) setVendorDraft(r);
+                else toast(r?.detail || 'Draft failed — ensure ANTHROPIC_API_KEY is set', 'warning');
+              }
+
+              return (
+                <div className="mb-4 space-y-3">
+                  {/* AI Action Buttons */}
+                  <div className="flex gap-2 flex-wrap">
+                    <button onClick={genBrief} disabled={briefLoading}
+                      className="btn bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs flex items-center gap-1.5 border border-indigo-200">
+                      <Brain className="w-3.5 h-3.5" /> {briefLoading ? 'Generating...' : 'AI Investigation Brief'}
+                    </button>
+                    <button onClick={() => genDraft('dispute')} disabled={draftLoading}
+                      className="btn bg-purple-50 text-purple-700 hover:bg-purple-100 text-xs flex items-center gap-1.5 border border-purple-200">
+                      <Send className="w-3.5 h-3.5" /> {draftLoading ? 'Drafting...' : 'Draft Vendor Letter'}
+                    </button>
+                    <button onClick={() => genDraft('query')} disabled={draftLoading}
+                      className="btn bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs flex items-center gap-1.5 border border-blue-200">
+                      <Send className="w-3.5 h-3.5" /> Draft Query
+                    </button>
+                  </div>
+
+                  {/* Investigation Brief Result */}
+                  {brief && (
+                    <div className="bg-gradient-to-br from-indigo-50 to-blue-50 border border-indigo-200 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <Brain className="w-4 h-4 text-indigo-600" />
+                          <span className="text-xs font-bold text-indigo-700 uppercase tracking-wider">AI Investigation Brief</span>
+                        </div>
+                        <button onClick={() => setBrief(null)} className="text-xs text-slate-400 hover:text-slate-600">dismiss</button>
+                      </div>
+                      <div className="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap">{brief.brief || brief.narrative || brief.summary || JSON.stringify(brief, null, 2)}</div>
+                      {brief.risk_level && <div className="mt-2"><Badge c={brief.risk_level === 'high' ? 'err' : brief.risk_level === 'medium' ? 'warn' : 'ok'}>Risk: {brief.risk_level}</Badge></div>}
+                      {brief.recommended_actions && (
+                        <div className="mt-2 text-xs text-indigo-600">
+                          <strong>Recommended:</strong> {Array.isArray(brief.recommended_actions) ? brief.recommended_actions.join(', ') : brief.recommended_actions}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Vendor Draft Result */}
+                  {vendorDraft && (
+                    <div className="bg-gradient-to-br from-purple-50 to-pink-50 border border-purple-200 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <Send className="w-4 h-4 text-purple-600" />
+                          <span className="text-xs font-bold text-purple-700 uppercase tracking-wider">AI-Generated {vendorDraft.comm_type || 'Vendor'} Letter</span>
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => { navigator.clipboard.writeText(vendorDraft.draft || vendorDraft.body || ''); toast('Copied to clipboard', 'success'); }}
+                            className="text-xs text-purple-600 hover:text-purple-800 font-medium">Copy</button>
+                          <button onClick={() => setVendorDraft(null)} className="text-xs text-slate-400 hover:text-slate-600">dismiss</button>
+                        </div>
+                      </div>
+                      {vendorDraft.subject && <div className="text-xs font-semibold text-purple-800 mb-1">Subject: {vendorDraft.subject}</div>}
+                      <div className="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap bg-white/50 rounded-lg p-3 border border-purple-100">{vendorDraft.draft || vendorDraft.body || JSON.stringify(vendorDraft)}</div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             {/* Notes */}
             {detail.notes?.length > 0 && (
               <div className="mb-4">
@@ -2783,6 +3345,49 @@ function Vendors() {
                     )}
                   </div>
                 )}
+
+                {/* AI Vendor Insights (Rec #1) */}
+                {(() => {
+                  const [vInsights, setVInsights] = useState(null);
+                  const [vInsLoading, setVInsLoading] = useState(false);
+                  async function genInsights() {
+                    setVInsLoading(true);
+                    const vName = encodeURIComponent(sel.vendor || sel.vendorDisplay || sel.name || '');
+                    const r = await api(`/api/ai/vendor-insights/${vName}`);
+                    setVInsLoading(false);
+                    if (r && !r._err) setVInsights(r);
+                    else toast(r?.detail || 'AI insights failed — ensure ANTHROPIC_API_KEY is set', 'warning');
+                  }
+                  return (
+                    <div className="mb-5">
+                      {!vInsights && (
+                        <button onClick={genInsights} disabled={vInsLoading}
+                          className="w-full btn bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs py-2.5 flex items-center justify-center gap-2 rounded-xl border border-indigo-200">
+                          <Brain className="w-3.5 h-3.5" /> {vInsLoading ? 'AI Analyzing Vendor Patterns...' : 'Generate AI Vendor Insights'}
+                        </button>
+                      )}
+                      {vInsights && (
+                        <div className="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl p-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <Brain className="w-4 h-4 text-indigo-600" />
+                              <span className="text-xs font-bold text-indigo-700 uppercase tracking-wider">AI Vendor Analysis</span>
+                            </div>
+                            <button onClick={() => setVInsights(null)} className="text-xs text-slate-400 hover:text-slate-600">dismiss</button>
+                          </div>
+                          <div className="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap">{vInsights.narrative || vInsights.insights || vInsights.analysis || JSON.stringify(vInsights, null, 2)}</div>
+                          {vInsights.risk_trend && <div className="mt-2 text-xs text-indigo-600 font-medium">Risk Trend: {vInsights.risk_trend}</div>}
+                          {vInsights.recommendations && (
+                            <div className="mt-2 p-2 bg-white/60 rounded-lg">
+                              <div className="text-xs font-semibold text-purple-700 mb-1">Recommendations:</div>
+                              <div className="text-xs text-slate-700">{Array.isArray(vInsights.recommendations) ? vInsights.recommendations.join(' • ') : vInsights.recommendations}</div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </>
             )}
           </div>
@@ -4623,6 +5228,71 @@ function SettingsPage() {
         ))}
       </div>
 
+      {/* NLP Policy Configuration (Rec #1) */}
+      {(() => {
+        const [nlpInput, setNlpInput] = useState('');
+        const [nlpResult, setNlpResult] = useState(null);
+        const [nlpLoading, setNlpLoading] = useState(false);
+
+        async function parsePolicy() {
+          if (!nlpInput.trim()) return;
+          setNlpLoading(true);
+          const r = await post('/api/ai/policy-parse', { input: nlpInput });
+          setNlpLoading(false);
+          if (r && !r._err) { setNlpResult(r); toast('AI parsed your policy — review changes below', 'success'); }
+          else toast(r?.detail || 'NLP parse failed — ensure ANTHROPIC_API_KEY is set', 'warning');
+        }
+        async function applyNlpChanges() {
+          if (!nlpResult?.changes) return;
+          await post('/api/policy', nlpResult.changes);
+          await load();
+          setNlpResult(null); setNlpInput('');
+          toast('Policy updated from natural language', 'success');
+        }
+
+        return (
+          <div className="rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-purple-50 p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <Brain className="w-5 h-5 text-indigo-600" />
+              <div>
+                <div className="text-sm font-bold text-indigo-900">Configure Policy with Natural Language</div>
+                <div className="text-xs text-indigo-600">Describe your AP policy in plain English — AI will translate it to settings</div>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <input value={nlpInput} onChange={e => setNlpInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') parsePolicy(); }}
+                placeholder='e.g. "Block invoices over $50K without a PO" or "Tighten tolerance to 1% for high-risk vendors"'
+                className="inp flex-1 text-sm" />
+              <button onClick={parsePolicy} disabled={nlpLoading || !nlpInput.trim()}
+                className="btn-p text-xs whitespace-nowrap">
+                {nlpLoading ? 'Parsing...' : 'Apply with AI'}
+              </button>
+            </div>
+            {nlpResult && (
+              <div className="mt-3 p-3 bg-white/70 rounded-xl border border-indigo-100">
+                <div className="text-xs font-bold text-indigo-700 mb-2">AI Proposed Changes:</div>
+                <div className="text-sm text-slate-800 mb-2">{nlpResult.interpretation || nlpResult.explanation || 'Policy changes identified'}</div>
+                {nlpResult.changes && (
+                  <div className="space-y-1 mb-3">
+                    {Object.entries(nlpResult.changes).map(([k, v]) => (
+                      <div key={k} className="flex justify-between text-xs bg-indigo-50 p-2 rounded-lg">
+                        <span className="text-slate-600">{k.replace(/_/g, ' ')}</span>
+                        <span className="font-mono font-bold text-indigo-700">{String(v)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <button onClick={applyNlpChanges} className="btn bg-indigo-600 text-white hover:bg-indigo-700 text-xs"><Check className="w-3 h-3" /> Apply Changes</button>
+                  <button onClick={() => setNlpResult(null)} className="btn-o text-xs">Cancel</button>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="space-y-4">
           <div className="card p-5">
@@ -5303,6 +5973,27 @@ function DocModal() {
                 ))}
               </div>
             )}
+
+            {/* Learning Context (Rec #3) */}
+            {doc.vendor && (() => {
+              const vendorCorr = (s.anomalies || []).filter(a => a.vendor === doc.vendor && (a.status === 'resolved' || a.status === 'dismissed')).length;
+              const vendorInvs = (s.docs || []).filter(d => d.vendor === doc.vendor && d.type === 'invoice').length;
+              const avgConf = vendorInvs > 0 ? Math.round((s.docs || []).filter(d => d.vendor === doc.vendor && d.type === 'invoice').reduce((s, d) => s + (d.extractionConfidence || d.confidence || 0), 0) / vendorInvs) : 0;
+              if (vendorInvs <= 1) return null;
+              return (
+                <div className="p-3 rounded-xl border border-purple-200 bg-gradient-to-r from-purple-50/50 to-indigo-50/50">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Brain className="w-3.5 h-3.5 text-purple-600" />
+                    <span className="text-[11px] font-bold text-purple-700 uppercase tracking-wider">Vendor Learning Context</span>
+                  </div>
+                  <div className="text-xs text-slate-600">
+                    <strong>{vendorInvs}</strong> invoices processed from <strong>{doc.vendor}</strong>
+                    {avgConf > 0 && <span> · Avg extraction accuracy: <strong className="text-purple-700">{avgConf}%</strong></span>}
+                    {vendorCorr > 0 && <span> · <strong className="text-emerald-600">{vendorCorr}</strong> corrections applied to future extractions</span>}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Math Validation — 5 deterministic checks */}
             {ens?.math_validation && (
