@@ -1042,63 +1042,502 @@ function Matching() {
   const { s, toast, load } = useStore();
   const matches = s.matches || [];
   const allDocs = s.docs || [];
-  async function approve(id) { await post(`/api/matches/${id}/approve`, {}); await load(); toast('Match approved', 'success'); }
-  async function reject(id) { await post(`/api/matches/${id}/reject`, {}); await load(); toast('Match rejected', 'warning'); }
+  const policy = s.policy || {};
+  const [viewMode, setViewMode] = useState('review');
+  const [poData, setPoData] = useState(null);
+  const [poLoading, setPoLoading] = useState(false);
+  const [selMatch, setSelMatch] = useState(null);
+  const [sortCol, setSortCol] = useState('status');
+  const [sortAsc, setSortAsc] = useState(true);
+  const [statusFilter, setStatusFilter] = useState('ALL');
 
-  // Summary counts
-  const twoWay = matches.filter(m => !m.grnIds?.length).length;
-  const threeWay = matches.filter(m => m.grnIds?.length > 0).length;
-  const needsReview = matches.filter(m => m.status === 'pending_review' || m.status === 'review_needed').length;
+  // Load PO consumption data
+  useEffect(() => {
+    if (viewMode === 'consumption' && !poData) {
+      setPoLoading(true);
+      api('/api/matches/po-consumption').then(r => { setPoData(r); setPoLoading(false); });
+    }
+  }, [viewMode]);
+
+  // Tolerance config from policy
+  const tolerance = {
+    pct: policy.over_invoice_pct || policy.match_tolerance_pct || 5,
+    abs: policy.match_tolerance_abs || 500,
+    autoThreshold: policy.auto_match_threshold || 75,
+  };
+
+  // Enrich matches with review reasons + GRN info
+  const enriched = matches.map(m => {
+    const inv = allDocs.find(d => d.id === m.invoiceId);
+    const po = allDocs.find(d => d.id === m.poId);
+    const grn = allDocs.find(d => d.type === 'goods_receipt' && (d.poReference === m.poNumber || d.poId === m.poId));
+    const isDup = matches.filter(x => x.invoiceNumber === m.invoiceNumber && x.poNumber === m.poNumber).length > 1;
+
+    // Compute review reasons
+    const reasons = [];
+    const diff = m.amountDifference || 0;
+    const invAmt = inv?.amount || 0;
+    const diffPct = invAmt > 0 ? (diff / invAmt * 100) : 0;
+    if (diff > tolerance.abs) reasons.push('Variance exceeds $' + tolerance.abs + ' threshold');
+    if (diffPct > tolerance.pct) reasons.push('Variance ' + Math.round(diffPct) + '% exceeds ' + tolerance.pct + '% tolerance');
+    if (m.overInvoiced) reasons.push('Cumulative invoicing exceeds PO value');
+    if (!m.signals?.includes('vendor_exact') && !m.signals?.includes('po_reference_exact')) reasons.push('Weak match signals \u2014 no exact PO ref or vendor');
+    if ((m.matchScore || 0) < tolerance.autoThreshold && (m.matchScore || 0) >= 40) reasons.push('Match score ' + m.matchScore + ' below auto-approve threshold (' + tolerance.autoThreshold + ')');
+    if (isDup) reasons.push('Duplicate invoice number matched to same PO');
+    if (m.grnStatus === 'no_grn') reasons.push('No goods receipt found \u2014 2-way match only');
+
+    return { ...m, _inv: inv, _po: po, _grn: grn, _isDup: isDup, _reasons: reasons, _diffPct: diffPct };
+  });
+
+  // Filtering
+  let filtered = enriched;
+  if (statusFilter === 'review') filtered = filtered.filter(m => m.status === 'review_needed' || m.status === 'pending_review');
+  else if (statusFilter === 'matched') filtered = filtered.filter(m => m.status === 'auto_matched' || m.status === 'matched');
+  else if (statusFilter === 'rejected') filtered = filtered.filter(m => m.status === 'rejected');
+
+  // Sorting
+  const sortFns = {
+    status: (a, b) => { const ord = { review_needed: 0, pending_review: 0, auto_matched: 1, matched: 1, rejected: 2 }; return (ord[a.status] || 1) - (ord[b.status] || 1); },
+    invoice: (a, b) => (a.invoiceNumber || '').localeCompare(b.invoiceNumber || ''),
+    vendor: (a, b) => (a.vendor || '').localeCompare(b.vendor || ''),
+    score: (a, b) => (b.matchScore || 0) - (a.matchScore || 0),
+    variance: (a, b) => Math.abs(b.amountDifference || 0) - Math.abs(a.amountDifference || 0),
+    po: (a, b) => (a.poNumber || '').localeCompare(b.poNumber || ''),
+  };
+  const sorted = [...filtered].sort((a, b) => {
+    const fn = sortFns[sortCol] || sortFns.status;
+    return sortAsc ? fn(a, b) : -fn(a, b);
+  });
+
+  // Actions with audit trail
+  async function approveMatch(m, reason) {
+    if (m.overInvoiced || m._isDup) {
+      const r = prompt('This match has risk flags. Provide approval justification (required for audit):');
+      if (!r?.trim()) return;
+      reason = r.trim();
+    }
+    const r = await post('/api/matches/' + m.id + '/approve', { reason: reason || 'Reviewed and approved' });
+    if (r?.success) { await load(); setSelMatch(null); toast('Match approved', 'success'); }
+    else toast(r?.detail || 'Approve failed', 'danger');
+  }
+  async function rejectMatch(m) {
+    const reason = prompt('Rejection reason (required for SOX compliance):');
+    if (!reason?.trim()) { toast('Rejection reason is required', 'warning'); return; }
+    const r = await post('/api/matches/' + m.id + '/reject', { reason: reason.trim() });
+    if (r?.success) { await load(); setSelMatch(null); toast('Match rejected', 'warning'); }
+    else toast(r?.detail || 'Reject failed', 'danger');
+  }
+
+  // Stats
+  const twoWay = matches.filter(m => m.matchType !== 'three_way' && m.grnStatus !== 'received').length;
+  const threeWay = matches.filter(m => m.matchType === 'three_way' || m.grnStatus === 'received').length;
+  const needsReview = matches.filter(m => m.status === 'review_needed' || m.status === 'pending_review').length;
+  const autoMatched = matches.filter(m => m.status === 'auto_matched' || m.status === 'matched').length;
+  const rejected = matches.filter(m => m.status === 'rejected').length;
+  const threeWayRate = matches.length > 0 ? Math.round(threeWay / matches.length * 100) : 0;
+  const autoMatchRate = matches.length > 0 ? Math.round(autoMatched / matches.length * 100) : 0;
+  const overInvoiced = enriched.filter(m => m.overInvoiced).length;
+
+  function SortHdr({ col, label, right }) {
+    const active = sortCol === col;
+    return (
+      <th onClick={() => { if (active) setSortAsc(!sortAsc); else { setSortCol(col); setSortAsc(true); } }}
+        className={cn("px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider cursor-pointer select-none hover:bg-slate-100 transition-colors",
+          right ? "text-right" : "text-left", active ? "text-accent-700 bg-slate-50" : "text-slate-500")}>
+        {label} {active && (sortAsc ? "\u2193" : "\u2191")}
+      </th>
+    );
+  }
 
   return (
-    <div className="page-enter">
-      <PageHeader title="PO Matching" sub={`${matches.length} matches`} />
+    <div className="page-enter space-y-4">
+      <PageHeader title="PO Matching" sub={"AP Three-Way Match Workbench"}>
+        <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+          <button onClick={() => setViewMode('review')} className={cn("px-3 py-1.5 text-xs font-semibold transition-colors", viewMode === 'review' ? "bg-slate-800 text-white" : "bg-white text-slate-600 hover:bg-slate-50")}>Match Review</button>
+          <button onClick={() => setViewMode('consumption')} className={cn("px-3 py-1.5 text-xs font-semibold transition-colors", viewMode === 'consumption' ? "bg-slate-800 text-white" : "bg-white text-slate-600 hover:bg-slate-50")}>PO Consumption</button>
+        </div>
+      </PageHeader>
 
-      {/* Summary pills */}
-      {matches.length > 0 && (
-        <div className="flex gap-3 mb-4 flex-wrap">
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 rounded-xl border border-blue-100">
-            <div className="w-2 h-2 rounded-full bg-blue-500" />
-            <span className="text-xs font-semibold text-blue-700">{twoWay} Two-Way</span>
+      {/* Metrics strip */}
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+        <div className={cn("rounded-xl px-4 py-3 border", threeWayRate >= 70 ? "bg-emerald-50 border-emerald-100" : threeWayRate >= 40 ? "bg-amber-50 border-amber-100" : "bg-red-50 border-red-100")}>
+          <div className="text-2xl font-extrabold">{threeWayRate}%</div>
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">3-Way Rate</div>
+        </div>
+        <div className="rounded-xl px-4 py-3 border bg-blue-50 border-blue-100">
+          <div className="text-2xl font-extrabold text-blue-700">{autoMatchRate}%</div>
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Auto-Match</div>
+        </div>
+        {needsReview > 0 && (
+          <div className="rounded-xl px-4 py-3 border bg-amber-50 border-amber-100">
+            <div className="text-2xl font-extrabold text-amber-700">{needsReview}</div>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Needs Review</div>
           </div>
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 rounded-xl border border-emerald-100">
-            <div className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span className="text-xs font-semibold text-emerald-700">{threeWay} Three-Way</span>
+        )}
+        {overInvoiced > 0 && (
+          <div className="rounded-xl px-4 py-3 border bg-red-50 border-red-100">
+            <div className="text-2xl font-extrabold text-red-700">{overInvoiced}</div>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-red-500">Over-Invoiced</div>
           </div>
-          {needsReview > 0 && (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 rounded-xl border border-amber-100">
-              <div className="w-2 h-2 rounded-full bg-amber-500" />
-              <span className="text-xs font-semibold text-amber-700">{needsReview} Needs Review</span>
+        )}
+        <div className="rounded-xl px-4 py-3 border bg-slate-50 border-slate-100">
+          <div className="text-2xl font-extrabold">{matches.length}</div>
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Total Matches</div>
+        </div>
+        <div className="rounded-xl px-4 py-3 border bg-slate-50 border-slate-100 col-span-1">
+          <div className="text-[10px] text-slate-500 uppercase font-semibold mb-1">Tolerance</div>
+          <div className="text-xs font-mono text-slate-700">{"\u00b1"}{tolerance.pct}% or ${tolerance.abs}</div>
+          <div className="text-[10px] text-slate-400">Auto: {"\u2265"}{tolerance.autoThreshold} score</div>
+        </div>
+      </div>
+
+      {/* ══════ MATCH REVIEW VIEW ══════ */}
+      {viewMode === 'review' && (
+        <div className="flex gap-4">
+          <div className={cn("transition-all", selMatch ? "w-3/5" : "w-full")}>
+            {/* Filters */}
+            <div className="flex items-center gap-2 mb-3">
+              <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="text-xs border border-slate-200 rounded-lg px-3 py-2 bg-white">
+                <option value="ALL">All Matches ({matches.length})</option>
+                <option value="review">Needs Review ({needsReview})</option>
+                <option value="matched">Auto-Matched ({autoMatched})</option>
+                {rejected > 0 && <option value="rejected">Rejected ({rejected})</option>}
+              </select>
+            </div>
+
+            <div className="card overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-slate-50/80 border-b border-slate-100">
+                      <SortHdr col="invoice" label="Invoice" />
+                      <SortHdr col="po" label="PO" />
+                      <SortHdr col="vendor" label="Vendor" />
+                      <th className="px-3 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider text-center">Type</th>
+                      <th className="px-3 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider text-center">GRN</th>
+                      <SortHdr col="variance" label={"\u0394 Amount"} right />
+                      <SortHdr col="score" label="Score" />
+                      <SortHdr col="status" label="Status" />
+                      <th className="px-3 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Reason</th>
+                      <th className="px-3 py-2.5 w-20"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {sorted.map(m => (
+                      <tr key={m.id} onClick={() => setSelMatch(m)} className={cn("transition-colors cursor-pointer",
+                        selMatch?.id === m.id ? "bg-accent-50 ring-1 ring-inset ring-accent-200" : "hover:bg-slate-50",
+                        m._isDup && "bg-red-50/30")}>
+                        <td className="px-3 py-2.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-semibold text-slate-900">{m.invoiceNumber}</span>
+                            {m._isDup && <span className="text-[9px] px-1 py-0.5 bg-red-100 text-red-600 font-bold rounded border border-red-200">DUP</span>}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2.5"><span className="font-semibold text-accent-600">{m.poNumber}</span></td>
+                        <td className="px-3 py-2.5 text-slate-600 max-w-[120px] truncate">{m.vendor}</td>
+                        <td className="px-3 py-2.5 text-center">
+                          <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full",
+                            m.matchType === 'three_way' || m.grnStatus === 'received' ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700")}>
+                            {m.matchType === 'three_way' || m.grnStatus === 'received' ? "3-Way" : "2-Way"}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 text-center">
+                          {m._grn ? (
+                            <span className="text-[10px] font-semibold text-emerald-600">{"\u2713"} Received</span>
+                          ) : (
+                            <span className="text-[10px] text-slate-400">No GRN</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5 text-right">
+                          <span className={cn("font-mono font-semibold text-xs",
+                            Math.abs(m.amountDifference || 0) > tolerance.abs ? "text-red-600" :
+                            Math.abs(m.amountDifference || 0) > 0 ? "text-amber-600" : "text-emerald-600")}>
+                            {(m.amountDifference || 0) > 0 ? '+' : ''}{$f(m.amountDifference || 0)}
+                          </span>
+                          {m._diffPct > tolerance.pct && <div className="text-[9px] text-red-500 font-mono">{Math.round(m._diffPct)}%</div>}
+                        </td>
+                        <td className="px-3 py-2.5"><ConfidenceRing score={m.matchScore || 0} size={36} /></td>
+                        <td className="px-3 py-2.5">
+                          <Badge c={
+                            m.status === 'auto_matched' || m.status === 'matched' ? 'ok' :
+                            m.status === 'rejected' ? 'err' : 'warn'
+                          }>{(m.status || '').replace(/_/g, ' ')}</Badge>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          {m._reasons.length > 0 ? (
+                            <span className="text-[10px] text-amber-600 leading-tight line-clamp-2">{m._reasons[0]}</span>
+                          ) : (
+                            <span className="text-[10px] text-slate-300">{"\u2014"}</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          {(m.status === 'review_needed' || m.status === 'pending_review') && (
+                            <div className="flex gap-1">
+                              <button onClick={e => { e.stopPropagation(); approveMatch(m); }} className="text-emerald-600 hover:bg-emerald-50 p-1.5 rounded-lg transition-all" title="Approve match"><Check className="w-4 h-4" /></button>
+                              <button onClick={e => { e.stopPropagation(); rejectMatch(m); }} className="text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-all" title="Reject match"><X className="w-4 h-4" /></button>
+                            </div>
+                          )}
+                          {m.status === 'rejected' && <span className="text-[10px] text-red-400">Rejected</span>}
+                        </td>
+                      </tr>
+                    ))}
+                    {sorted.length === 0 && (
+                      <tr><td colSpan={10} className="px-4 py-12 text-center text-slate-400">No matches found</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          {/* Detail panel */}
+          {selMatch && (
+            <div className="w-2/5 bg-white rounded-2xl border border-slate-200 shadow-sm sticky top-20 self-start max-h-[calc(100vh-7rem)] overflow-y-auto">
+              <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-start">
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">{selMatch.invoiceNumber} {"\u2192"} {selMatch.poNumber}</h3>
+                  <div className="text-sm text-slate-500">{selMatch.vendor}</div>
+                </div>
+                <button onClick={() => setSelMatch(null)} className="p-1 hover:bg-slate-100 rounded-lg"><X className="w-4 h-4" /></button>
+              </div>
+              <div className="p-5 space-y-4">
+                {/* Match score + type */}
+                <div className="flex items-center gap-4">
+                  <ConfidenceRing score={selMatch.matchScore || 0} size={56} />
+                  <div>
+                    <div className="text-sm font-bold">{selMatch.matchType === 'three_way' ? 'Three-Way Match' : 'Two-Way Match'}</div>
+                    <Badge c={selMatch.status === 'auto_matched' ? 'ok' : selMatch.status === 'rejected' ? 'err' : 'warn'}>{(selMatch.status || '').replace(/_/g, ' ')}</Badge>
+                  </div>
+                </div>
+
+                {/* Amounts */}
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="bg-slate-50 rounded-lg p-2.5"><div className="text-[10px] text-slate-500 uppercase">Invoice</div><div className="text-sm font-bold font-mono">{$(selMatch._inv?.amount, selMatch._inv?.currency)}</div></div>
+                  <div className="bg-slate-50 rounded-lg p-2.5"><div className="text-[10px] text-slate-500 uppercase">PO Value</div><div className="text-sm font-bold font-mono">{$(selMatch.poAmount || selMatch._po?.amount)}</div></div>
+                  <div className={cn("rounded-lg p-2.5", Math.abs(selMatch.amountDifference || 0) > tolerance.abs ? "bg-red-50" : "bg-slate-50")}>
+                    <div className="text-[10px] text-slate-500 uppercase">{"\u0394"} Variance</div>
+                    <div className={cn("text-sm font-bold font-mono", Math.abs(selMatch.amountDifference || 0) > tolerance.abs ? "text-red-600" : "text-slate-700")}>{$f(selMatch.amountDifference || 0)}</div>
+                  </div>
+                </div>
+
+                {/* PO consumption */}
+                {(selMatch.poAlreadyInvoiced != null || selMatch.poRemaining != null) && (
+                  <div className="rounded-xl border border-slate-200 p-3">
+                    <div className="text-[10px] font-semibold text-slate-500 uppercase mb-2">PO Consumption</div>
+                    <div className="grid grid-cols-3 gap-2 text-xs mb-2">
+                      <div><span className="text-slate-500">Total Invoiced</span><div className="font-bold font-mono">{$(selMatch.poAlreadyInvoiced || 0)}</div></div>
+                      <div><span className="text-slate-500">Remaining</span><div className={cn("font-bold font-mono", (selMatch.poRemaining || 0) < 0 && "text-red-600")}>{$(selMatch.poRemaining || 0)}</div></div>
+                      <div><span className="text-slate-500">Invoices</span><div className="font-bold">{selMatch.poInvoiceCount || 0}</div></div>
+                    </div>
+                    {selMatch.overInvoiced && (
+                      <div className="text-xs text-red-600 bg-red-50 rounded-lg px-2.5 py-1.5 border border-red-100 font-medium">{"\u26a0"} PO over-invoiced {"\u2014"} cumulative amount exceeds PO value</div>
+                    )}
+                    {/* Consumption bar */}
+                    {selMatch.poAmount > 0 && (() => {
+                      const pct = Math.min(((selMatch.poAlreadyInvoiced || 0) / selMatch.poAmount) * 100, 120);
+                      return (
+                        <div className="mt-2">
+                          <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                            <span>0%</span><span>100%</span>
+                          </div>
+                          <div className="h-2 bg-slate-100 rounded-full overflow-hidden relative">
+                            <div className={cn("h-full rounded-full transition-all", pct > 100 ? "bg-red-500" : pct > 80 ? "bg-amber-500" : "bg-emerald-500")} style={{ width: Math.min(pct, 100) + '%' }} />
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-1 text-center">{Math.round(pct)}% consumed</div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {/* GRN status */}
+                <div className="rounded-xl border border-slate-200 p-3">
+                  <div className="text-[10px] font-semibold text-slate-500 uppercase mb-1">Goods Receipt</div>
+                  {selMatch._grn ? (
+                    <div className="text-sm">
+                      <div className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-500" /> <span className="font-semibold text-emerald-700">GRN: {selMatch._grn.documentNumber || selMatch._grn.grnNumber || selMatch._grn.id}</span></div>
+                      <div className="text-xs text-slate-500 mt-1">Received: {date(selMatch._grn.receivedDate || selMatch._grn.issueDate)}</div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-sm text-amber-600"><AlertTriangle className="w-4 h-4" /> No goods receipt {"\u2014"} 2-way match only</div>
+                  )}
+                </div>
+
+                {/* Match signals */}
+                {(selMatch.signals || []).length > 0 && (
+                  <div>
+                    <div className="text-[10px] font-semibold text-slate-500 uppercase mb-1">Match Signals</div>
+                    <div className="flex flex-wrap gap-1">
+                      {selMatch.signals.map((sig, i) => (
+                        <span key={i} className="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full border border-slate-200">{sig.replace(/_/g, ' ')}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Review reasons */}
+                {selMatch._reasons.length > 0 && (
+                  <div>
+                    <div className="text-[10px] font-semibold text-amber-600 uppercase mb-1">Review Required Because</div>
+                    <div className="space-y-1">
+                      {selMatch._reasons.map((r, i) => (
+                        <div key={i} className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-1.5 border border-amber-100">{"\u2192"} {r}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Approval info */}
+                {selMatch.approvedBy && (
+                  <div className="text-xs text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2 border border-emerald-100">
+                    Approved by <strong>{selMatch.approvedBy}</strong> {selMatch.approvedAt && <span>on {dateTime(selMatch.approvedAt)}</span>}
+                    {selMatch.approvalReason && <div className="text-emerald-500 mt-0.5">Reason: {selMatch.approvalReason}</div>}
+                  </div>
+                )}
+                {selMatch.rejectedBy && (
+                  <div className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2 border border-red-100">
+                    Rejected by <strong>{selMatch.rejectedBy}</strong> {selMatch.rejectedAt && <span>on {dateTime(selMatch.rejectedAt)}</span>}
+                    {selMatch.rejectionReason && <div className="text-red-500 mt-0.5">Reason: {selMatch.rejectionReason}</div>}
+                  </div>
+                )}
+
+                {/* Actions */}
+                {(selMatch.status === 'review_needed' || selMatch.status === 'pending_review') && (
+                  <div className="pt-3 border-t border-slate-200">
+                    <div className="flex gap-2">
+                      <button onClick={() => approveMatch(selMatch)} className="btn-p text-sm px-4 py-2 flex-1"><Check className="w-4 h-4" /> Approve Match</button>
+                      <button onClick={() => rejectMatch(selMatch)} className="text-sm px-4 py-2 flex-1 rounded-xl font-semibold flex items-center justify-center gap-2 border border-red-200 text-red-600 hover:bg-red-50 transition-all"><X className="w-4 h-4" /> Reject</button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
       )}
 
-      <Table
-        cols={[
-          { label: 'Invoice → PO', render: r => <div><span className="font-semibold">{r.invoiceNumber}</span><span className="text-slate-500 mx-2">→</span><span className="font-semibold text-accent-600">{r.poNumber}</span></div> },
-          { label: 'Vendor', render: r => <span className="text-slate-600">{r.vendor}</span> },
-          { label: 'Match Type', center: true, render: r => {
-            const hasGRN = r.grnIds?.length > 0 || r.grnStatus === 'matched';
-            return (
-              <span className={cn("text-[11px] font-bold px-2 py-0.5 rounded-full",
-                hasGRN ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700")}>
-                {hasGRN ? "3-Way" : "2-Way"}
-              </span>
-            );
-          }},
-          { label: 'Δ Amount', right: true, render: r => { const d = r.amountDifference || 0; return <span className={cn('font-mono font-semibold', Math.abs(d) > 0 ? 'text-red-600' : 'text-emerald-600')}>{d > 0 ? '+' : ''}{$f(d)}</span>; }},
-          { label: 'Match', center: true, render: r => <ConfidenceRing score={r.matchScore || 0} /> },
-          { label: 'Status', render: r => <Badge c={r.status === 'matched' || r.status === 'auto_matched' ? 'ok' : r.status === 'mismatch' ? 'err' : 'warn'}>{(r.status || '').replace(/_/g, ' ')}</Badge> },
-          { label: '', render: r => (r.status === 'pending_review' || r.status === 'review_needed') && (
-            <div className="flex gap-1">
-              <button onClick={e => { e.stopPropagation(); approve(r.id); }} className="text-emerald-600 hover:bg-emerald-50 p-1.5 rounded-lg transition-all"><Check className="w-4 h-4" /></button>
-              <button onClick={e => { e.stopPropagation(); reject(r.id); }} className="text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-all"><X className="w-4 h-4" /></button>
+      {/* ══════ PO CONSUMPTION VIEW ══════ */}
+      {viewMode === 'consumption' && (
+        <div>
+          {poLoading && <div className="text-center py-12 text-slate-400">Loading PO consumption data...</div>}
+          {poData && (
+            <>
+              {/* PO summary */}
+              <div className="grid grid-cols-4 gap-3 mb-4">
+                <div className="rounded-xl px-4 py-3 border bg-slate-50 border-slate-100">
+                  <div className="text-2xl font-extrabold">{poData.summary?.totalPOs || 0}</div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Active POs</div>
+                </div>
+                <div className="rounded-xl px-4 py-3 border bg-slate-50 border-slate-100">
+                  <div className="text-lg font-extrabold">{short(poData.summary?.totalPOValue || 0, 'USD')}</div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Total PO Value</div>
+                </div>
+                <div className="rounded-xl px-4 py-3 border bg-slate-50 border-slate-100">
+                  <div className="text-lg font-extrabold">{short(poData.summary?.totalInvoiced || 0, 'USD')}</div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Total Invoiced</div>
+                </div>
+                {(poData.summary?.overInvoiced || 0) > 0 && (
+                  <div className="rounded-xl px-4 py-3 border bg-red-50 border-red-100">
+                    <div className="text-2xl font-extrabold text-red-700">{poData.summary.overInvoiced}</div>
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-red-500">Over-Invoiced POs</div>
+                  </div>
+                )}
+              </div>
+
+              {/* PO accordion */}
+              <div className="space-y-3">
+                {(poData.poConsumption || []).map(po => (
+                  <POCard key={po.poId} po={po} tolerance={tolerance} />
+                ))}
+                {(poData.poConsumption || []).length === 0 && (
+                  <div className="text-center py-12 text-slate-400">No PO consumption data available</div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function POCard({ po, tolerance }) {
+  const [expanded, setExpanded] = useState(false);
+  const pct = po.poAmount > 0 ? Math.min(po.consumptionPct, 120) : 0;
+  const barColor = pct > 100 ? 'bg-red-500' : pct > 80 ? 'bg-amber-500' : 'bg-emerald-500';
+
+  return (
+    <div className={cn("card overflow-hidden", po.hasOverInvoice && "ring-1 ring-red-200")}>
+      <div onClick={() => setExpanded(!expanded)} className="px-5 py-4 flex items-center gap-4 cursor-pointer hover:bg-slate-50 transition-colors">
+        <ChevronRight className={cn("w-4 h-4 text-slate-400 transition-transform", expanded && "rotate-90")} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-slate-900">{po.poNumber}</span>
+            <span className="text-sm text-slate-500">{po.vendor}</span>
+            {po.hasOverInvoice && <span className="text-[9px] px-1.5 py-0.5 bg-red-100 text-red-600 font-bold rounded border border-red-200">OVER-INVOICED</span>}
+          </div>
+          <div className="flex items-center gap-4 mt-1.5">
+            <div className="flex-1 max-w-xs">
+              <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                <div className={cn("h-full rounded-full transition-all", barColor)} style={{ width: Math.min(pct, 100) + '%' }} />
+              </div>
             </div>
-          )},
-        ]}
-        rows={matches}
-      />
+            <span className={cn("text-xs font-bold font-mono", pct > 100 ? "text-red-600" : "text-slate-600")}>{Math.round(pct)}%</span>
+          </div>
+        </div>
+        <div className="text-right shrink-0">
+          <div className="text-xs text-slate-500">PO Value</div>
+          <div className="font-bold font-mono text-sm">{$(po.poAmount, po.currency)}</div>
+        </div>
+        <div className="text-right shrink-0">
+          <div className="text-xs text-slate-500">Invoiced</div>
+          <div className={cn("font-bold font-mono text-sm", po.hasOverInvoice && "text-red-600")}>{$(po.totalInvoiced, po.currency)}</div>
+        </div>
+        <div className="text-right shrink-0">
+          <div className="text-xs text-slate-500">Remaining</div>
+          <div className={cn("font-bold font-mono text-sm", po.remaining < 0 ? "text-red-600" : "text-emerald-600")}>{$(po.remaining, po.currency)}</div>
+        </div>
+        <Badge c={po.matchCount > 0 ? 'info' : 'muted'}>{po.matchCount} inv</Badge>
+      </div>
+
+      {expanded && po.matches.length > 0 && (
+        <div className="border-t border-slate-100">
+          <table className="w-full text-xs">
+            <thead><tr className="bg-slate-50">
+              <th className="px-5 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase">Invoice</th>
+              <th className="px-3 py-2 text-right text-[10px] font-semibold text-slate-500 uppercase">Amount</th>
+              <th className="px-3 py-2 text-right text-[10px] font-semibold text-slate-500 uppercase">{"\u0394"}</th>
+              <th className="px-3 py-2 text-center text-[10px] font-semibold text-slate-500 uppercase">Score</th>
+              <th className="px-3 py-2 text-center text-[10px] font-semibold text-slate-500 uppercase">Type</th>
+              <th className="px-3 py-2 text-center text-[10px] font-semibold text-slate-500 uppercase">GRN</th>
+              <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase">Status</th>
+              <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase">Date</th>
+            </tr></thead>
+            <tbody className="divide-y divide-slate-50">
+              {po.matches.map(m => (
+                <tr key={m.matchId} className="hover:bg-slate-50">
+                  <td className="px-5 py-2 font-semibold text-slate-900">{m.invoiceNumber}</td>
+                  <td className="px-3 py-2 text-right font-mono font-bold">{$(m.invoiceAmount)}</td>
+                  <td className="px-3 py-2 text-right font-mono"><span className={cn(Math.abs(m.amountDifference || 0) > tolerance.abs ? "text-red-600 font-bold" : "text-slate-500")}>{$f(m.amountDifference || 0)}</span></td>
+                  <td className="px-3 py-2 text-center"><ConfidenceRing score={m.matchScore || 0} size={28} /></td>
+                  <td className="px-3 py-2 text-center"><span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded-full", m.matchType === 'three_way' ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700")}>{m.matchType === 'three_way' ? '3W' : '2W'}</span></td>
+                  <td className="px-3 py-2 text-center">{m.grnStatus === 'received' ? <span className="text-emerald-500">{"\u2713"}</span> : <span className="text-slate-300">{"\u2014"}</span>}</td>
+                  <td className="px-3 py-2"><Badge c={m.status === 'auto_matched' ? 'ok' : m.status === 'rejected' ? 'err' : 'warn'}>{(m.status || '').replace(/_/g, ' ')}</Badge></td>
+                  <td className="px-3 py-2 text-slate-500">{date(m.invoiceDate)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {/* Cumulative bar at bottom */}
+          <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center gap-3 text-xs">
+            <span className="text-slate-500">Cumulative:</span>
+            <span className="font-bold font-mono">{$(po.totalInvoiced, po.currency)}</span>
+            <span className="text-slate-400">of</span>
+            <span className="font-bold font-mono">{$(po.poAmount, po.currency)}</span>
+            <span className={cn("font-bold", po.hasOverInvoice ? "text-red-600" : "text-emerald-600")}>({Math.round(po.consumptionPct)}%)</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

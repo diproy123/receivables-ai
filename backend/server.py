@@ -1742,15 +1742,145 @@ async def release_anomaly(aid: str, user: dict = Depends(get_current_user)):
     raise HTTPException(404)
 
 @app.post("/api/matches/{mid}/approve")
-async def approve_match(mid: str):
+async def approve_match(mid: str, request: Request):
+    """Approve a match with audit trail. Requires reason for over-invoiced matches."""
+    user_display = get_user_display(request)
+    body = {}
+    try: body = await request.json()
+    except: pass
+    reason = body.get("reason", "")
     db = get_db()
     for m in db["matches"]:
-        if m["id"] == mid: m["status"] = "auto_matched"; save_db(db); return {"success": True}
+        if m["id"] == mid:
+            old_status = m.get("status", "unknown")
+            m["status"] = "auto_matched"
+            m["approvedBy"] = user_display
+            m["approvedAt"] = datetime.now().isoformat()
+            m["approvalReason"] = reason
+            db["activity_log"].append({
+                "id": str(uuid.uuid4())[:8],
+                "action": "match_approved",
+                "matchId": mid,
+                "invoiceNumber": m.get("invoiceNumber", ""),
+                "poNumber": m.get("poNumber", ""),
+                "vendor": m.get("vendor", ""),
+                "matchScore": m.get("matchScore", 0),
+                "amountDifference": m.get("amountDifference", 0),
+                "reason": reason,
+                "oldStatus": old_status,
+                "timestamp": datetime.now().isoformat(),
+                "performedBy": user_display,
+            })
+            save_db(db)
+            return {"success": True, "match": m}
     raise HTTPException(404)
 
 @app.post("/api/matches/{mid}/reject")
-async def reject_match(mid: str):
-    db = get_db(); db["matches"] = [m for m in db["matches"] if m["id"] != mid]; save_db(db); return {"success": True}
+async def reject_match(mid: str, request: Request):
+    """Reject a match with mandatory reason and audit trail."""
+    user_display = get_user_display(request)
+    body = {}
+    try: body = await request.json()
+    except: pass
+    reason = body.get("reason", "")
+    if not reason.strip():
+        raise HTTPException(400, "Rejection reason is required for audit compliance")
+    db = get_db()
+    rejected_match = None
+    for m in db["matches"]:
+        if m["id"] == mid:
+            rejected_match = m.copy()
+            m["status"] = "rejected"
+            m["rejectedBy"] = user_display
+            m["rejectedAt"] = datetime.now().isoformat()
+            m["rejectionReason"] = reason
+            break
+    if not rejected_match:
+        raise HTTPException(404)
+    db["activity_log"].append({
+        "id": str(uuid.uuid4())[:8],
+        "action": "match_rejected",
+        "matchId": mid,
+        "invoiceNumber": rejected_match.get("invoiceNumber", ""),
+        "poNumber": rejected_match.get("poNumber", ""),
+        "vendor": rejected_match.get("vendor", ""),
+        "matchScore": rejected_match.get("matchScore", 0),
+        "amountDifference": rejected_match.get("amountDifference", 0),
+        "reason": reason,
+        "timestamp": datetime.now().isoformat(),
+        "performedBy": user_display,
+    })
+    save_db(db)
+    return {"success": True}
+
+@app.get("/api/matches/po-consumption")
+async def get_po_consumption(user: dict = Depends(get_optional_user)):
+    """PO consumption view: grouped by PO showing cumulative invoiced amounts."""
+    db = get_db()
+    scope = get_user_vendor_scope(user)
+    matches = scope_by_vendor(db["matches"], scope)
+    pos = scope_by_vendor([d for d in db.get("documents", []) if d.get("type") == "purchase_order"], scope)
+    invoices = scope_by_vendor(db.get("invoices", []), scope)
+    policy = db.get("_policy_state", DEFAULT_POLICY)
+
+    po_map = {}
+    for po in pos:
+        po_map[po["id"]] = {
+            "poId": po["id"],
+            "poNumber": po.get("poNumber", po["id"]),
+            "vendor": po.get("vendor", ""),
+            "poAmount": po.get("amount", 0),
+            "currency": po.get("currency", "USD"),
+            "issueDate": po.get("issueDate"),
+            "lineItems": po.get("lineItems", []),
+            "matches": [],
+            "totalInvoiced": 0,
+            "matchCount": 0,
+            "hasOverInvoice": False,
+        }
+
+    for m in matches:
+        pid = m.get("poId")
+        if pid and pid in po_map:
+            inv = next((i for i in invoices if i.get("id") == m.get("invoiceId")), None)
+            entry = {
+                "matchId": m.get("id"),
+                "invoiceId": m.get("invoiceId"),
+                "invoiceNumber": m.get("invoiceNumber", ""),
+                "invoiceAmount": inv.get("amount", 0) if inv else 0,
+                "amountDifference": m.get("amountDifference", 0),
+                "matchScore": m.get("matchScore", 0),
+                "status": m.get("status", ""),
+                "matchType": m.get("matchType", "two_way"),
+                "grnStatus": m.get("grnStatus", "no_grn"),
+                "signals": m.get("signals", []),
+                "invoiceDate": inv.get("issueDate") if inv else None,
+                "approvedBy": m.get("approvedBy"),
+                "approvedAt": m.get("approvedAt"),
+            }
+            po_map[pid]["matches"].append(entry)
+            po_map[pid]["totalInvoiced"] += entry["invoiceAmount"]
+            po_map[pid]["matchCount"] += 1
+
+    for po in po_map.values():
+        pa = po["poAmount"]
+        ti = po["totalInvoiced"]
+        po["remaining"] = round(pa - ti, 2) if pa else 0
+        po["consumptionPct"] = round(ti / pa * 100, 1) if pa > 0 else 0
+        over_pct = policy.get("over_invoice_pct", 5)
+        po["hasOverInvoice"] = ti > pa * (1 + over_pct / 100) if pa > 0 else False
+
+    result = sorted(po_map.values(), key=lambda p: (-p["consumptionPct"], -p["totalInvoiced"]))
+    return {
+        "poConsumption": result,
+        "summary": {
+            "totalPOs": len(result),
+            "overInvoiced": sum(1 for p in result if p["hasOverInvoice"]),
+            "fullyConsumed": sum(1 for p in result if p["consumptionPct"] >= 100),
+            "totalPOValue": round(sum(p["poAmount"] for p in result), 2),
+            "totalInvoiced": round(sum(p["totalInvoiced"] for p in result), 2),
+        }
+    }
 
 # ============================================================
 # WORKFORCE MANAGEMENT — Manager dashboard for analyst oversight
