@@ -903,7 +903,8 @@ async def _call_model(b64_data: str, media_type: str, model: str, prompt: str, l
         )
         elapsed = round((_time.time() - t0) * 1000)
         if text is None:
-            return {"_error": "LLM provider returned None", "_model": model}
+            print(f"[Ensemble:{label}] ❌ Provider returned None for {model_alias} after {elapsed}ms")
+            return {"_error": f"LLM provider returned None", "_model": model}
         if text.startswith("```"):
             first_nl = text.index("\n") if "\n" in text else len(text)
             text = text[first_nl + 1:]

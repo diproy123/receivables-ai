@@ -345,6 +345,22 @@ DUPLICATE_DAYS_WINDOW = DEFAULT_POLICY["duplicate_window_days"]
 # ============================================================
 # ROUTES
 # ============================================================
+@app.get("/api/health/llm")
+async def health_llm():
+    """Diagnostic: test LLM connectivity. Returns actual error on failure."""
+    from backend.llm_provider import llm_call, is_llm_available, get_provider_info, LLM_API_KEY, LLM_PROVIDER
+    info = get_provider_info()
+    result = {"provider": LLM_PROVIDER, "available": is_llm_available(),
+              "key_set": bool(LLM_API_KEY), "key_prefix": LLM_API_KEY[:12] + "..." if LLM_API_KEY else "(empty)"}
+    try:
+        resp = await llm_call(prompt="Reply with exactly: OK", model="primary", max_tokens=10)
+        result["test"] = "success" if resp else "returned_none"
+        result["response"] = resp[:100] if resp else None
+    except Exception as e:
+        result["test"] = "error"
+        result["error"] = str(e)
+    return result
+
 @app.get("/api/health")
 async def health():
     import re

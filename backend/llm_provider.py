@@ -306,9 +306,13 @@ async def llm_call_with_document(
 async def _anthropic_text(model, prompt, max_tokens, system, temperature):
     import anthropic
 
-    kwargs = {}
+    extra_headers = {}
     if LLM_ZERO_DATA_RETENTION:
-        kwargs["extra_headers"] = {"anthropic-beta": "zero-data-retention"}
+        extra_headers["anthropic-no-log"] = "true"
+
+    kwargs = {}
+    if extra_headers:
+        kwargs["extra_headers"] = extra_headers
 
     client = anthropic.AsyncAnthropic(api_key=LLM_API_KEY, timeout=LLM_TIMEOUT)
     msg = await client.messages.create(
@@ -325,9 +329,24 @@ async def _anthropic_text(model, prompt, max_tokens, system, temperature):
 async def _anthropic_document(model, document_b64, media_type, prompt, max_tokens, system, temperature):
     import anthropic
 
-    kwargs = {}
+    extra_headers = {}
+    betas = []
+
+    # PDF support requires beta flag
+    if media_type == "application/pdf":
+        betas.append("pdfs-2024-09-25")
+
+    # Zero Data Retention — correct header format
     if LLM_ZERO_DATA_RETENTION:
-        kwargs["extra_headers"] = {"anthropic-beta": "zero-data-retention"}
+        extra_headers["anthropic-beta"] = ",".join(betas) if betas else ""
+        # ZDR uses a separate header, not a beta flag
+        extra_headers["anthropic-no-log"] = "true"
+    elif betas:
+        extra_headers["anthropic-beta"] = ",".join(betas)
+
+    kwargs = {}
+    if extra_headers:
+        kwargs["extra_headers"] = {k: v for k, v in extra_headers.items() if v}
 
     client = anthropic.AsyncAnthropic(api_key=LLM_API_KEY, timeout=LLM_TIMEOUT)
 
