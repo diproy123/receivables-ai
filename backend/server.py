@@ -1819,7 +1819,7 @@ async def get_po_consumption(user: dict = Depends(get_optional_user)):
     db = get_db()
     scope = get_user_vendor_scope(user)
     matches = scope_by_vendor(db["matches"], scope)
-    pos = scope_by_vendor([d for d in db.get("documents", []) if d.get("type") == "purchase_order"], scope)
+    pos = scope_by_vendor(db.get("purchase_orders", []), scope)
     invoices = scope_by_vendor(db.get("invoices", []), scope)
     policy = db.get("_policy_state", DEFAULT_POLICY)
 
