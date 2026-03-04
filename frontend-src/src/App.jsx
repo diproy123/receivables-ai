@@ -3136,7 +3136,7 @@ function Vendors() {
 
           {/* Add new vendor */}
           <div className="flex gap-2 mb-3">
-            <input value={newVendorName} onChange={e => setNewVendorName(e.target.value)} placeholder="Vendor name (e.g. Acme Corp)"
+            <input value={newVendorName} onChange={e => setNewVendorName(e.target.value)} placeholder="Vendor name (e.g. Sample Vendor)"
               className="inp flex-1 text-sm" onKeyDown={e => e.key === 'Enter' && addVendor()} />
             <input value={newVendorCode} onChange={e => setNewVendorCode(e.target.value)} placeholder="Code (optional)"
               className="inp w-32 text-sm font-mono" onKeyDown={e => e.key === 'Enter' && addVendor()} />
@@ -6503,9 +6503,9 @@ function LandingPage({ onGo, onFeatures }) {
                   <div className="px-5 pb-5">
                     <div className="rounded-lg overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.07)' }}>
                       {[
-                        { inv: 'INV-2024-0847', vendor: 'Acme Logistics', amt: '$124,800', status: 'Flagged', sc: '#fbbf24', anomaly: 'Price overcharge +$4,200 vs contract' },
-                        { inv: 'INV-2024-0848', vendor: 'Global Shipping Co', amt: '$67,350', status: 'Matched', sc: '#34d399', anomaly: '3-way match ✓' },
-                        { inv: 'INV-2024-0849', vendor: 'TechServe Ltd', amt: '$215,000', status: 'Blocked', sc: '#f87171', anomaly: 'Duplicate of INV-2024-0712' },
+                        { inv: 'INV-2024-0847', vendor: 'Vendor A', amt: '$124,800', status: 'Flagged', sc: '#fbbf24', anomaly: 'Price overcharge +$4,200 vs contract' },
+                        { inv: 'INV-2024-0848', vendor: 'Vendor B', amt: '$67,350', status: 'Matched', sc: '#34d399', anomaly: '3-way match ✓' },
+                        { inv: 'INV-2024-0849', vendor: 'Vendor C', amt: '$215,000', status: 'Blocked', sc: '#f87171', anomaly: 'Duplicate of INV-2024-0712' },
                       ].map((r, i) => (
                         <div key={r.inv} className="flex items-center justify-between px-4 py-3" style={{ background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                           <div className="flex items-center gap-4">
@@ -6601,7 +6601,7 @@ function LandingPage({ onGo, onFeatures }) {
                       <span className="text-xs font-bold text-indigo-800">Model A · Sonnet</span>
                     </div>
                     <div className="space-y-1.5">
-                      <div className="flex justify-between text-xs"><span className="text-indigo-400">vendor</span><span className="text-indigo-800 font-semibold lp-mono">Acme Corp</span></div>
+                      <div className="flex justify-between text-xs"><span className="text-indigo-400">vendor</span><span className="text-indigo-800 font-semibold lp-mono">Sample Vendor</span></div>
                       <div className="flex justify-between text-xs"><span className="text-indigo-400">total</span><span className="text-indigo-800 font-semibold lp-mono">$124,800</span></div>
                       <div className="flex justify-between text-xs"><span className="text-indigo-400">tax</span><span className="text-indigo-800 font-semibold lp-mono">$11,232</span></div>
                     </div>
@@ -6612,7 +6612,7 @@ function LandingPage({ onGo, onFeatures }) {
                       <span className="text-xs font-bold text-emerald-800">Model B · Haiku</span>
                     </div>
                     <div className="space-y-1.5">
-                      <div className="flex justify-between text-xs"><span className="text-emerald-400">vendor</span><span className="text-emerald-800 font-semibold lp-mono">Acme Corp</span></div>
+                      <div className="flex justify-between text-xs"><span className="text-emerald-400">vendor</span><span className="text-emerald-800 font-semibold lp-mono">Sample Vendor</span></div>
                       <div className="flex justify-between text-xs"><span className="text-emerald-400">total</span><span className="text-emerald-800 font-semibold lp-mono">$124,800</span></div>
                       <div className="flex justify-between text-xs"><span className="text-emerald-400">tax</span><span className="font-semibold lp-mono text-amber-600">$11,322 ✗</span></div>
                     </div>
@@ -6663,7 +6663,7 @@ function LandingPage({ onGo, onFeatures }) {
                   $47,200 overcharge<br />flagged in 3 seconds.
                 </h3>
                 <p className="text-sm text-slate-300 leading-relaxed mb-6">
-                  A logistics vendor submitted a $172,400 invoice. AuditLens extracted every line item, matched against the purchase order, and flagged a unit price increase of $8.40/unit across 5,619 items — a $47,200 variance from the contracted rate. The AI drafted the dispute letter with contract reference and corrected amount.
+                  A vendor submitted a $172,400 invoice. AuditLens extracted every line item, matched against the purchase order, and flagged a unit price increase of $8.40/unit across 5,619 items — a $47,200 variance from the contracted rate. The AI drafted the dispute letter with contract reference and corrected amount.
                 </p>
                 <div className="flex gap-6">
                   {[
