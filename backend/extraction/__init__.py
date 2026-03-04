@@ -1184,7 +1184,7 @@ async def extract_with_claude(file_path: str, file_name: str, media_type: str,
     meta["total_latency_ms"] = elapsed_total
 
     merged["_source"] = "ensemble"
-    merged["_confidence"] = round(final_conf, 1)
+    merged["_confidence"] = round(final_conf)
     merged["_ensemble"] = meta
     merged["_field_confidence"] = field_conf
     return merged

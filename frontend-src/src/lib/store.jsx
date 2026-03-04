@@ -24,18 +24,21 @@ export function StoreProvider({ children }) {
     if (loading.current) return;
     loading.current = true;
     try {
-      const [info, invR, anomR, matchR, poR, caseR, triR, venR, conR, polR, usrR, actR, docR, tgtR] = await Promise.all([
-        api('/api/system-info'),
+      const [dashR, invR, anomR, matchR, poR, caseR, triR, venR, conR, polR, usrR, actR, docR, tgtR, intelR] = await Promise.all([
+        api('/api/dashboard'),
         api('/api/invoices'), api('/api/anomalies'), api('/api/matches'), api('/api/purchase-orders'),
         api('/api/cases'), api('/api/triage'), api('/api/vendors'), api('/api/contracts'),
         api('/api/policy'), api('/api/users'), api('/api/activity'),
-        api('/api/documents'), api('/api/together/status'),
+        api('/api/documents'), api('/api/together/status'), api('/api/intelligence/summary'),
       ]);
       d({ type: 'SET', data: {
-        info, invoices: invR?.invoices || invR || [], anomalies: anomR?.anomalies || anomR || [],
+        dash: dashR?._err ? null : dashR,
+        intel: intelR?._err ? null : intelR,
+        invoices: invR?.invoices || invR || [], anomalies: anomR?.anomalies || anomR || [],
         matches: matchR?.matches || matchR || [], purchaseOrders: poR?.purchase_orders || poR || [],
-        cases: caseR?.cases || caseR || [], triage: triR?.summary || triR || {},
-        triageItems: triR?.items || [], vendors: venR?.vendors || venR || [],
+        cases: caseR?.cases || caseR || [], casesData: caseR?.cases || caseR || [],
+        triage: triR?.summary || triR || {},
+        triageData: triR || {}, triageItems: triR?.items || [], vendors: venR?.vendors || venR || [],
         contracts: conR?.contracts || conR || [], policy: polR, users: usrR?.users || usrR || [],
         activityLog: actR?.activity || actR || [], documents: docR?.documents || docR || [],
         docs: docR?.documents || docR || [],
