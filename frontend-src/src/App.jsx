@@ -210,6 +210,181 @@ function Sidebar() {
    ═══════════════════════════════════════════════════ */
 const PIE_C = ['#10b981', '#f59e0b', '#ef4444'];
 
+
+/* ═══ Extracted IIFE Components (hooks must live in proper components) ═══ */
+
+function PaymentPrioritiesBlock({ docs }) {
+  const [payPri, setPayPri] = useState(null);
+  const [payLoading, setPayLoading] = useState(false);
+  const [payBudget, setPayBudget] = useState(50000);
+  async function loadPayPri(budget) {
+    setPayLoading(true);
+    const r = await api(`/api/ai/payment-priorities?budget_limit=${budget}`);
+    setPayLoading(false);
+    if (r && !r._err) setPayPri(r);
+  }
+  const approvedInvs = docs.filter(d => d.type === 'invoice' && (d.triageLane === 'AUTO_APPROVE' || d.status === 'approved'));
+  if (approvedInvs.length === 0 && !payPri) return null;
+  return (
+    <div className="card p-5">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-[11px] font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+          <TrendingUp className="w-4 h-4 text-emerald-500" /> AI Payment Optimization
+        </h3>
+        <div className="flex items-center gap-3">
+          <label className="text-xs text-slate-500">Budget:</label>
+          <input type="range" min={10000} max={200000} step={5000} value={payBudget}
+            onChange={e => setPayBudget(Number(e.target.value))}
+            className="w-32 accent-emerald-500" />
+          <span className="text-sm font-bold font-mono text-emerald-700">{$(payBudget)}</span>
+          <button onClick={() => loadPayPri(payBudget)} disabled={payLoading}
+            className="btn bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-xs flex items-center gap-1.5 border border-emerald-200">
+            <Brain className="w-3.5 h-3.5" /> {payLoading ? 'Optimizing...' : 'Optimize Run'}
+          </button>
+        </div>
+      </div>
+      {payPri ? (
+        <div>
+          {payPri.summary && (
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="bg-emerald-50 rounded-xl p-3 border border-emerald-100">
+                <div className="text-xl font-extrabold text-emerald-700">{$(payPri.summary.total_payable || payPri.summary.totalPayable || 0)}</div>
+                <div className="text-[10px] text-emerald-500 uppercase font-semibold">Recommended Payment</div>
+              </div>
+              <div className="bg-blue-50 rounded-xl p-3 border border-blue-100">
+                <div className="text-xl font-extrabold text-blue-700">{$(payPri.summary.early_discount_savings || payPri.summary.discountSavings || 0)}</div>
+                <div className="text-[10px] text-blue-500 uppercase font-semibold">Early Pay Savings</div>
+              </div>
+              <div className="bg-amber-50 rounded-xl p-3 border border-amber-100">
+                <div className="text-xl font-extrabold text-amber-700">{payPri.summary.invoice_count || payPri.summary.invoiceCount || 0}</div>
+                <div className="text-[10px] text-amber-500 uppercase font-semibold">Invoices in Run</div>
+              </div>
+            </div>
+          )}
+          {payPri.priorities && payPri.priorities.length > 0 && (
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {payPri.priorities.slice(0, 8).map((p, i) => (
+                <div key={i} className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <div className={cn("w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white",
+                      i < 3 ? "bg-emerald-500" : "bg-slate-400")}>{i + 1}</div>
+                    <div>
+                      <div className="text-sm font-semibold text-slate-800">{p.invoice_number || p.invoiceNumber || p.vendor}</div>
+                      <div className="text-xs text-slate-500">{p.vendor}{p.reason ? ` · ${p.reason}` : ''}</div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm font-bold font-mono">{$(p.amount || 0)}</div>
+                    {p.discount_available && <div className="text-[10px] text-emerald-600 font-medium">{"💰"} {p.discount_pct || '2%'} discount</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {payPri.narrative && <div className="mt-3 text-xs text-slate-600 bg-slate-50 rounded-xl p-3 border border-slate-100 leading-relaxed">{payPri.narrative}</div>}
+        </div>
+      ) : (
+        <div className="text-center py-6 text-slate-400 text-sm">
+          Set a budget and click <strong>Optimize Run</strong> to get AI-prioritized payment recommendations
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AiExplainBlock({ anomalyId }) {
+  const [aiExplain, setAiExplain] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  useEffect(() => { setAiExplain(null); }, [anomalyId]);
+  async function explainAnomaly() {
+    setAiLoading(true);
+    const r = await api(`/api/ai/explain-anomaly/${anomalyId}`);
+    setAiLoading(false);
+    if (r && !r._err) setAiExplain(r);
+  }
+  return (
+    <div className="mb-4">
+      {!aiExplain && (
+        <button onClick={explainAnomaly} disabled={aiLoading}
+          className="w-full btn bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs py-2.5 flex items-center justify-center gap-2 rounded-xl border border-indigo-200">
+          <Brain className="w-3.5 h-3.5" /> {aiLoading ? 'AI Analyzing...' : 'Explain in Plain English'}
+        </button>
+      )}
+      {aiExplain && (
+        <div className="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Brain className="w-4 h-4 text-indigo-600" />
+            <span className="text-xs font-bold text-indigo-700 uppercase tracking-wider">AI Explanation</span>
+          </div>
+          <div className="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap">{aiExplain.explanation || aiExplain.plain_english || JSON.stringify(aiExplain)}</div>
+          {aiExplain.risk_assessment && <div className="mt-2 text-xs text-indigo-600 font-medium">Risk: {aiExplain.risk_assessment}</div>}
+          {aiExplain.recommended_action && <div className="mt-1 text-xs text-purple-600 font-medium">Action: {aiExplain.recommended_action}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SmartMatchBlock({ invoiceId, onToast }) {
+  const [smartMatch, setSmartMatch] = useState(null);
+  const [smLoading, setSmLoading] = useState(false);
+  useEffect(() => { setSmartMatch(null); }, [invoiceId]);
+  async function runSmartMatch() {
+    setSmLoading(true);
+    const r = await api(`/api/ai/smart-match/${invoiceId}`);
+    setSmLoading(false);
+    if (r && !r._err) setSmartMatch(r);
+    else onToast(r?.detail || 'Smart match requires ANTHROPIC_API_KEY', 'warning');
+  }
+  return (
+    <div>
+      {!smartMatch && (
+        <button onClick={runSmartMatch} disabled={smLoading}
+          className="w-full btn bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs py-2 flex items-center justify-center gap-2 rounded-xl border border-indigo-200">
+          <Brain className="w-3.5 h-3.5" /> {smLoading ? 'AI Analyzing...' : 'AI Smart Match Analysis'}
+        </button>
+      )}
+      {smartMatch && (
+        <div className="bg-gradient-to-br from-indigo-50 to-blue-50 border border-indigo-200 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Brain className="w-4 h-4 text-indigo-600" />
+              <span className="text-xs font-bold text-indigo-700 uppercase tracking-wider">AI Match Analysis</span>
+            </div>
+            <button onClick={() => setSmartMatch(null)} className="text-xs text-slate-400 hover:text-slate-600">dismiss</button>
+          </div>
+          <div className="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap">{smartMatch.analysis || smartMatch.narrative || smartMatch.explanation || JSON.stringify(smartMatch, null, 2)}</div>
+          {smartMatch.confidence && <div className="mt-2 text-xs text-indigo-600 font-medium">AI Confidence: {smartMatch.confidence}</div>}
+          {smartMatch.recommended_action && <div className="mt-1 text-xs text-purple-600 font-medium">Recommendation: {smartMatch.recommended_action}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SmartMatchBtn({ invoiceId, onToast }) {
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+  async function run() {
+    setLoading(true);
+    const r = await api(`/api/ai/smart-match/${invoiceId}`);
+    setLoading(false);
+    if (r && !r._err) setResult(r);
+    else onToast(r?.detail || 'Smart match requires ANTHROPIC_API_KEY', 'warning');
+  }
+  if (result) return (
+    <div className="mt-2 bg-indigo-50 rounded-lg p-3 border border-indigo-100">
+      <div className="text-xs text-indigo-800 whitespace-pre-wrap">{result.analysis || result.narrative || JSON.stringify(result)}</div>
+    </div>
+  );
+  return (
+    <button onClick={run} disabled={loading}
+      className="mt-2 text-[11px] text-indigo-600 hover:text-indigo-800 flex items-center gap-1">
+      <Brain className="w-3 h-3" /> {loading ? 'Analyzing...' : 'AI Smart Match'}
+    </button>
+  );
+}
+
 function Dashboard() {
   const { s } = useStore();
   const d = s.dash || {}, sb = d.summary_bar || {}, ag = d.aging || {}, tri = d.triage || {};
@@ -534,84 +709,7 @@ function Dashboard() {
       )}
 
       {/* ── PAYMENT PRIORITIES (Rec #1 — last unwired AI feature) ── */}
-      {(() => {
-        const [payPri, setPayPri] = useState(null);
-        const [payLoading, setPayLoading] = useState(false);
-        const [payBudget, setPayBudget] = useState(50000);
-        async function loadPayPri(budget) {
-          setPayLoading(true);
-          const r = await api(`/api/ai/payment-priorities?budget_limit=${budget}`);
-          setPayLoading(false);
-          if (r && !r._err) setPayPri(r);
-        }
-        const approvedInvs = (s.docs || []).filter(d => d.type === 'invoice' && (d.triageLane === 'AUTO_APPROVE' || d.status === 'approved'));
-        if (approvedInvs.length === 0 && !payPri) return null;
-        return (
-          <div className="card p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-[11px] font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-emerald-500" /> AI Payment Optimization
-              </h3>
-              <div className="flex items-center gap-3">
-                <label className="text-xs text-slate-500">Budget:</label>
-                <input type="range" min={10000} max={200000} step={5000} value={payBudget}
-                  onChange={e => setPayBudget(Number(e.target.value))}
-                  className="w-32 accent-emerald-500" />
-                <span className="text-sm font-bold font-mono text-emerald-700">{$(payBudget)}</span>
-                <button onClick={() => loadPayPri(payBudget)} disabled={payLoading}
-                  className="btn bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-xs flex items-center gap-1.5 border border-emerald-200">
-                  <Brain className="w-3.5 h-3.5" /> {payLoading ? 'Optimizing...' : 'Optimize Run'}
-                </button>
-              </div>
-            </div>
-            {payPri ? (
-              <div>
-                {payPri.summary && (
-                  <div className="grid grid-cols-3 gap-3 mb-4">
-                    <div className="bg-emerald-50 rounded-xl p-3 border border-emerald-100">
-                      <div className="text-xl font-extrabold text-emerald-700">{$(payPri.summary.total_payable || payPri.summary.totalPayable || 0)}</div>
-                      <div className="text-[10px] text-emerald-500 uppercase font-semibold">Recommended Payment</div>
-                    </div>
-                    <div className="bg-blue-50 rounded-xl p-3 border border-blue-100">
-                      <div className="text-xl font-extrabold text-blue-700">{$(payPri.summary.early_discount_savings || payPri.summary.discountSavings || 0)}</div>
-                      <div className="text-[10px] text-blue-500 uppercase font-semibold">Early Pay Savings</div>
-                    </div>
-                    <div className="bg-amber-50 rounded-xl p-3 border border-amber-100">
-                      <div className="text-xl font-extrabold text-amber-700">{payPri.summary.invoice_count || payPri.summary.invoiceCount || 0}</div>
-                      <div className="text-[10px] text-amber-500 uppercase font-semibold">Invoices in Run</div>
-                    </div>
-                  </div>
-                )}
-                {payPri.priorities && payPri.priorities.length > 0 && (
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {payPri.priorities.slice(0, 8).map((p, i) => (
-                      <div key={i} className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-100">
-                        <div className="flex items-center gap-3">
-                          <div className={cn("w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white",
-                            i < 3 ? "bg-emerald-500" : "bg-slate-400")}>{i + 1}</div>
-                          <div>
-                            <div className="text-sm font-semibold text-slate-800">{p.invoice_number || p.invoiceNumber || p.vendor}</div>
-                            <div className="text-xs text-slate-500">{p.vendor}{p.reason ? ` · ${p.reason}` : ''}</div>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-sm font-bold font-mono">{$(p.amount || 0)}</div>
-                          {p.discount_available && <div className="text-[10px] text-emerald-600 font-medium">💰 {p.discount_pct || '2%'} discount</div>}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {payPri.narrative && <div className="mt-3 text-xs text-slate-600 bg-slate-50 rounded-xl p-3 border border-slate-100 leading-relaxed">{payPri.narrative}</div>}
-              </div>
-            ) : (
-              <div className="text-center py-6 text-slate-400 text-sm">
-                Set a budget and click <strong>Optimize Run</strong> to get AI-prioritized payment recommendations
-              </div>
-            )}
-          </div>
-        );
-      })()}
+      <PaymentPrioritiesBlock docs={s.docs || []} />
 
       {/* ── Contract Intelligence (existing) ── */}
       {(() => {
@@ -1166,37 +1264,7 @@ function Anomalies() {
             )}
 
             {/* AI Explanation (Rec #1) */}
-            {(() => {
-              const [aiExplain, setAiExplain] = useState(null);
-              const [aiLoading, setAiLoading] = useState(false);
-              async function explainAnomaly() {
-                setAiLoading(true);
-                const r = await api(`/api/ai/explain-anomaly/${sel.id}`);
-                setAiLoading(false);
-                if (r && !r._err) setAiExplain(r);
-              }
-              return (
-                <div className="mb-4">
-                  {!aiExplain && (
-                    <button onClick={explainAnomaly} disabled={aiLoading}
-                      className="w-full btn bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs py-2.5 flex items-center justify-center gap-2 rounded-xl border border-indigo-200">
-                      <Brain className="w-3.5 h-3.5" /> {aiLoading ? 'AI Analyzing...' : 'Explain in Plain English'}
-                    </button>
-                  )}
-                  {aiExplain && (
-                    <div className="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl p-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Brain className="w-4 h-4 text-indigo-600" />
-                        <span className="text-xs font-bold text-indigo-700 uppercase tracking-wider">AI Explanation</span>
-                      </div>
-                      <div className="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap">{aiExplain.explanation || aiExplain.plain_english || JSON.stringify(aiExplain)}</div>
-                      {aiExplain.risk_assessment && <div className="mt-2 text-xs text-indigo-600 font-medium">Risk: {aiExplain.risk_assessment}</div>}
-                      {aiExplain.recommended_action && <div className="mt-1 text-xs text-purple-600 font-medium">Action: {aiExplain.recommended_action}</div>}
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
+            <AiExplainBlock anomalyId={sel.id} />
 
             {/* Contract Clause */}
             {sel.contract_clause && (
@@ -1739,41 +1807,7 @@ function Matching() {
                 )}
 
                 {/* AI Smart Match */}
-                {(() => {
-                  const [smartMatch, setSmartMatch] = useState(null);
-                  const [smLoading, setSmLoading] = useState(false);
-                  async function runSmartMatch() {
-                    setSmLoading(true);
-                    const r = await api(`/api/ai/smart-match/${selMatch.invoiceId || selMatch._inv?.id}`);
-                    setSmLoading(false);
-                    if (r && !r._err) setSmartMatch(r);
-                    else toast(r?.detail || 'Smart match requires ANTHROPIC_API_KEY', 'warning');
-                  }
-                  return (
-                    <div>
-                      {!smartMatch && (
-                        <button onClick={runSmartMatch} disabled={smLoading}
-                          className="w-full btn bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs py-2 flex items-center justify-center gap-2 rounded-xl border border-indigo-200">
-                          <Brain className="w-3.5 h-3.5" /> {smLoading ? 'AI Analyzing...' : 'AI Smart Match Analysis'}
-                        </button>
-                      )}
-                      {smartMatch && (
-                        <div className="bg-gradient-to-br from-indigo-50 to-blue-50 border border-indigo-200 rounded-xl p-4">
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2">
-                              <Brain className="w-4 h-4 text-indigo-600" />
-                              <span className="text-xs font-bold text-indigo-700 uppercase tracking-wider">AI Match Analysis</span>
-                            </div>
-                            <button onClick={() => setSmartMatch(null)} className="text-xs text-slate-400 hover:text-slate-600">dismiss</button>
-                          </div>
-                          <div className="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap">{smartMatch.analysis || smartMatch.narrative || smartMatch.explanation || JSON.stringify(smartMatch, null, 2)}</div>
-                          {smartMatch.confidence && <div className="mt-2 text-xs text-indigo-600 font-medium">AI Confidence: {smartMatch.confidence}</div>}
-                          {smartMatch.recommended_action && <div className="mt-1 text-xs text-purple-600 font-medium">Recommendation: {smartMatch.recommended_action}</div>}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
+                <SmartMatchBlock invoiceId={selMatch.invoiceId || selMatch._inv?.id} onToast={toast} />
 
                 {/* Actions */}
                 {(selMatch.status === 'review_needed' || selMatch.status === 'pending_review') && (
@@ -1991,6 +2025,449 @@ function POCard({ po, tolerance }) {
 /* ═══════════════════════════════════════════════════
    TRIAGE
    ═══════════════════════════════════════════════════ */
+
+function CaseBriefBlock({ caseId, onToast }) {
+  const toast = onToast;
+  useEffect(() => { setBrief(null); setVendorDraft(null); }, [caseId]);
+const [brief, setBrief] = useState(null);
+              const [briefLoading, setBriefLoading] = useState(false);
+              const [vendorDraft, setVendorDraft] = useState(null);
+              const [draftLoading, setDraftLoading] = useState(false);
+              const [draftType, setDraftType] = useState('dispute');
+
+              async function genBrief() {
+                setBriefLoading(true);
+                const r = await api(`/api/ai/investigation-brief/${caseId}`);
+                setBriefLoading(false);
+                if (r && !r._err) setBrief(r);
+                else toast(r?.detail || 'AI brief failed — ensure ANTHROPIC_API_KEY is set', 'warning');
+              }
+              async function genDraft(type) {
+                setDraftLoading(true);
+                const r = await post(`/api/ai/vendor-draft/${caseId}`, { comm_type: type });
+                setDraftLoading(false);
+                if (r && !r._err) setVendorDraft(r);
+                else toast(r?.detail || 'Draft failed — ensure ANTHROPIC_API_KEY is set', 'warning');
+              }
+
+              return (
+                <div className="mb-4 space-y-3">
+                  {/* AI Action Buttons */}
+                  <div className="flex gap-2 flex-wrap">
+                    <button onClick={genBrief} disabled={briefLoading}
+                      className="btn bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs flex items-center gap-1.5 border border-indigo-200">
+                      <Brain className="w-3.5 h-3.5" /> {briefLoading ? 'Generating...' : 'AI Investigation Brief'}
+                    </button>
+                    <button onClick={() => genDraft('dispute')} disabled={draftLoading}
+                      className="btn bg-purple-50 text-purple-700 hover:bg-purple-100 text-xs flex items-center gap-1.5 border border-purple-200">
+                      <Send className="w-3.5 h-3.5" /> {draftLoading ? 'Drafting...' : 'Draft Vendor Letter'}
+                    </button>
+                    <button onClick={() => genDraft('query')} disabled={draftLoading}
+                      className="btn bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs flex items-center gap-1.5 border border-blue-200">
+                      <Send className="w-3.5 h-3.5" /> Draft Query
+                    </button>
+                  </div>
+
+                  {/* Investigation Brief Result */}
+                  {brief && (
+                    <div className="bg-gradient-to-br from-indigo-50 to-blue-50 border border-indigo-200 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <Brain className="w-4 h-4 text-indigo-600" />
+                          <span className="text-xs font-bold text-indigo-700 uppercase tracking-wider">AI Investigation Brief</span>
+                        </div>
+                        <button onClick={() => setBrief(null)} className="text-xs text-slate-400 hover:text-slate-600">dismiss</button>
+                      </div>
+                      <div className="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap">{brief.brief || brief.narrative || brief.summary || JSON.stringify(brief, null, 2)}</div>
+                      {brief.risk_level && <div className="mt-2"><Badge c={brief.risk_level === 'high' ? 'err' : brief.risk_level === 'medium' ? 'warn' : 'ok'}>Risk: {brief.risk_level}</Badge></div>}
+                      {brief.recommended_actions && (
+                        <div className="mt-2 text-xs text-indigo-600">
+                          <strong>Recommended:</strong> {Array.isArray(brief.recommended_actions) ? brief.recommended_actions.join(', ') : brief.recommended_actions}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Vendor Draft Result */}
+                  {vendorDraft && (
+                    <div className="bg-gradient-to-br from-purple-50 to-pink-50 border border-purple-200 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <Send className="w-4 h-4 text-purple-600" />
+                          <span className="text-xs font-bold text-purple-700 uppercase tracking-wider">AI-Generated {vendorDraft.comm_type || 'Vendor'} Letter</span>
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => { navigator.clipboard.writeText(vendorDraft.draft || vendorDraft.body || ''); toast('Copied to clipboard', 'success'); }}
+                            className="text-xs text-purple-600 hover:text-purple-800 font-medium">Copy</button>
+                          <button onClick={() => setVendorDraft(null)} className="text-xs text-slate-400 hover:text-slate-600">dismiss</button>
+                        </div>
+                      </div>
+                      {vendorDraft.subject && <div className="text-xs font-semibold text-purple-800 mb-1">Subject: {vendorDraft.subject}</div>}
+                      <div className="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap bg-white/50 rounded-lg p-3 border border-purple-100">{vendorDraft.draft || vendorDraft.body || JSON.stringify(vendorDraft)}</div>
+                    </div>
+                  )}
+                </div>
+              );
+}
+
+function VendorInsightsBlock({ vendorName, onToast }) {
+  const toast = onToast;
+  useEffect(() => { setVInsights(null); }, [vendorName]);
+const [vInsights, setVInsights] = useState(null);
+                  const [vInsLoading, setVInsLoading] = useState(false);
+                  async function genInsights() {
+                    setVInsLoading(true);
+                    const vName = encodeURIComponent(vendorName);
+                    const r = await api(`/api/ai/vendor-insights/${vName}`);
+                    setVInsLoading(false);
+                    if (r && !r._err) setVInsights(r);
+                    else toast(r?.detail || 'AI insights failed — ensure ANTHROPIC_API_KEY is set', 'warning');
+                  }
+                  return (
+                    <div className="mb-5">
+                      {!vInsights && (
+                        <button onClick={genInsights} disabled={vInsLoading}
+                          className="w-full btn bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs py-2.5 flex items-center justify-center gap-2 rounded-xl border border-indigo-200">
+                          <Brain className="w-3.5 h-3.5" /> {vInsLoading ? 'AI Analyzing Vendor Patterns...' : 'Generate AI Vendor Insights'}
+                        </button>
+                      )}
+                      {vInsights && (
+                        <div className="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl p-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <Brain className="w-4 h-4 text-indigo-600" />
+                              <span className="text-xs font-bold text-indigo-700 uppercase tracking-wider">AI Vendor Analysis</span>
+                            </div>
+                            <button onClick={() => setVInsights(null)} className="text-xs text-slate-400 hover:text-slate-600">dismiss</button>
+                          </div>
+                          <div className="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap">{vInsights.narrative || vInsights.insights || vInsights.analysis || JSON.stringify(vInsights, null, 2)}</div>
+                          {vInsights.risk_trend && <div className="mt-2 text-xs text-indigo-600 font-medium">Risk Trend: {vInsights.risk_trend}</div>}
+                          {vInsights.recommendations && (
+                            <div className="mt-2 p-2 bg-white/60 rounded-lg">
+                              <div className="text-xs font-semibold text-purple-700 mb-1">Recommendations:</div>
+                              <div className="text-xs text-slate-700">{Array.isArray(vInsights.recommendations) ? vInsights.recommendations.join(' • ') : vInsights.recommendations}</div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+}
+
+function NlpPolicyBlock({ policy: p, onLoad, onToast }) {
+  const load = onLoad;
+  const toast = onToast;
+const [nlpInput, setNlpInput] = useState('');
+        const [nlpResult, setNlpResult] = useState(null);
+        const [nlpLoading, setNlpLoading] = useState(false);
+
+        async function parsePolicy() {
+          if (!nlpInput.trim()) return;
+          setNlpLoading(true);
+          const r = await post('/api/ai/policy-parse', { input: nlpInput });
+          setNlpLoading(false);
+          if (r && !r._err) { setNlpResult(r); toast('AI parsed your policy — review changes below', 'success'); }
+          else toast(r?.detail || 'NLP parse failed — ensure ANTHROPIC_API_KEY is set', 'warning');
+        }
+        async function applyNlpChanges() {
+          if (!nlpResult?.changes) return;
+          await post('/api/policy', nlpResult.changes);
+          await load();
+          setNlpResult(null); setNlpInput('');
+          toast('Policy updated from natural language', 'success');
+        }
+
+        return (
+          <div className="rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-purple-50 p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <Brain className="w-5 h-5 text-indigo-600" />
+              <div>
+                <div className="text-sm font-bold text-indigo-900">Configure Policy with Natural Language</div>
+                <div className="text-xs text-indigo-600">Describe your AP policy in plain English — AI will translate it to settings</div>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <input value={nlpInput} onChange={e => setNlpInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') parsePolicy(); }}
+                placeholder='e.g. "Block invoices over $50K without a PO" or "Tighten tolerance to 1% for high-risk vendors"'
+                className="inp flex-1 text-sm" />
+              <button onClick={parsePolicy} disabled={nlpLoading || !nlpInput.trim()}
+                className="btn-p text-xs whitespace-nowrap">
+                {nlpLoading ? 'Parsing...' : 'Apply with AI'}
+              </button>
+            </div>
+            {nlpResult && (
+              <div className="mt-3 p-3 bg-white/70 rounded-xl border border-indigo-100">
+                <div className="text-xs font-bold text-indigo-700 mb-2">AI Proposed Changes:</div>
+                <div className="text-sm text-slate-800 mb-2">{nlpResult.interpretation || nlpResult.explanation || 'Policy changes identified'}</div>
+                {nlpResult.changes && (
+                  <div className="space-y-1 mb-3">
+                    {Object.entries(nlpResult.changes).map(([k, v]) => (
+                      <div key={k} className="flex justify-between text-xs bg-indigo-50 p-2 rounded-lg">
+                        <span className="text-slate-600">{k.replace(/_/g, ' ')}</span>
+                        <span className="font-mono font-bold text-indigo-700">{String(v)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <button onClick={applyNlpChanges} className="btn bg-indigo-600 text-white hover:bg-indigo-700 text-xs"><Check className="w-3 h-3" /> Apply Changes</button>
+                  <button onClick={() => setNlpResult(null)} className="btn-o text-xs">Cancel</button>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+}
+
+function DataGovernanceBlock({ onToast }) {
+  const toast = onToast;
+const [gov, setGov] = useState(null);
+        const [govLoading, setGovLoading] = useState(false);
+        const [auditLog, setAuditLog] = useState(null);
+        const [vendorCtl, setVendorCtl] = useState(null);
+        const [vendorInput, setVendorInput] = useState('');
+        const [showGov, setShowGov] = useState(false);
+
+        async function loadGovernance() {
+          setGovLoading(true);
+          const r = await api('/api/data-governance');
+          if (r && !r.error) setGov(r);
+          setGovLoading(false);
+        }
+        async function loadAuditLog() {
+          const r = await api('/api/data-governance/audit-log?limit=50');
+          if (r && !r._err) setAuditLog(r);
+          else setAuditLog({ entries: [], summary: {}, _loaded: true });
+        }
+        async function loadVendorCtl(v) {
+          if (!v) return;
+          const r = await api(`/api/data-governance/vendor-controls/${encodeURIComponent(v)}`);
+          if (r) setVendorCtl(r);
+        }
+        async function toggleVendorCtl(vendor, field) {
+          if (!vendorCtl) return;
+          const current = vendorCtl.ai_controls?.[field] ?? true;
+          await post(`/api/data-governance/vendor-controls/${encodeURIComponent(vendor)}`,
+            { ...vendorCtl.ai_controls, [field]: !current });
+          loadVendorCtl(vendor);
+          toast(`${field.replace(/_/g, ' ')}: ${!current ? 'ON' : 'OFF'}`, 'success');
+        }
+
+        const tier = gov?.privacy_posture;
+        const egress = gov?.egress_map || {};
+        const audit = gov?.audit_summary || {};
+        const preset = gov?.deployment_preset?.current_preset || 'standard';
+
+        const riskColor = (r) => r === 'none' ? '#10b981' : r === 'low' ? '#3b82f6' : r === 'medium' ? '#f59e0b' : '#ef4444';
+        const presetColor = { standard: '#f59e0b', enterprise_private: '#10b981', airgapped: '#06b6d4' };
+
+        return (
+          <div className="rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50 p-5">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Shield className="w-5 h-5 text-emerald-600" />
+                <div>
+                  <div className="text-sm font-bold text-emerald-900">Data Governance & Privacy</div>
+                  <div className="text-xs text-emerald-600">LLM data residency, PII redaction, audit trail, per-vendor controls</div>
+                </div>
+              </div>
+              <button onClick={() => { setShowGov(!showGov); if (!gov) loadGovernance(); }}
+                className="btn-o text-xs">{showGov ? 'Hide' : 'Show'} Governance</button>
+            </div>
+
+            {showGov && (
+              <div className="space-y-4 mt-4">
+                {govLoading && <div className="text-xs text-slate-500">Loading governance data...</div>}
+
+                {/* Privacy Posture Summary */}
+                {tier && (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="p-3 bg-white rounded-xl border">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase">LLM Provider</div>
+                      <div className="text-sm font-bold" style={{ color: tier.llm_provider?.provider === 'anthropic' ? '#f59e0b' : '#10b981' }}>
+                        {(tier.llm_provider?.provider || 'unknown').toUpperCase()}
+                      </div>
+                      <div className="text-[10px] text-slate-500">{tier.llm_provider?.data_residency}</div>
+                    </div>
+                    <div className="p-3 bg-white rounded-xl border">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase">Embeddings</div>
+                      <div className="text-sm font-bold" style={{ color: tier.embedding_provider === 'voyage' ? '#f59e0b' : '#10b981' }}>
+                        {tier.embedding_provider?.toUpperCase()}
+                      </div>
+                      <div className="text-[10px] text-slate-500">{tier.embedding_provider === 'voyage' ? 'Cloud API' : 'Local only'}</div>
+                    </div>
+                    <div className="p-3 bg-white rounded-xl border">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase">Fine-Tuning</div>
+                      <div className="text-sm font-bold" style={{ color: tier.finetune_provider === 'together' ? '#f59e0b' : '#10b981' }}>
+                        {tier.finetune_provider?.toUpperCase()}
+                      </div>
+                      <div className="text-[10px] text-slate-500">{tier.finetune_provider === 'together' ? 'Cloud (data egress)' : 'On-premise'}</div>
+                    </div>
+                    <div className="p-3 bg-white rounded-xl border">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase">PII Redaction</div>
+                      <div className="text-sm font-bold" style={{ color: tier.pii_redaction_enabled ? '#10b981' : '#94a3b8' }}>
+                        {tier.pii_redaction_enabled ? 'ACTIVE' : 'OFF'}
+                      </div>
+                      <div className="text-[10px] text-slate-500">{tier.zero_data_retention ? 'ZDR active' : 'Standard retention'}</div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Data Leaves Org Warning */}
+                {tier?.data_leaves_organization && (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                    <div className="text-xs text-amber-800">
+                      <span className="font-bold">Data leaves your organization.</span> Current config sends data to external services.
+                      Set <code className="bg-amber-100 px-1 rounded">DEPLOYMENT_PRESET=enterprise_private</code> for VPC-only mode.
+                    </div>
+                  </div>
+                )}
+                {tier && !tier.data_leaves_organization && (
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                    <div className="text-xs text-emerald-800">
+                      <span className="font-bold">All data stays within your network.</span> No external LLM, embedding, or training API calls.
+                    </div>
+                  </div>
+                )}
+
+                {/* Deployment Preset */}
+                {gov?.deployment_preset && (
+                  <div className="p-3 bg-white rounded-xl border">
+                    <div className="text-[10px] font-bold text-slate-400 uppercase mb-2">Deployment Preset</div>
+                    <div className="flex gap-2">
+                      {Object.entries(gov.deployment_preset.available_presets || {}).map(([k, desc]) => (
+                        <div key={k} className={`flex-1 p-2 rounded-lg border text-center ${preset === k ? 'border-2' : 'opacity-60'}`}
+                             style={{ borderColor: presetColor[k] || '#94a3b8' }}>
+                          <div className="text-xs font-bold" style={{ color: presetColor[k] }}>{k.replace(/_/g, ' ').toUpperCase()}</div>
+                          <div className="text-[10px] text-slate-500 mt-1">{desc.split('—')[0]}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Data Egress Map */}
+                {Object.keys(egress).length > 0 && (
+                  <div className="p-3 bg-white rounded-xl border">
+                    <div className="text-[10px] font-bold text-slate-400 uppercase mb-2">Data Egress Map</div>
+                    <div className="space-y-1">
+                      {Object.entries(egress).map(([mod, info]) => (
+                        <div key={mod} className="flex items-center justify-between text-xs p-2 bg-slate-50 rounded-lg">
+                          <span className="font-semibold text-slate-700 w-28">{mod.replace(/_/g, ' ')}</span>
+                          <span className="text-slate-500 flex-1 truncate">{info.destination}</span>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                                style={{ backgroundColor: riskColor(info.risk) + '20', color: riskColor(info.risk) }}>
+                            {info.risk?.toUpperCase()}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Audit Log */}
+                <div className="p-3 bg-white rounded-xl border">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="text-[10px] font-bold text-slate-400 uppercase">LLM API Audit Log</div>
+                    <button onClick={async () => { setAuditLog('loading'); await loadAuditLog(); }} className="px-2.5 py-1 text-xs font-semibold text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-all">
+                      {auditLog === 'loading' ? 'Loading...' : 'Load Log'}
+                    </button>
+                  </div>
+                  {audit.total_calls > 0 && (
+                    <div className="flex gap-4 mb-2 text-[10px]">
+                      <span>Total: <b>{audit.total_calls}</b></span>
+                      <span>Avg: <b>{audit.avg_latency_ms}ms</b></span>
+                      <span>PII Redacted: <b>{audit.pii_redacted_pct}%</b></span>
+                      <span>Success: <b>{audit.success_rate}%</b></span>
+                    </div>
+                  )}
+                  {auditLog && auditLog !== 'loading' && (!auditLog?.entries || auditLog.entries.length === 0) && (
+                    <div className="text-xs text-slate-400 py-3 text-center">No LLM API calls logged yet. Entries appear after document extraction or AI intelligence calls.</div>
+                  )}
+                  {auditLog?.entries?.length > 0 && (
+                    <div className="max-h-40 overflow-y-auto space-y-1">
+                      {auditLog.entries.slice(0, 20).map((e, i) => (
+                        <div key={i} className="flex items-center gap-2 text-[10px] p-1.5 bg-slate-50 rounded">
+                          <span className="text-slate-400 w-16 truncate">{e.timestamp?.slice(11, 19)}</span>
+                          <span className="font-semibold w-20 truncate">{e.module}</span>
+                          <span className="text-slate-500 w-20 truncate">{e.model}</span>
+                          <span className={`px-1 rounded ${e.data_type === 'document' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>{e.data_type}</span>
+                          <span className="text-slate-400">{e.latency_ms}ms</span>
+                          {e.vendor && <span className="text-purple-600 truncate">{e.vendor}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Per-Vendor AI Controls (R9) */}
+                <div className="p-3 bg-white rounded-xl border">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase mb-2">Per-Vendor AI Controls</div>
+                  <div className="flex gap-2 mb-2">
+                    <input value={vendorInput} onChange={e => setVendorInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') loadVendorCtl(vendorInput); }}
+                      placeholder="Enter vendor name..." className="inp text-xs flex-1" />
+                    <button onClick={() => loadVendorCtl(vendorInput)} className="btn-o text-xs">Load</button>
+                  </div>
+                  {vendorCtl && (
+                    <div className="space-y-1">
+                      <div className="text-xs font-semibold text-slate-700 mb-1">{vendorCtl.vendor}</div>
+                      {['extraction_enabled', 'intelligence_enabled', 'include_in_training'].map(field => (
+                        <div key={field} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg">
+                          <span className="text-xs text-slate-600">{field.replace(/_/g, ' ')}</span>
+                          <button onClick={() => toggleVendorCtl(vendorCtl.vendor, field)}
+                            className={`text-[10px] font-bold px-3 py-1 rounded-lg ${vendorCtl.ai_controls?.[field] !== false ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                            {vendorCtl.ai_controls?.[field] !== false ? 'ON' : 'OFF'}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+}
+
+function RoutingSuggestionBlock({ invoiceId, cases }) {
+  const [routing, setRouting] = useState(null);
+  const [routeLoading, setRouteLoading] = useState(false);
+  async function getRouting() {
+    setRouteLoading(true);
+    const caseForInv = cases.find(c => c.invoiceId === invoiceId);
+    if (caseForInv) {
+      const r = await api(`/api/ai/route-case/${caseForInv.id}`);
+      if (r && !r._err) setRouting(r);
+    } else {
+      setRouting({ suggestion: 'Create a case first to get AI routing recommendations', fallback: true });
+    }
+    setRouteLoading(false);
+  }
+  // Reset when invoice changes
+  useEffect(() => { setRouting(null); }, [invoiceId]);
+  return routing ? (
+    <div className="px-6 py-3 bg-gradient-to-r from-indigo-50 to-purple-50 border-t border-indigo-100">
+      <div className="flex items-center gap-2 mb-1">
+        <Brain className="w-3.5 h-3.5 text-indigo-600" />
+        <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider">AI Suggested Assignment</span>
+      </div>
+      <div className="text-xs text-slate-700">{routing.recommended_assignee || routing.primary || routing.suggestion || 'See details'}</div>
+      {routing.reason && <div className="text-[10px] text-indigo-500 mt-0.5">{routing.reason}</div>}
+    </div>
+  ) : (
+    <div className="px-6 pt-2">
+      <button onClick={getRouting} disabled={routeLoading}
+        className="w-full text-[11px] text-indigo-600 hover:text-indigo-800 font-medium py-1.5 flex items-center justify-center gap-1.5">
+        <Brain className="w-3 h-3" /> {routeLoading ? 'Analyzing...' : 'Get AI Routing Suggestion'}
+      </button>
+    </div>
+  );
+}
+
 function Triage() {
   const { s, toast, load } = useStore();
   const tri = s.triageData || {};
@@ -2718,38 +3195,9 @@ function Triage() {
                 })()}
 
                 {/* ── AI ROUTING SUGGESTION (Rec #1) ── */}
-                {sel && selLane !== 'AUTO_APPROVE' && (() => {
-                  const [routing, setRouting] = useState(null);
-                  const [routeLoading, setRouteLoading] = useState(false);
-                  async function getRouting() {
-                    setRouteLoading(true);
-                    const caseForInv = (s.casesData || []).find(c => c.invoiceId === sel.id);
-                    if (caseForInv) {
-                      const r = await api(`/api/ai/route-case/${caseForInv.id}`);
-                      if (r && !r._err) setRouting(r);
-                    } else {
-                      setRouting({ suggestion: 'Create a case first to get AI routing recommendations', fallback: true });
-                    }
-                    setRouteLoading(false);
-                  }
-                  return routing ? (
-                    <div className="px-6 py-3 bg-gradient-to-r from-indigo-50 to-purple-50 border-t border-indigo-100">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Brain className="w-3.5 h-3.5 text-indigo-600" />
-                        <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider">AI Suggested Assignment</span>
-                      </div>
-                      <div className="text-xs text-slate-700">{routing.recommended_assignee || routing.primary || routing.suggestion || 'See details'}</div>
-                      {routing.reason && <div className="text-[10px] text-indigo-500 mt-0.5">{routing.reason}</div>}
-                    </div>
-                  ) : (
-                    <div className="px-6 pt-2">
-                      <button onClick={getRouting} disabled={routeLoading}
-                        className="w-full text-[11px] text-indigo-600 hover:text-indigo-800 font-medium py-1.5 flex items-center justify-center gap-1.5">
-                        <Brain className="w-3 h-3" /> {routeLoading ? 'Analyzing...' : 'Get AI Routing Suggestion'}
-                      </button>
-                    </div>
-                  );
-                })()}
+                {sel && selLane !== 'AUTO_APPROVE' && (
+                  <RoutingSuggestionBlock invoiceId={sel.id} cases={s.casesData || []} />
+                )}
 
                 {/* ── ACTIONS (always visible at bottom) ── */}
                 {selLane !== 'AUTO_APPROVE' && (
@@ -2913,87 +3361,7 @@ function Cases() {
             {detail.description && <div className="p-3 bg-slate-50 rounded-xl text-sm text-slate-600 mb-4">{detail.description}</div>}
 
             {/* AI Intelligence Panel (Rec #1) */}
-            {(() => {
-              const [brief, setBrief] = useState(null);
-              const [briefLoading, setBriefLoading] = useState(false);
-              const [vendorDraft, setVendorDraft] = useState(null);
-              const [draftLoading, setDraftLoading] = useState(false);
-              const [draftType, setDraftType] = useState('dispute');
-
-              async function genBrief() {
-                setBriefLoading(true);
-                const r = await api(`/api/ai/investigation-brief/${detail.id}`);
-                setBriefLoading(false);
-                if (r && !r._err) setBrief(r);
-                else toast(r?.detail || 'AI brief failed — ensure ANTHROPIC_API_KEY is set', 'warning');
-              }
-              async function genDraft(type) {
-                setDraftLoading(true);
-                const r = await post(`/api/ai/vendor-draft/${detail.id}`, { comm_type: type });
-                setDraftLoading(false);
-                if (r && !r._err) setVendorDraft(r);
-                else toast(r?.detail || 'Draft failed — ensure ANTHROPIC_API_KEY is set', 'warning');
-              }
-
-              return (
-                <div className="mb-4 space-y-3">
-                  {/* AI Action Buttons */}
-                  <div className="flex gap-2 flex-wrap">
-                    <button onClick={genBrief} disabled={briefLoading}
-                      className="btn bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs flex items-center gap-1.5 border border-indigo-200">
-                      <Brain className="w-3.5 h-3.5" /> {briefLoading ? 'Generating...' : 'AI Investigation Brief'}
-                    </button>
-                    <button onClick={() => genDraft('dispute')} disabled={draftLoading}
-                      className="btn bg-purple-50 text-purple-700 hover:bg-purple-100 text-xs flex items-center gap-1.5 border border-purple-200">
-                      <Send className="w-3.5 h-3.5" /> {draftLoading ? 'Drafting...' : 'Draft Vendor Letter'}
-                    </button>
-                    <button onClick={() => genDraft('query')} disabled={draftLoading}
-                      className="btn bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs flex items-center gap-1.5 border border-blue-200">
-                      <Send className="w-3.5 h-3.5" /> Draft Query
-                    </button>
-                  </div>
-
-                  {/* Investigation Brief Result */}
-                  {brief && (
-                    <div className="bg-gradient-to-br from-indigo-50 to-blue-50 border border-indigo-200 rounded-xl p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <Brain className="w-4 h-4 text-indigo-600" />
-                          <span className="text-xs font-bold text-indigo-700 uppercase tracking-wider">AI Investigation Brief</span>
-                        </div>
-                        <button onClick={() => setBrief(null)} className="text-xs text-slate-400 hover:text-slate-600">dismiss</button>
-                      </div>
-                      <div className="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap">{brief.brief || brief.narrative || brief.summary || JSON.stringify(brief, null, 2)}</div>
-                      {brief.risk_level && <div className="mt-2"><Badge c={brief.risk_level === 'high' ? 'err' : brief.risk_level === 'medium' ? 'warn' : 'ok'}>Risk: {brief.risk_level}</Badge></div>}
-                      {brief.recommended_actions && (
-                        <div className="mt-2 text-xs text-indigo-600">
-                          <strong>Recommended:</strong> {Array.isArray(brief.recommended_actions) ? brief.recommended_actions.join(', ') : brief.recommended_actions}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Vendor Draft Result */}
-                  {vendorDraft && (
-                    <div className="bg-gradient-to-br from-purple-50 to-pink-50 border border-purple-200 rounded-xl p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <Send className="w-4 h-4 text-purple-600" />
-                          <span className="text-xs font-bold text-purple-700 uppercase tracking-wider">AI-Generated {vendorDraft.comm_type || 'Vendor'} Letter</span>
-                        </div>
-                        <div className="flex gap-2">
-                          <button onClick={() => { navigator.clipboard.writeText(vendorDraft.draft || vendorDraft.body || ''); toast('Copied to clipboard', 'success'); }}
-                            className="text-xs text-purple-600 hover:text-purple-800 font-medium">Copy</button>
-                          <button onClick={() => setVendorDraft(null)} className="text-xs text-slate-400 hover:text-slate-600">dismiss</button>
-                        </div>
-                      </div>
-                      {vendorDraft.subject && <div className="text-xs font-semibold text-purple-800 mb-1">Subject: {vendorDraft.subject}</div>}
-                      <div className="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap bg-white/50 rounded-lg p-3 border border-purple-100">{vendorDraft.draft || vendorDraft.body || JSON.stringify(vendorDraft)}</div>
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
+                        <CaseBriefBlock caseId={detail.id} onToast={toast} />
             {/* Notes */}
             {detail.notes?.length > 0 && (
               <div className="mb-4">
@@ -3348,47 +3716,7 @@ function Vendors() {
                 )}
 
                 {/* AI Vendor Insights (Rec #1) */}
-                {(() => {
-                  const [vInsights, setVInsights] = useState(null);
-                  const [vInsLoading, setVInsLoading] = useState(false);
-                  async function genInsights() {
-                    setVInsLoading(true);
-                    const vName = encodeURIComponent(sel.vendor || sel.vendorDisplay || sel.name || '');
-                    const r = await api(`/api/ai/vendor-insights/${vName}`);
-                    setVInsLoading(false);
-                    if (r && !r._err) setVInsights(r);
-                    else toast(r?.detail || 'AI insights failed — ensure ANTHROPIC_API_KEY is set', 'warning');
-                  }
-                  return (
-                    <div className="mb-5">
-                      {!vInsights && (
-                        <button onClick={genInsights} disabled={vInsLoading}
-                          className="w-full btn bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs py-2.5 flex items-center justify-center gap-2 rounded-xl border border-indigo-200">
-                          <Brain className="w-3.5 h-3.5" /> {vInsLoading ? 'AI Analyzing Vendor Patterns...' : 'Generate AI Vendor Insights'}
-                        </button>
-                      )}
-                      {vInsights && (
-                        <div className="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl p-4">
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2">
-                              <Brain className="w-4 h-4 text-indigo-600" />
-                              <span className="text-xs font-bold text-indigo-700 uppercase tracking-wider">AI Vendor Analysis</span>
-                            </div>
-                            <button onClick={() => setVInsights(null)} className="text-xs text-slate-400 hover:text-slate-600">dismiss</button>
-                          </div>
-                          <div className="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap">{vInsights.narrative || vInsights.insights || vInsights.analysis || JSON.stringify(vInsights, null, 2)}</div>
-                          {vInsights.risk_trend && <div className="mt-2 text-xs text-indigo-600 font-medium">Risk Trend: {vInsights.risk_trend}</div>}
-                          {vInsights.recommendations && (
-                            <div className="mt-2 p-2 bg-white/60 rounded-lg">
-                              <div className="text-xs font-semibold text-purple-700 mb-1">Recommendations:</div>
-                              <div className="text-xs text-slate-700">{Array.isArray(vInsights.recommendations) ? vInsights.recommendations.join(' • ') : vInsights.recommendations}</div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
+                                  <VendorInsightsBlock vendorName={sel.vendor || sel.vendorDisplay || sel.name || ""} onToast={toast} />
               </>
             )}
           </div>
@@ -5230,282 +5558,10 @@ function SettingsPage() {
       </div>
 
       {/* NLP Policy Configuration (Rec #1) */}
-      {(() => {
-        const [nlpInput, setNlpInput] = useState('');
-        const [nlpResult, setNlpResult] = useState(null);
-        const [nlpLoading, setNlpLoading] = useState(false);
-
-        async function parsePolicy() {
-          if (!nlpInput.trim()) return;
-          setNlpLoading(true);
-          const r = await post('/api/ai/policy-parse', { input: nlpInput });
-          setNlpLoading(false);
-          if (r && !r._err) { setNlpResult(r); toast('AI parsed your policy — review changes below', 'success'); }
-          else toast(r?.detail || 'NLP parse failed — ensure ANTHROPIC_API_KEY is set', 'warning');
-        }
-        async function applyNlpChanges() {
-          if (!nlpResult?.changes) return;
-          await post('/api/policy', nlpResult.changes);
-          await load();
-          setNlpResult(null); setNlpInput('');
-          toast('Policy updated from natural language', 'success');
-        }
-
-        return (
-          <div className="rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-purple-50 p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <Brain className="w-5 h-5 text-indigo-600" />
-              <div>
-                <div className="text-sm font-bold text-indigo-900">Configure Policy with Natural Language</div>
-                <div className="text-xs text-indigo-600">Describe your AP policy in plain English — AI will translate it to settings</div>
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <input value={nlpInput} onChange={e => setNlpInput(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') parsePolicy(); }}
-                placeholder='e.g. "Block invoices over $50K without a PO" or "Tighten tolerance to 1% for high-risk vendors"'
-                className="inp flex-1 text-sm" />
-              <button onClick={parsePolicy} disabled={nlpLoading || !nlpInput.trim()}
-                className="btn-p text-xs whitespace-nowrap">
-                {nlpLoading ? 'Parsing...' : 'Apply with AI'}
-              </button>
-            </div>
-            {nlpResult && (
-              <div className="mt-3 p-3 bg-white/70 rounded-xl border border-indigo-100">
-                <div className="text-xs font-bold text-indigo-700 mb-2">AI Proposed Changes:</div>
-                <div className="text-sm text-slate-800 mb-2">{nlpResult.interpretation || nlpResult.explanation || 'Policy changes identified'}</div>
-                {nlpResult.changes && (
-                  <div className="space-y-1 mb-3">
-                    {Object.entries(nlpResult.changes).map(([k, v]) => (
-                      <div key={k} className="flex justify-between text-xs bg-indigo-50 p-2 rounded-lg">
-                        <span className="text-slate-600">{k.replace(/_/g, ' ')}</span>
-                        <span className="font-mono font-bold text-indigo-700">{String(v)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div className="flex gap-2">
-                  <button onClick={applyNlpChanges} className="btn bg-indigo-600 text-white hover:bg-indigo-700 text-xs"><Check className="w-3 h-3" /> Apply Changes</button>
-                  <button onClick={() => setNlpResult(null)} className="btn-o text-xs">Cancel</button>
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })()}
+            <NlpPolicyBlock policy={p} onLoad={load} onToast={toast} />
 
       {/* R7: Data Governance Dashboard */}
-      {(() => {
-        const [gov, setGov] = useState(null);
-        const [govLoading, setGovLoading] = useState(false);
-        const [auditLog, setAuditLog] = useState(null);
-        const [vendorCtl, setVendorCtl] = useState(null);
-        const [vendorInput, setVendorInput] = useState('');
-        const [showGov, setShowGov] = useState(false);
-
-        async function loadGovernance() {
-          setGovLoading(true);
-          const r = await api('/api/data-governance');
-          if (r && !r.error) setGov(r);
-          setGovLoading(false);
-        }
-        async function loadAuditLog() {
-          const r = await api('/api/data-governance/audit-log?limit=50');
-          if (r && !r._err) setAuditLog(r);
-          else setAuditLog({ entries: [], summary: {}, _loaded: true });
-        }
-        async function loadVendorCtl(v) {
-          if (!v) return;
-          const r = await api(`/api/data-governance/vendor-controls/${encodeURIComponent(v)}`);
-          if (r) setVendorCtl(r);
-        }
-        async function toggleVendorCtl(vendor, field) {
-          if (!vendorCtl) return;
-          const current = vendorCtl.ai_controls?.[field] ?? true;
-          await post(`/api/data-governance/vendor-controls/${encodeURIComponent(vendor)}`,
-            { ...vendorCtl.ai_controls, [field]: !current });
-          loadVendorCtl(vendor);
-          toast(`${field.replace(/_/g, ' ')}: ${!current ? 'ON' : 'OFF'}`, 'success');
-        }
-
-        const tier = gov?.privacy_posture;
-        const egress = gov?.egress_map || {};
-        const audit = gov?.audit_summary || {};
-        const preset = gov?.deployment_preset?.current_preset || 'standard';
-
-        const riskColor = (r) => r === 'none' ? '#10b981' : r === 'low' ? '#3b82f6' : r === 'medium' ? '#f59e0b' : '#ef4444';
-        const presetColor = { standard: '#f59e0b', enterprise_private: '#10b981', airgapped: '#06b6d4' };
-
-        return (
-          <div className="rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50 p-5">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <Shield className="w-5 h-5 text-emerald-600" />
-                <div>
-                  <div className="text-sm font-bold text-emerald-900">Data Governance & Privacy</div>
-                  <div className="text-xs text-emerald-600">LLM data residency, PII redaction, audit trail, per-vendor controls</div>
-                </div>
-              </div>
-              <button onClick={() => { setShowGov(!showGov); if (!gov) loadGovernance(); }}
-                className="btn-o text-xs">{showGov ? 'Hide' : 'Show'} Governance</button>
-            </div>
-
-            {showGov && (
-              <div className="space-y-4 mt-4">
-                {govLoading && <div className="text-xs text-slate-500">Loading governance data...</div>}
-
-                {/* Privacy Posture Summary */}
-                {tier && (
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    <div className="p-3 bg-white rounded-xl border">
-                      <div className="text-[10px] font-bold text-slate-400 uppercase">LLM Provider</div>
-                      <div className="text-sm font-bold" style={{ color: tier.llm_provider?.provider === 'anthropic' ? '#f59e0b' : '#10b981' }}>
-                        {(tier.llm_provider?.provider || 'unknown').toUpperCase()}
-                      </div>
-                      <div className="text-[10px] text-slate-500">{tier.llm_provider?.data_residency}</div>
-                    </div>
-                    <div className="p-3 bg-white rounded-xl border">
-                      <div className="text-[10px] font-bold text-slate-400 uppercase">Embeddings</div>
-                      <div className="text-sm font-bold" style={{ color: tier.embedding_provider === 'voyage' ? '#f59e0b' : '#10b981' }}>
-                        {tier.embedding_provider?.toUpperCase()}
-                      </div>
-                      <div className="text-[10px] text-slate-500">{tier.embedding_provider === 'voyage' ? 'Cloud API' : 'Local only'}</div>
-                    </div>
-                    <div className="p-3 bg-white rounded-xl border">
-                      <div className="text-[10px] font-bold text-slate-400 uppercase">Fine-Tuning</div>
-                      <div className="text-sm font-bold" style={{ color: tier.finetune_provider === 'together' ? '#f59e0b' : '#10b981' }}>
-                        {tier.finetune_provider?.toUpperCase()}
-                      </div>
-                      <div className="text-[10px] text-slate-500">{tier.finetune_provider === 'together' ? 'Cloud (data egress)' : 'On-premise'}</div>
-                    </div>
-                    <div className="p-3 bg-white rounded-xl border">
-                      <div className="text-[10px] font-bold text-slate-400 uppercase">PII Redaction</div>
-                      <div className="text-sm font-bold" style={{ color: tier.pii_redaction_enabled ? '#10b981' : '#94a3b8' }}>
-                        {tier.pii_redaction_enabled ? 'ACTIVE' : 'OFF'}
-                      </div>
-                      <div className="text-[10px] text-slate-500">{tier.zero_data_retention ? 'ZDR active' : 'Standard retention'}</div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Data Leaves Org Warning */}
-                {tier?.data_leaves_organization && (
-                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
-                    <div className="text-xs text-amber-800">
-                      <span className="font-bold">Data leaves your organization.</span> Current config sends data to external services.
-                      Set <code className="bg-amber-100 px-1 rounded">DEPLOYMENT_PRESET=enterprise_private</code> for VPC-only mode.
-                    </div>
-                  </div>
-                )}
-                {tier && !tier.data_leaves_organization && (
-                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2">
-                    <Shield className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                    <div className="text-xs text-emerald-800">
-                      <span className="font-bold">All data stays within your network.</span> No external LLM, embedding, or training API calls.
-                    </div>
-                  </div>
-                )}
-
-                {/* Deployment Preset */}
-                {gov?.deployment_preset && (
-                  <div className="p-3 bg-white rounded-xl border">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase mb-2">Deployment Preset</div>
-                    <div className="flex gap-2">
-                      {Object.entries(gov.deployment_preset.available_presets || {}).map(([k, desc]) => (
-                        <div key={k} className={`flex-1 p-2 rounded-lg border text-center ${preset === k ? 'border-2' : 'opacity-60'}`}
-                             style={{ borderColor: presetColor[k] || '#94a3b8' }}>
-                          <div className="text-xs font-bold" style={{ color: presetColor[k] }}>{k.replace(/_/g, ' ').toUpperCase()}</div>
-                          <div className="text-[10px] text-slate-500 mt-1">{desc.split('—')[0]}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Data Egress Map */}
-                {Object.keys(egress).length > 0 && (
-                  <div className="p-3 bg-white rounded-xl border">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase mb-2">Data Egress Map</div>
-                    <div className="space-y-1">
-                      {Object.entries(egress).map(([mod, info]) => (
-                        <div key={mod} className="flex items-center justify-between text-xs p-2 bg-slate-50 rounded-lg">
-                          <span className="font-semibold text-slate-700 w-28">{mod.replace(/_/g, ' ')}</span>
-                          <span className="text-slate-500 flex-1 truncate">{info.destination}</span>
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold"
-                                style={{ backgroundColor: riskColor(info.risk) + '20', color: riskColor(info.risk) }}>
-                            {info.risk?.toUpperCase()}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Audit Log */}
-                <div className="p-3 bg-white rounded-xl border">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase">LLM API Audit Log</div>
-                    <button onClick={async () => { setAuditLog('loading'); await loadAuditLog(); }} className="px-2.5 py-1 text-xs font-semibold text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-all">
-                      {auditLog === 'loading' ? 'Loading...' : 'Load Log'}
-                    </button>
-                  </div>
-                  {audit.total_calls > 0 && (
-                    <div className="flex gap-4 mb-2 text-[10px]">
-                      <span>Total: <b>{audit.total_calls}</b></span>
-                      <span>Avg: <b>{audit.avg_latency_ms}ms</b></span>
-                      <span>PII Redacted: <b>{audit.pii_redacted_pct}%</b></span>
-                      <span>Success: <b>{audit.success_rate}%</b></span>
-                    </div>
-                  )}
-                  {auditLog && auditLog !== 'loading' && (!auditLog?.entries || auditLog.entries.length === 0) && (
-                    <div className="text-xs text-slate-400 py-3 text-center">No LLM API calls logged yet. Entries appear after document extraction or AI intelligence calls.</div>
-                  )}
-                  {auditLog?.entries?.length > 0 && (
-                    <div className="max-h-40 overflow-y-auto space-y-1">
-                      {auditLog.entries.slice(0, 20).map((e, i) => (
-                        <div key={i} className="flex items-center gap-2 text-[10px] p-1.5 bg-slate-50 rounded">
-                          <span className="text-slate-400 w-16 truncate">{e.timestamp?.slice(11, 19)}</span>
-                          <span className="font-semibold w-20 truncate">{e.module}</span>
-                          <span className="text-slate-500 w-20 truncate">{e.model}</span>
-                          <span className={`px-1 rounded ${e.data_type === 'document' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>{e.data_type}</span>
-                          <span className="text-slate-400">{e.latency_ms}ms</span>
-                          {e.vendor && <span className="text-purple-600 truncate">{e.vendor}</span>}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Per-Vendor AI Controls (R9) */}
-                <div className="p-3 bg-white rounded-xl border">
-                  <div className="text-[10px] font-bold text-slate-400 uppercase mb-2">Per-Vendor AI Controls</div>
-                  <div className="flex gap-2 mb-2">
-                    <input value={vendorInput} onChange={e => setVendorInput(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') loadVendorCtl(vendorInput); }}
-                      placeholder="Enter vendor name..." className="inp text-xs flex-1" />
-                    <button onClick={() => loadVendorCtl(vendorInput)} className="btn-o text-xs">Load</button>
-                  </div>
-                  {vendorCtl && (
-                    <div className="space-y-1">
-                      <div className="text-xs font-semibold text-slate-700 mb-1">{vendorCtl.vendor}</div>
-                      {['extraction_enabled', 'intelligence_enabled', 'include_in_training'].map(field => (
-                        <div key={field} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg">
-                          <span className="text-xs text-slate-600">{field.replace(/_/g, ' ')}</span>
-                          <button onClick={() => toggleVendorCtl(vendorCtl.vendor, field)}
-                            className={`text-[10px] font-bold px-3 py-1 rounded-lg ${vendorCtl.ai_controls?.[field] !== false ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                            {vendorCtl.ai_controls?.[field] !== false ? 'ON' : 'OFF'}
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })()}
+            <DataGovernanceBlock onToast={toast} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="space-y-4">
