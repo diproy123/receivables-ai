@@ -7290,7 +7290,7 @@ function LoginScreen() {
           <button onClick={() => { setMode('login'); setErr(null); }} className={cn('flex-1 py-2.5 text-sm font-semibold transition-all', mode === 'login' ? 'bg-accent-50 text-accent-700' : 'bg-white text-slate-400')}>Sign In</button>
           <button onClick={() => { setMode('register'); setErr(null); }} className={cn('flex-1 py-2.5 text-sm font-semibold transition-all', mode === 'register' ? 'bg-accent-50 text-accent-700' : 'bg-white text-slate-400')}>Register</button>
         </div>
-        {err && <div className="p-3 bg-red-50 text-red-600 rounded-xl text-sm font-medium mb-4 border border-red-100">{err}</div>}
+        {err && <div className="p-3 bg-red-50 text-red-600 rounded-xl text-sm font-medium mb-4 border border-red-100">{typeof err === 'string' ? err : 'Authentication failed. Please try again.'}</div>}
         <form onSubmit={submit} className="space-y-4">
           {mode === 'register' && <input name="name" placeholder="Full name" className="inp" required />}
           <input name="email" type="email" placeholder="name@company.com" className="inp" required />
@@ -7724,7 +7724,21 @@ export default function App() {
   useEffect(() => {
     // Only bootstrap after user is authenticated — not on landing page
     const token = localStorage.getItem('al_token');
-    if (token && !s.loaded) load();
+    if (token && !s.loaded) {
+      // Validate token first — if stale (user deleted by reset), clear it
+      api('/api/auth/me').then(r => {
+        if (r && !r._err && r.id) {
+          load();
+        } else {
+          // Stale token — user no longer exists after reset
+          localStorage.removeItem('al_token');
+          setView('landing');
+        }
+      }).catch(() => {
+        localStorage.removeItem('al_token');
+        setView('landing');
+      });
+    }
   }, [view, load, s.loaded]);
 
   useEffect(() => {
