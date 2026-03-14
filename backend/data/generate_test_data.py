@@ -1,173 +1,315 @@
 #!/usr/bin/env python3
 """
-AuditLens — Rich Demo Data Generator
-Generates 50+ invoices, 15+ POs, contracts, GRNs, matches, anomalies,
-cases, triage decisions, correction patterns, and user accounts.
-Designed to showcase every product capability in investor demos.
+AuditLens — Freight Forwarding Demo Data Generator
+===================================================
+Generates realistic freight forwarding AP data for Freight Forwarding demo:
+- 8 carrier/vendor profiles (ocean carriers, NVOCCs, hauliers, customs brokers, CFS)
+- 15+ POs representing CW1 job cost accruals
+- 50+ carrier invoices with freight-specific charge codes
+- Contracts with carrier rate agreements
+- GRNs representing service delivery confirmations
+- Pre-built anomaly patterns: overcharges, duplicates, missing charges, rate escalation
+
+Replace backend/data/generate_test_data.py with this file, then
+POST /api/reset followed by POST /api/seed-demo to load.
 """
-import json, uuid, random, os
+import json, uuid, random, os, sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-random.seed(42)  # Reproducible demos
+random.seed(42)
 
 def uid(): return str(uuid.uuid4())[:8].upper()
 def ts(d): return d.isoformat()
 now = datetime(2026, 3, 10, 14, 30, 0)
 
 # ═══════════════════════════════════════
-# VENDORS — 8 vendors with distinct profiles
+# VENDORS — Freight Forwarding Carrier/Service Providers
 # ═══════════════════════════════════════
 VENDORS = [
-    {"name": "GoldPak Industries Ltd.", "risk": "high", "profile": "over-invoicer", "currency": "USD"},
-    {"name": "Legacy Systems Corp", "risk": "medium", "profile": "contract-violator", "currency": "USD"},
-    {"name": "QuickServ Facilities", "risk": "low", "profile": "clean", "currency": "USD"},
-    {"name": "NovaTech Solutions Inc", "risk": "high", "profile": "duplicate-sender", "currency": "USD"},
-    {"name": "Pacific Rim Logistics", "risk": "medium", "profile": "weekend-invoicer", "currency": "USD"},
-    {"name": "Meridian Consulting Group", "risk": "low", "profile": "early-pay-eligible", "currency": "USD"},
-    {"name": "Atlas Raw Materials Co", "risk": "high", "profile": "price-escalator", "currency": "USD"},
-    {"name": "Horizon Digital Services", "risk": "medium", "profile": "stale-invoicer", "currency": "USD"},
+    {"name": "Maersk Line A/S", "risk": "medium", "profile": "rate-escalator", "currency": "USD",
+     "category": "Ocean Carrier", "cw1_code": "MAEU"},
+    {"name": "MSC Mediterranean Shipping", "risk": "high", "profile": "over-invoicer", "currency": "USD",
+     "category": "Ocean Carrier", "cw1_code": "MSCU"},
+    {"name": "Hapag-Lloyd AG", "risk": "low", "profile": "clean", "currency": "USD",
+     "category": "Ocean Carrier", "cw1_code": "HLCU"},
+    {"name": "CMA CGM S.A.", "risk": "medium", "profile": "duplicate-sender", "currency": "USD",
+     "category": "Ocean Carrier", "cw1_code": "CMDU"},
+    {"name": "DB Schenker Logistics", "risk": "low", "profile": "early-pay-eligible", "currency": "USD",
+     "category": "Freight Forwarder / NVOCC", "cw1_code": "DBSC"},
+    {"name": "Kuehne+Nagel International", "risk": "medium", "profile": "stale-invoicer", "currency": "USD",
+     "category": "Freight Forwarder / NVOCC", "cw1_code": "KNIG"},
+    {"name": "Swift Haulage Ltd", "risk": "high", "profile": "weekend-invoicer", "currency": "GBP",
+     "category": "Haulier", "cw1_code": "SWHL"},
+    {"name": "ClearPort Customs Brokers", "risk": "low", "profile": "clean", "currency": "USD",
+     "category": "Customs Broker", "cw1_code": "CPCB"},
+]
+
+# ═══════════════════════════════════════
+# FREIGHT CHARGE CODES (CW1 standard)
+# ═══════════════════════════════════════
+CHARGE_CODES = {
+    "OFR": {"desc": "Ocean Freight", "typical_range": (1800, 5500)},
+    "THO": {"desc": "THC Origin", "typical_range": (200, 600)},
+    "THD": {"desc": "THC Destination", "typical_range": (250, 650)},
+    "BAF": {"desc": "Bunker Adjustment Factor", "typical_range": (300, 900)},
+    "CAF": {"desc": "Currency Adjustment Factor", "typical_range": (50, 200)},
+    "ISPS": {"desc": "ISPS Security Surcharge", "typical_range": (15, 75)},
+    "DOC": {"desc": "Documentation Fee", "typical_range": (50, 200)},
+    "BLF": {"desc": "Bill of Lading Fee", "typical_range": (50, 150)},
+    "AMS": {"desc": "AMS Filing Fee", "typical_range": (25, 45)},
+    "ENS": {"desc": "ENS Filing Fee", "typical_range": (20, 40)},
+    "EBS": {"desc": "Emergency Bunker Surcharge", "typical_range": (100, 400)},
+    "PSS": {"desc": "Peak Season Surcharge", "typical_range": (200, 800)},
+    "HAU": {"desc": "Haulage / Drayage", "typical_range": (300, 1200)},
+    "CFS": {"desc": "CFS Charges", "typical_range": (150, 500)},
+    "CUS": {"desc": "Customs Clearance", "typical_range": (80, 300)},
+    "DEM": {"desc": "Demurrage", "typical_range": (100, 500)},
+    "DET": {"desc": "Detention", "typical_range": (100, 500)},
+    "WAR": {"desc": "War Risk Surcharge", "typical_range": (20, 80)},
+}
+
+# Trade lanes
+TRADE_LANES = [
+    {"pol": "Shanghai (CNSHA)", "pod": "Felixstowe (GBFXT)", "route": "Far East - North Europe"},
+    {"pol": "Ningbo (CNNBO)", "pod": "Rotterdam (NLRTM)", "route": "Far East - North Europe"},
+    {"pol": "Shenzhen (CNSZX)", "pod": "Hamburg (DEHAM)", "route": "Far East - North Europe"},
+    {"pol": "Shanghai (CNSHA)", "pod": "Los Angeles (USLAX)", "route": "Transpacific"},
+    {"pol": "Mumbai (INBOM)", "pod": "Felixstowe (GBFXT)", "route": "Indian Subcontinent - Europe"},
+    {"pol": "Colombo (LKCMB)", "pod": "Rotterdam (NLRTM)", "route": "Indian Subcontinent - Europe"},
+    {"pol": "Ho Chi Minh (VNSGN)", "pod": "Southampton (GBSOU)", "route": "Southeast Asia - Europe"},
 ]
 
 # ═══════════════════════════════════════
 # USERS
 # ═══════════════════════════════════════
 users = [
-    {"id": uid(), "email": "cfo@auditlens.demo", "name": "Dip CFO", "role": "cfo", "status": "active", "assignedVendors": [], "createdAt": ts(now - timedelta(days=90))},
-    {"id": uid(), "email": "vp@auditlens.demo", "name": "Sarah VP", "role": "vp", "status": "active", "assignedVendors": [], "createdAt": ts(now - timedelta(days=90))},
-    {"id": uid(), "email": "mgr@auditlens.demo", "name": "Mike Manager", "role": "manager", "status": "active", "assignedVendors": [], "createdAt": ts(now - timedelta(days=60))},
-    {"id": uid(), "email": "analyst1@auditlens.demo", "name": "Priya Analyst", "role": "analyst", "status": "active",
-     "assignedVendors": ["GoldPak Industries Ltd.", "Legacy Systems Corp", "Atlas Raw Materials Co", "Pacific Rim Logistics"],
+    {"id": uid(), "email": "cfo@auditlens.demo", "name": "Dip Roy (CFO)", "role": "cfo", "status": "active", "assignedVendors": [], "createdAt": ts(now - timedelta(days=90))},
+    {"id": uid(), "email": "vp@auditlens.demo", "name": "Sarah VP Finance", "role": "vp", "status": "active", "assignedVendors": [], "createdAt": ts(now - timedelta(days=90))},
+    {"id": uid(), "email": "ap.manager@auditlens.demo", "name": "Mike AP Manager", "role": "manager", "status": "active", "assignedVendors": [], "createdAt": ts(now - timedelta(days=60))},
+    {"id": uid(), "email": "ap.analyst1@auditlens.demo", "name": "Priya AP Analyst", "role": "analyst", "status": "active",
+     "assignedVendors": ["Maersk Line A/S", "MSC Mediterranean Shipping", "Hapag-Lloyd AG", "CMA CGM S.A."],
      "createdAt": ts(now - timedelta(days=60))},
-    {"id": uid(), "email": "analyst2@auditlens.demo", "name": "James Analyst", "role": "analyst", "status": "active",
-     "assignedVendors": ["QuickServ Facilities", "NovaTech Solutions Inc", "Meridian Consulting Group", "Horizon Digital Services"],
+    {"id": uid(), "email": "ap.analyst2@auditlens.demo", "name": "James AP Analyst", "role": "analyst", "status": "active",
+     "assignedVendors": ["DB Schenker Logistics", "Kuehne+Nagel International", "Swift Haulage Ltd", "ClearPort Customs Brokers"],
      "createdAt": ts(now - timedelta(days=45))},
 ]
 
 # ═══════════════════════════════════════
-# CONTRACTS
+# CONTRACTS (Carrier Rate Agreements)
 # ═══════════════════════════════════════
 contracts = [
-    {"id": uid(), "type": "contract", "contractNumber": "SVC-2023-010", "vendor": "Legacy Systems Corp",
-     "amount": 120000, "currency": "USD", "startDate": "2023-01-01", "endDate": "2025-06-30",
-     "issueDate": "2023-01-01", "status": "active", "extractedAt": ts(now - timedelta(days=400)),
+    {"id": uid(), "type": "contract", "contractNumber": "CRA-MAEU-2025-001", "vendor": "Maersk Line A/S",
+     "amount": 850000, "currency": "USD", "startDate": "2025-01-01", "endDate": "2025-12-31",
+     "issueDate": "2024-12-15", "status": "active", "extractedAt": ts(now - timedelta(days=90)),
      "autoRenewal": True, "terminationNoticeDays": 90, "paymentTerms": "Net 30",
-     "lineItems": [{"description": "Legacy system maintenance", "unitPrice": 10000, "quantity": 12, "total": 120000}],
-     "clauses": {"liability_cap": True, "termination_notice": "90 days", "auto_renewal": True,
-                 "sla_terms": "99.5% uptime", "penalty_clauses": True, "force_majeure": True,
-                 "confidentiality": True, "ip_ownership": False, "indemnification": False}},
-    {"id": uid(), "type": "contract", "contractNumber": "MNT-2024-020", "vendor": "QuickServ Facilities",
-     "amount": 80000, "currency": "USD", "startDate": "2024-01-01", "endDate": "2025-12-31",
-     "issueDate": "2024-01-01", "status": "active", "extractedAt": ts(now - timedelta(days=300)),
-     "autoRenewal": False, "terminationNoticeDays": 60, "paymentTerms": "Net 45",
-     "lineItems": [{"description": "Facility maintenance", "unitPrice": 6667, "quantity": 12, "total": 80000}],
-     "clauses": {"liability_cap": True, "termination_notice": "60 days", "auto_renewal": False,
-                 "sla_terms": "Response within 4 hours", "penalty_clauses": True, "force_majeure": True,
-                 "confidentiality": True, "ip_ownership": True, "indemnification": True}},
-    {"id": uid(), "type": "contract", "contractNumber": "RAW-2024-030", "vendor": "Atlas Raw Materials Co",
-     "amount": 500000, "currency": "USD", "startDate": "2024-06-01", "endDate": "2025-05-31",
-     "issueDate": "2024-06-01", "status": "active", "extractedAt": ts(now - timedelta(days=200)),
-     "autoRenewal": True, "terminationNoticeDays": 120, "paymentTerms": "Net 30",
      "lineItems": [
-         {"description": "Steel grade A (per ton)", "unitPrice": 850, "quantity": 300, "total": 255000},
-         {"description": "Aluminum alloy (per ton)", "unitPrice": 1225, "quantity": 200, "total": 245000}],
-     "clauses": {"liability_cap": False, "termination_notice": "120 days", "auto_renewal": True,
-                 "sla_terms": "Delivery within 14 days", "penalty_clauses": True, "force_majeure": True,
+         {"description": "Ocean Freight - Far East to N.Europe (20GP)", "unitPrice": 1850, "quantity": 200, "total": 370000},
+         {"description": "Ocean Freight - Far East to N.Europe (40HC)", "unitPrice": 3200, "quantity": 150, "total": 480000},
+     ],
+     "clauses": {"liability_cap": True, "termination_notice": "90 days", "auto_renewal": True,
+                 "sla_terms": "Transit 28-32 days", "penalty_clauses": True, "force_majeure": True,
                  "confidentiality": True, "ip_ownership": False, "indemnification": False}},
-    {"id": uid(), "type": "contract", "contractNumber": "DIG-2024-040", "vendor": "Horizon Digital Services",
-     "amount": 96000, "currency": "USD", "startDate": "2024-03-01", "endDate": "2025-02-28",
-     "issueDate": "2024-03-01", "status": "active", "extractedAt": ts(now - timedelta(days=250)),
-     "autoRenewal": True, "terminationNoticeDays": 30, "paymentTerms": "Net 15",
-     "lineItems": [{"description": "Cloud hosting & support", "unitPrice": 8000, "quantity": 12, "total": 96000}],
+    {"id": uid(), "type": "contract", "contractNumber": "CRA-MSCU-2025-001", "vendor": "MSC Mediterranean Shipping",
+     "amount": 720000, "currency": "USD", "startDate": "2025-01-01", "endDate": "2025-12-31",
+     "issueDate": "2024-12-20", "status": "active", "extractedAt": ts(now - timedelta(days=85)),
+     "autoRenewal": False, "terminationNoticeDays": 60, "paymentTerms": "Net 30",
+     "lineItems": [
+         {"description": "Ocean Freight - Far East to N.Europe (20GP)", "unitPrice": 1750, "quantity": 180, "total": 315000},
+         {"description": "Ocean Freight - Far East to N.Europe (40HC)", "unitPrice": 3050, "quantity": 130, "total": 396500},
+     ],
+     "clauses": {"liability_cap": True, "termination_notice": "60 days", "auto_renewal": False,
+                 "sla_terms": "Transit 30-35 days", "penalty_clauses": True, "force_majeure": True,
+                 "confidentiality": True, "ip_ownership": False, "indemnification": True}},
+    {"id": uid(), "type": "contract", "contractNumber": "SVC-SWHL-2025-001", "vendor": "Swift Haulage Ltd",
+     "amount": 180000, "currency": "GBP", "startDate": "2025-01-01", "endDate": "2025-12-31",
+     "issueDate": "2024-12-10", "status": "active", "extractedAt": ts(now - timedelta(days=95)),
+     "autoRenewal": True, "terminationNoticeDays": 30, "paymentTerms": "Net 14",
+     "lineItems": [
+         {"description": "Container haulage - Felixstowe to London (20GP)", "unitPrice": 350, "quantity": 300, "total": 105000},
+         {"description": "Container haulage - Felixstowe to London (40HC)", "unitPrice": 500, "quantity": 150, "total": 75000},
+     ],
      "clauses": {"liability_cap": True, "termination_notice": "30 days", "auto_renewal": True,
-                 "sla_terms": "99.9% uptime", "penalty_clauses": True, "force_majeure": True,
-                 "confidentiality": True, "ip_ownership": True, "indemnification": True}},
+                 "sla_terms": "Delivery within 24 hours", "penalty_clauses": True, "force_majeure": True,
+                 "confidentiality": True, "ip_ownership": False, "indemnification": False}},
+    {"id": uid(), "type": "contract", "contractNumber": "SVC-CPCB-2025-001", "vendor": "ClearPort Customs Brokers",
+     "amount": 96000, "currency": "USD", "startDate": "2025-01-01", "endDate": "2025-12-31",
+     "issueDate": "2024-12-05", "status": "active", "extractedAt": ts(now - timedelta(days=100)),
+     "autoRenewal": True, "terminationNoticeDays": 30, "paymentTerms": "Net 30",
+     "lineItems": [
+         {"description": "Import customs clearance (per entry)", "unitPrice": 120, "quantity": 800, "total": 96000},
+     ],
+     "clauses": {"liability_cap": True, "termination_notice": "30 days", "auto_renewal": True,
+                 "sla_terms": "Clearance within 4 hours of document receipt", "penalty_clauses": False, "force_majeure": True,
+                 "confidentiality": True, "ip_ownership": False, "indemnification": True}},
 ]
 
 # ═══════════════════════════════════════
-# PURCHASE ORDERS
+# PURCHASE ORDERS (CW1 Job Cost Accruals)
 # ═══════════════════════════════════════
 purchase_orders = []
 po_data = [
-    ("PO-2025-301", "GoldPak Industries Ltd.", 9212, [{"description": "Packaging materials Q1", "unitPrice": 46.06, "quantity": 200, "total": 9212}]),
-    ("PO-2025-302", "Legacy Systems Corp", 45000, [{"description": "Legacy system maintenance - Q1", "unitPrice": 15000, "quantity": 3, "total": 45000}]),
-    ("PO-2025-303", "GoldPak Industries Ltd.", 15000, [{"description": "Custom packaging design", "unitPrice": 7500, "quantity": 2, "total": 15000}]),
-    ("PO-2025-304", "GoldPak Industries Ltd.", 427500, [{"description": "Bulk packaging run", "unitPrice": 4.275, "quantity": 100000, "total": 427500}]),
-    ("PO-2025-305", "QuickServ Facilities", 12500, [{"description": "HVAC maintenance Q1", "unitPrice": 2500, "quantity": 5, "total": 12500}]),
-    ("PO-2025-306", "NovaTech Solutions Inc", 35000, [{"description": "Software licenses", "unitPrice": 350, "quantity": 100, "total": 35000}]),
-    ("PO-2025-307", "Pacific Rim Logistics", 78000, [{"description": "Freight forwarding - Asia route", "unitPrice": 6500, "quantity": 12, "total": 78000}]),
-    ("PO-2025-308", "Meridian Consulting Group", 60000, [{"description": "Strategy consulting", "unitPrice": 300, "quantity": 200, "total": 60000}]),
-    ("PO-2025-309", "Atlas Raw Materials Co", 127500, [{"description": "Steel grade A (per ton)", "unitPrice": 850, "quantity": 75, "total": 63750}, {"description": "Aluminum alloy (per ton)", "unitPrice": 1275, "quantity": 50, "total": 63750}]),
-    ("PO-2025-310", "Horizon Digital Services", 24000, [{"description": "Cloud hosting Q1", "unitPrice": 8000, "quantity": 3, "total": 24000}]),
-    ("PO-2025-311", "NovaTech Solutions Inc", 18500, [{"description": "Support contract extension", "unitPrice": 18500, "quantity": 1, "total": 18500}]),
-    ("PO-2025-312", "Pacific Rim Logistics", 42000, [{"description": "Warehousing services Q1", "unitPrice": 14000, "quantity": 3, "total": 42000}]),
-    ("PO-2025-313", "Legacy Systems Corp", 28000, [{"description": "Database migration Phase 1", "unitPrice": 28000, "quantity": 1, "total": 28000}]),
-    ("PO-2025-314", "Atlas Raw Materials Co", 85000, [{"description": "Steel grade B (per ton)", "unitPrice": 950, "quantity": 50, "total": 47500}, {"description": "Copper wire (per spool)", "unitPrice": 750, "quantity": 50, "total": 37500}]),
-    ("PO-2025-315", "Meridian Consulting Group", 45000, [{"description": "Change management program", "unitPrice": 225, "quantity": 200, "total": 45000}]),
+    # (PO ref = CW1 shipment ref, vendor, line items representing accrued charges)
+    ("SH-2026-0101", "Maersk Line A/S", [
+        {"description": "Ocean Freight 2x40HC CNSHA-GBFXT", "unitPrice": 3200, "quantity": 2, "total": 6400, "chargeCode": "OFR"},
+        {"description": "THC Origin Shanghai", "unitPrice": 425, "quantity": 2, "total": 850, "chargeCode": "THO"},
+        {"description": "THC Destination Felixstowe", "unitPrice": 380, "quantity": 2, "total": 760, "chargeCode": "THD"},
+        {"description": "BAF Surcharge", "unitPrice": 650, "quantity": 2, "total": 1300, "chargeCode": "BAF"},
+        {"description": "Documentation Fee", "unitPrice": 150, "quantity": 1, "total": 150, "chargeCode": "DOC"},
+        {"description": "BL Fee", "unitPrice": 100, "quantity": 1, "total": 100, "chargeCode": "BLF"},
+        {"description": "ISPS Surcharge", "unitPrice": 50, "quantity": 2, "total": 100, "chargeCode": "ISPS"},
+    ], 9660),
+    ("SH-2026-0102", "MSC Mediterranean Shipping", [
+        {"description": "Ocean Freight 3x20GP CNNBO-NLRTM", "unitPrice": 1750, "quantity": 3, "total": 5250, "chargeCode": "OFR"},
+        {"description": "THC Origin Ningbo", "unitPrice": 380, "quantity": 3, "total": 1140, "chargeCode": "THO"},
+        {"description": "THC Destination Rotterdam", "unitPrice": 350, "quantity": 3, "total": 1050, "chargeCode": "THD"},
+        {"description": "BAF Surcharge", "unitPrice": 580, "quantity": 3, "total": 1740, "chargeCode": "BAF"},
+        {"description": "ENS Filing", "unitPrice": 30, "quantity": 1, "total": 30, "chargeCode": "ENS"},
+        {"description": "Documentation Fee", "unitPrice": 175, "quantity": 1, "total": 175, "chargeCode": "DOC"},
+        {"description": "ISPS", "unitPrice": 45, "quantity": 3, "total": 135, "chargeCode": "ISPS"},
+    ], 9520),
+    ("SH-2026-0103", "Hapag-Lloyd AG", [
+        {"description": "Ocean Freight 1x40HC CNSZX-DEHAM", "unitPrice": 3100, "quantity": 1, "total": 3100, "chargeCode": "OFR"},
+        {"description": "THC Origin Shenzhen", "unitPrice": 400, "quantity": 1, "total": 400, "chargeCode": "THO"},
+        {"description": "THC Destination Hamburg", "unitPrice": 420, "quantity": 1, "total": 420, "chargeCode": "THD"},
+        {"description": "BAF", "unitPrice": 620, "quantity": 1, "total": 620, "chargeCode": "BAF"},
+        {"description": "Documentation Fee", "unitPrice": 125, "quantity": 1, "total": 125, "chargeCode": "DOC"},
+        {"description": "BL Fee", "unitPrice": 75, "quantity": 1, "total": 75, "chargeCode": "BLF"},
+    ], 4740),
+    ("SH-2026-0104", "CMA CGM S.A.", [
+        {"description": "Ocean Freight 2x20GP CNSHA-USLAX", "unitPrice": 2200, "quantity": 2, "total": 4400, "chargeCode": "OFR"},
+        {"description": "THC Origin Shanghai", "unitPrice": 425, "quantity": 2, "total": 850, "chargeCode": "THO"},
+        {"description": "THC Destination Los Angeles", "unitPrice": 520, "quantity": 2, "total": 1040, "chargeCode": "THD"},
+        {"description": "AMS Filing", "unitPrice": 35, "quantity": 1, "total": 35, "chargeCode": "AMS"},
+        {"description": "ISPS", "unitPrice": 50, "quantity": 2, "total": 100, "chargeCode": "ISPS"},
+        {"description": "Documentation Fee", "unitPrice": 150, "quantity": 1, "total": 150, "chargeCode": "DOC"},
+    ], 6575),
+    ("SH-2026-0105", "Maersk Line A/S", [
+        {"description": "Ocean Freight 1x40HC INBOM-GBFXT", "unitPrice": 2800, "quantity": 1, "total": 2800, "chargeCode": "OFR"},
+        {"description": "THC Origin Mumbai", "unitPrice": 280, "quantity": 1, "total": 280, "chargeCode": "THO"},
+        {"description": "THC Dest Felixstowe", "unitPrice": 380, "quantity": 1, "total": 380, "chargeCode": "THD"},
+        {"description": "BAF", "unitPrice": 480, "quantity": 1, "total": 480, "chargeCode": "BAF"},
+        {"description": "War Risk Surcharge", "unitPrice": 45, "quantity": 1, "total": 45, "chargeCode": "WAR"},
+        {"description": "Documentation Fee", "unitPrice": 150, "quantity": 1, "total": 150, "chargeCode": "DOC"},
+        {"description": "BL Fee", "unitPrice": 100, "quantity": 1, "total": 100, "chargeCode": "BLF"},
+    ], 4235),
+    ("SH-2026-0106", "Swift Haulage Ltd", [
+        {"description": "Container Haulage 2x40HC Felixstowe-London", "unitPrice": 500, "quantity": 2, "total": 1000, "chargeCode": "HAU"},
+        {"description": "Waiting Time (per hour)", "unitPrice": 45, "quantity": 2, "total": 90, "chargeCode": "HAU"},
+    ], 1090),
+    ("SH-2026-0107", "ClearPort Customs Brokers", [
+        {"description": "Import Customs Clearance", "unitPrice": 120, "quantity": 1, "total": 120, "chargeCode": "CUS"},
+        {"description": "Customs Examination Fee", "unitPrice": 250, "quantity": 1, "total": 250, "chargeCode": "CUS"},
+    ], 370),
+    ("SH-2026-0108", "MSC Mediterranean Shipping", [
+        {"description": "Ocean Freight 2x40HC VNSGN-GBSOU", "unitPrice": 3400, "quantity": 2, "total": 6800, "chargeCode": "OFR"},
+        {"description": "THC Origin Ho Chi Minh", "unitPrice": 350, "quantity": 2, "total": 700, "chargeCode": "THO"},
+        {"description": "THC Destination Southampton", "unitPrice": 400, "quantity": 2, "total": 800, "chargeCode": "THD"},
+        {"description": "BAF", "unitPrice": 700, "quantity": 2, "total": 1400, "chargeCode": "BAF"},
+        {"description": "Peak Season Surcharge", "unitPrice": 500, "quantity": 2, "total": 1000, "chargeCode": "PSS"},
+        {"description": "Documentation Fee", "unitPrice": 175, "quantity": 1, "total": 175, "chargeCode": "DOC"},
+        {"description": "ISPS", "unitPrice": 45, "quantity": 2, "total": 90, "chargeCode": "ISPS"},
+    ], 10965),
+    # Additional accruals
+    ("SH-2026-0109", "DB Schenker Logistics", [
+        {"description": "Consolidated LCL Freight CNSHA-GBFXT", "unitPrice": 65, "quantity": 28, "total": 1820, "chargeCode": "OFR"},
+        {"description": "CFS Origin Charges", "unitPrice": 45, "quantity": 28, "total": 1260, "chargeCode": "CFS"},
+        {"description": "CFS Destination Charges", "unitPrice": 55, "quantity": 28, "total": 1540, "chargeCode": "CFS"},
+        {"description": "Documentation Fee", "unitPrice": 100, "quantity": 1, "total": 100, "chargeCode": "DOC"},
+    ], 4720),
+    ("SH-2026-0110", "Kuehne+Nagel International", [
+        {"description": "LCL Freight LKCMB-NLRTM", "unitPrice": 58, "quantity": 15, "total": 870, "chargeCode": "OFR"},
+        {"description": "CFS Charges", "unitPrice": 40, "quantity": 15, "total": 600, "chargeCode": "CFS"},
+        {"description": "Documentation", "unitPrice": 120, "quantity": 1, "total": 120, "chargeCode": "DOC"},
+    ], 1590),
 ]
-for i, (pn, vendor, amount, items) in enumerate(po_data):
+
+for po_ref, vendor, items, total in po_data:
     purchase_orders.append({
-        "id": uid(), "type": "purchase_order", "poNumber": pn, "vendor": vendor,
-        "amount": amount, "currency": "USD", "issueDate": ts(now - timedelta(days=30 + i*3)),
-        "status": "open", "extractedAt": ts(now - timedelta(days=28 + i*3)),
-        "lineItems": items, "extractionConfidence": random.randint(90, 100),
+        "id": uid(), "poNumber": po_ref, "vendor": vendor, "amount": total, "currency": "USD",
+        "issueDate": ts(now - timedelta(days=random.randint(10, 40))),
+        "status": "open", "type": "purchase_order",
+        "lineItems": items, "extractionConfidence": random.randint(92, 100),
     })
 
+# Additional POs for volume
+for i in range(5):
+    v = random.choice(VENDORS[:4])  # Ocean carriers only
+    lane = random.choice(TRADE_LANES)
+    ofr = random.randint(2500, 4500)
+    thc = random.randint(300, 500)
+    total = ofr + thc * 2 + random.randint(200, 800)
+    purchase_orders.append({
+        "id": uid(), "poNumber": f"SH-2026-{111+i:04d}", "vendor": v["name"], "amount": total, "currency": "USD",
+        "issueDate": ts(now - timedelta(days=random.randint(5, 25))),
+        "status": "open", "type": "purchase_order",
+        "lineItems": [
+            {"description": f"Ocean Freight {lane['pol']}-{lane['pod']}", "unitPrice": ofr, "quantity": 1, "total": ofr, "chargeCode": "OFR"},
+            {"description": "THC Origin", "unitPrice": thc, "quantity": 1, "total": thc, "chargeCode": "THO"},
+            {"description": "THC Destination", "unitPrice": thc, "quantity": 1, "total": thc, "chargeCode": "THD"},
+            {"description": "Documentation Fee", "unitPrice": 150, "quantity": 1, "total": 150, "chargeCode": "DOC"},
+        ],
+        "extractionConfidence": random.randint(90, 99),
+    })
+
+print(f"Generated {len(purchase_orders)} purchase orders (CW1 accruals)")
+
 # ═══════════════════════════════════════
-# GOODS RECEIPTS
+# GRNs (Service Delivery Confirmations)
 # ═══════════════════════════════════════
-goods_receipts = []
 grn_data = [
-    ("GRN-2025-001", "PO-2025-305", "QuickServ Facilities", 12500, "2025-02-20"),
-    ("GRN-2025-002", "PO-2025-307", "Pacific Rim Logistics", 6500, "2025-02-15"),
-    ("GRN-2025-003", "PO-2025-309", "Atlas Raw Materials Co", 63750, "2025-02-25"),
-    ("GRN-2025-004", "PO-2025-312", "Pacific Rim Logistics", 14000, "2025-03-01"),
-    ("GRN-2025-005", "PO-2025-310", "Horizon Digital Services", 8000, "2025-03-05"),
-    ("GRN-2025-006", "PO-2025-308", "Meridian Consulting Group", 60000, "2025-03-02"),
-    ("GRN-2025-007", "PO-2025-302", "Legacy Systems Corp", 15000, "2025-02-28"),
-    ("GRN-2025-008", "PO-2025-306", "NovaTech Solutions Inc", 35000, "2025-03-03"),
-    ("GRN-2025-009", "PO-2025-301", "GoldPak Industries Ltd.", 9212, "2025-02-18"),
-    ("GRN-2025-010", "PO-2025-303", "GoldPak Industries Ltd.", 15000, "2025-02-22"),
-    ("GRN-2025-011", "PO-2025-314", "Atlas Raw Materials Co", 47500, "2025-03-06"),
-    ("GRN-2025-012", "PO-2025-315", "Meridian Consulting Group", 22500, "2025-03-08"),
+    ("GRN-2026-001", "SH-2026-0101", "Maersk Line A/S", 9660, "2026-02-20"),
+    ("GRN-2026-002", "SH-2026-0102", "MSC Mediterranean Shipping", 9520, "2026-02-22"),
+    ("GRN-2026-003", "SH-2026-0103", "Hapag-Lloyd AG", 4740, "2026-02-25"),
+    ("GRN-2026-004", "SH-2026-0104", "CMA CGM S.A.", 6575, "2026-02-28"),
+    ("GRN-2026-005", "SH-2026-0105", "Maersk Line A/S", 4235, "2026-03-01"),
+    ("GRN-2026-006", "SH-2026-0106", "Swift Haulage Ltd", 1090, "2026-03-02"),
+    ("GRN-2026-007", "SH-2026-0107", "ClearPort Customs Brokers", 370, "2026-03-03"),
+    ("GRN-2026-008", "SH-2026-0108", "MSC Mediterranean Shipping", 10965, "2026-03-04"),
+    ("GRN-2026-009", "SH-2026-0109", "DB Schenker Logistics", 4720, "2026-03-05"),
+    ("GRN-2026-010", "SH-2026-0110", "Kuehne+Nagel International", 1590, "2026-03-06"),
 ]
+
+grns = []
 for gn, po_ref, vendor, amount, rd in grn_data:
-    goods_receipts.append({
+    grns.append({
         "id": uid(), "type": "goods_receipt", "grnNumber": gn, "poReference": po_ref,
         "vendor": vendor, "amount": amount, "currency": "USD",
-        "receivedDate": rd, "issueDate": rd, "status": "received",
-        "extractedAt": ts(now - timedelta(days=random.randint(1, 15))),
-        "lineItems": [{"description": "Received goods/services", "quantity": 1, "unitPrice": amount, "total": amount}],
+        "receivedDate": rd, "status": "verified",
+        "lineItems": [{"description": "Freight services delivered as per shipment", "quantity": 1, "unitPrice": amount, "total": amount}],
     })
 
+print(f"Generated {len(grns)} GRNs")
+
 # ═══════════════════════════════════════
-# INVOICES — 55 invoices with diverse patterns
+# INVOICES — Carrier Invoices with Freight Charge Codes
 # ═══════════════════════════════════════
 invoices = []
-inv_counter = {"GP": 4000, "LS": 1000, "QS": 2000, "NT": 3000, "PR": 5000, "MC": 6000, "AR": 7000, "HD": 8000}
-prefixes = {"GoldPak Industries Ltd.": "GP", "Legacy Systems Corp": "LS", "QuickServ Facilities": "QS",
-            "NovaTech Solutions Inc": "NT", "Pacific Rim Logistics": "PR", "Meridian Consulting Group": "MC",
-            "Atlas Raw Materials Co": "AR", "Horizon Digital Services": "HD"}
+inv_counter = {"MAE": 100, "MSC": 200, "HLC": 300, "CMA": 400, "DBS": 500, "KNI": 600, "SHL": 700, "CPC": 800}
+prefixes = {
+    "Maersk Line A/S": "MAE", "MSC Mediterranean Shipping": "MSC", "Hapag-Lloyd AG": "HLC",
+    "CMA CGM S.A.": "CMA", "DB Schenker Logistics": "DBS", "Kuehne+Nagel International": "KNI",
+    "Swift Haulage Ltd": "SHL", "ClearPort Customs Brokers": "CPC",
+}
 
 def make_invoice(vendor, amount, po_ref=None, days_ago=None, confidence=None, status="on hold",
                  line_items=None, tax_rate=None, payment_terms=None, issue_day=None, subtotal=None):
     prefix = prefixes[vendor]
     inv_counter[prefix] += 1
-    inv_num = f"INV-{prefix}-{inv_counter[prefix]}"
+    inv_num = f"INV-{prefix}-2026-{inv_counter[prefix]}"
     d = days_ago if days_ago is not None else random.randint(1, 45)
     inv_date = now - timedelta(days=d)
-    tax = round(amount * (tax_rate or 0.08), 2)
+    tax = round(amount * (tax_rate or 0), 2)  # Freight invoices often have zero tax
     sub = subtotal or round(amount - tax, 2)
     conf = confidence or random.randint(82, 99)
     inv = {
         "id": uid(), "invoiceNumber": inv_num, "vendor": vendor,
         "amount": amount, "subtotal": sub, "tax": tax, "currency": "USD",
         "issueDate": ts(issue_day or inv_date), "extractedAt": ts(inv_date + timedelta(hours=1)),
-        "extractionConfidence": conf,
-        "confidence": conf,
+        "extractionConfidence": conf, "confidence": conf,
         "status": status, "paymentTerms": payment_terms or "Net 30",
         "poReference": po_ref, "type": "invoice",
-        "lineItems": line_items or [{"description": "Services/goods", "unitPrice": sub, "quantity": 1, "total": sub}],
+        "lineItems": line_items or [{"description": "Freight services", "unitPrice": sub, "quantity": 1, "total": sub}],
         "processingTime": {"extraction_ms": random.randint(2800, 6500), "matching_ms": random.randint(40, 180),
                            "anomaly_ms": random.randint(80, 350), "triage_ms": random.randint(15, 60),
                            "total_seconds": round(random.uniform(3.2, 7.8), 1)},
@@ -175,352 +317,264 @@ def make_invoice(vendor, amount, po_ref=None, days_ago=None, confidence=None, st
     invoices.append(inv)
     return inv
 
-# ── GoldPak: Over-invoicing pattern (3 invoices against $9,212 PO) ──
-make_invoice("GoldPak Industries Ltd.", 9212, "PO-2025-301", 15, 85)
-make_invoice("GoldPak Industries Ltd.", 9753, "PO-2025-301", 12, 100)
-make_invoice("GoldPak Industries Ltd.", 9212, "PO-2025-301", 10, 100)  # Duplicate
-make_invoice("GoldPak Industries Ltd.", 14800, "PO-2025-303", 8, 95)
-make_invoice("GoldPak Industries Ltd.", 42750, "PO-2025-304", 5, 92)
+# ── Maersk: Rate escalation pattern (SH-0101 accrual = $9,660) ──
+make_invoice("Maersk Line A/S", 9660, "SH-2026-0101", 15, 96,  # Exact match
+    line_items=[
+        {"description": "Ocean Freight 2x40HC CNSHA-GBFXT", "unitPrice": 3200, "quantity": 2, "total": 6400, "chargeCode": "OFR"},
+        {"description": "THC Origin Shanghai", "unitPrice": 425, "quantity": 2, "total": 850, "chargeCode": "THO"},
+        {"description": "THC Destination Felixstowe", "unitPrice": 380, "quantity": 2, "total": 760, "chargeCode": "THD"},
+        {"description": "BAF Surcharge", "unitPrice": 650, "quantity": 2, "total": 1300, "chargeCode": "BAF"},
+        {"description": "Documentation Fee", "unitPrice": 150, "quantity": 1, "total": 150, "chargeCode": "DOC"},
+        {"description": "BL Fee", "unitPrice": 100, "quantity": 1, "total": 100, "chargeCode": "BLF"},
+        {"description": "ISPS Surcharge", "unitPrice": 50, "quantity": 2, "total": 100, "chargeCode": "ISPS"},
+    ])
+make_invoice("Maersk Line A/S", 4535, "SH-2026-0105", 12, 94,  # +$300 over accrual ($4,235)
+    line_items=[
+        {"description": "Ocean Freight 1x40HC INBOM-GBFXT", "unitPrice": 2800, "quantity": 1, "total": 2800, "chargeCode": "OFR"},
+        {"description": "THC Origin Mumbai", "unitPrice": 280, "quantity": 1, "total": 280, "chargeCode": "THO"},
+        {"description": "THC Dest Felixstowe", "unitPrice": 450, "quantity": 1, "total": 450, "chargeCode": "THD"},  # THD inflated: 380->450
+        {"description": "BAF", "unitPrice": 480, "quantity": 1, "total": 480, "chargeCode": "BAF"},
+        {"description": "War Risk", "unitPrice": 45, "quantity": 1, "total": 45, "chargeCode": "WAR"},
+        {"description": "Documentation Fee", "unitPrice": 150, "quantity": 1, "total": 150, "chargeCode": "DOC"},
+        {"description": "BL Fee", "unitPrice": 130, "quantity": 1, "total": 130, "chargeCode": "BLF"},  # BLF inflated: 100->130
+        {"description": "Congestion Surcharge", "unitPrice": 200, "quantity": 1, "total": 200, "chargeCode": "PSS"},  # Not accrued!
+    ])
 
-# ── Legacy Systems: Contract violations ──
-make_invoice("Legacy Systems Corp", 16500, "PO-2025-302", 20, 94, payment_terms="Net 30")  # Exceeds monthly rate
-make_invoice("Legacy Systems Corp", 15000, "PO-2025-302", 15, 97)
-make_invoice("Legacy Systems Corp", 15200, "PO-2025-302", 10, 96)  # Slight overcharge
-make_invoice("Legacy Systems Corp", 29500, "PO-2025-313", 7, 91)  # Over PO amount
+# ── MSC: Over-invoicing pattern (SH-0102 accrual = $9,520) ──
+make_invoice("MSC Mediterranean Shipping", 10280, "SH-2026-0102", 18, 91,  # $760 over accrual
+    line_items=[
+        {"description": "Ocean Freight 3x20GP CNNBO-NLRTM", "unitPrice": 1950, "quantity": 3, "total": 5850, "chargeCode": "OFR"},  # OFR inflated: 1750->1950
+        {"description": "THC Origin Ningbo", "unitPrice": 380, "quantity": 3, "total": 1140, "chargeCode": "THO"},
+        {"description": "THC Destination Rotterdam", "unitPrice": 350, "quantity": 3, "total": 1050, "chargeCode": "THD"},
+        {"description": "BAF Surcharge", "unitPrice": 580, "quantity": 3, "total": 1740, "chargeCode": "BAF"},
+        {"description": "ENS Filing", "unitPrice": 30, "quantity": 1, "total": 30, "chargeCode": "ENS"},
+        {"description": "Documentation Fee", "unitPrice": 175, "quantity": 1, "total": 175, "chargeCode": "DOC"},
+        {"description": "ISPS", "unitPrice": 45, "quantity": 3, "total": 135, "chargeCode": "ISPS"},
+        {"description": "Late Documentation Surcharge", "unitPrice": 160, "quantity": 1, "total": 160, "chargeCode": "DOC"},  # Fabricated charge
+    ])
+make_invoice("MSC Mediterranean Shipping", 10965, "SH-2026-0108", 10, 93,  # Exact match
+    line_items=[
+        {"description": "Ocean Freight 2x40HC VNSGN-GBSOU", "unitPrice": 3400, "quantity": 2, "total": 6800, "chargeCode": "OFR"},
+        {"description": "THC Origin Ho Chi Minh", "unitPrice": 350, "quantity": 2, "total": 700, "chargeCode": "THO"},
+        {"description": "THC Destination Southampton", "unitPrice": 400, "quantity": 2, "total": 800, "chargeCode": "THD"},
+        {"description": "BAF", "unitPrice": 700, "quantity": 2, "total": 1400, "chargeCode": "BAF"},
+        {"description": "Peak Season Surcharge", "unitPrice": 500, "quantity": 2, "total": 1000, "chargeCode": "PSS"},
+        {"description": "Documentation Fee", "unitPrice": 175, "quantity": 1, "total": 175, "chargeCode": "DOC"},
+        {"description": "ISPS", "unitPrice": 45, "quantity": 2, "total": 90, "chargeCode": "ISPS"},
+    ])
+make_invoice("MSC Mediterranean Shipping", 10965, "SH-2026-0108", 8, 93)  # DUPLICATE of above
 
-# ── QuickServ: Clean vendor (3-way matchable) ──
-make_invoice("QuickServ Facilities", 2500, "PO-2025-305", 18, 98)
-make_invoice("QuickServ Facilities", 2500, "PO-2025-305", 14, 99)
-make_invoice("QuickServ Facilities", 2500, "PO-2025-305", 10, 98)
-make_invoice("QuickServ Facilities", 2500, "PO-2025-305", 6, 97)
-make_invoice("QuickServ Facilities", 2500, "PO-2025-305", 2, 99)
+# ── Hapag-Lloyd: Clean vendor ──
+make_invoice("Hapag-Lloyd AG", 4740, "SH-2026-0103", 14, 98,  # Exact match
+    line_items=[
+        {"description": "Ocean Freight 1x40HC CNSZX-DEHAM", "unitPrice": 3100, "quantity": 1, "total": 3100, "chargeCode": "OFR"},
+        {"description": "THC Origin Shenzhen", "unitPrice": 400, "quantity": 1, "total": 400, "chargeCode": "THO"},
+        {"description": "THC Destination Hamburg", "unitPrice": 420, "quantity": 1, "total": 420, "chargeCode": "THD"},
+        {"description": "BAF", "unitPrice": 620, "quantity": 1, "total": 620, "chargeCode": "BAF"},
+        {"description": "Documentation Fee", "unitPrice": 125, "quantity": 1, "total": 125, "chargeCode": "DOC"},
+        {"description": "BL Fee", "unitPrice": 75, "quantity": 1, "total": 75, "chargeCode": "BLF"},
+    ])
 
-# ── NovaTech: Duplicate sender pattern ──
-make_invoice("NovaTech Solutions Inc", 35000, "PO-2025-306", 22, 95)
-make_invoice("NovaTech Solutions Inc", 35000, "PO-2025-306", 20, 95)  # Exact duplicate
-make_invoice("NovaTech Solutions Inc", 34998, "PO-2025-306", 18, 94)  # Near-duplicate
-make_invoice("NovaTech Solutions Inc", 18500, "PO-2025-311", 12, 93)
-make_invoice("NovaTech Solutions Inc", 18500, "PO-2025-311", 10, 96)  # Duplicate
+# ── CMA CGM: Duplicate sender pattern ──
+make_invoice("CMA CGM S.A.", 6575, "SH-2026-0104", 16, 95,
+    line_items=[
+        {"description": "Ocean Freight 2x20GP CNSHA-USLAX", "unitPrice": 2200, "quantity": 2, "total": 4400, "chargeCode": "OFR"},
+        {"description": "THC Origin Shanghai", "unitPrice": 425, "quantity": 2, "total": 850, "chargeCode": "THO"},
+        {"description": "THC Destination Los Angeles", "unitPrice": 520, "quantity": 2, "total": 1040, "chargeCode": "THD"},
+        {"description": "AMS Filing", "unitPrice": 35, "quantity": 1, "total": 35, "chargeCode": "AMS"},
+        {"description": "ISPS", "unitPrice": 50, "quantity": 2, "total": 100, "chargeCode": "ISPS"},
+        {"description": "Documentation Fee", "unitPrice": 150, "quantity": 1, "total": 150, "chargeCode": "DOC"},
+    ])
+make_invoice("CMA CGM S.A.", 6575, "SH-2026-0104", 14, 94)  # DUPLICATE
+make_invoice("CMA CGM S.A.", 6573, "SH-2026-0104", 12, 93)  # Near-duplicate ($2 diff)
 
-# ── Pacific Rim: Weekend invoicer ──
-make_invoice("Pacific Rim Logistics", 6500, "PO-2025-307", 21, 90,
-             issue_day=datetime(2025, 3, 1))  # Saturday
-make_invoice("Pacific Rim Logistics", 6500, "PO-2025-307", 18, 91,
-             issue_day=datetime(2025, 3, 2))  # Sunday
-make_invoice("Pacific Rim Logistics", 6500, "PO-2025-307", 14, 93)
-make_invoice("Pacific Rim Logistics", 14000, "PO-2025-312", 10, 92)
-make_invoice("Pacific Rim Logistics", 14500, "PO-2025-312", 7, 88)  # Over PO line item
-make_invoice("Pacific Rim Logistics", 15000, "PO-2025-312", 3, 87)  # Exceeds PO
+# ── DB Schenker: Early payment eligible ──
+make_invoice("DB Schenker Logistics", 4720, "SH-2026-0109", 20, 97, payment_terms="2/10 Net 30",
+    line_items=[
+        {"description": "LCL Freight CNSHA-GBFXT (28 CBM)", "unitPrice": 65, "quantity": 28, "total": 1820, "chargeCode": "OFR"},
+        {"description": "CFS Origin Charges", "unitPrice": 45, "quantity": 28, "total": 1260, "chargeCode": "CFS"},
+        {"description": "CFS Destination Charges", "unitPrice": 55, "quantity": 28, "total": 1540, "chargeCode": "CFS"},
+        {"description": "Documentation Fee", "unitPrice": 100, "quantity": 1, "total": 100, "chargeCode": "DOC"},
+    ])
 
-# ── Meridian: Early payment eligible ──
-make_invoice("Meridian Consulting Group", 30000, "PO-2025-308", 25, 97, payment_terms="2/10 Net 30")
-make_invoice("Meridian Consulting Group", 15000, "PO-2025-308", 18, 98, payment_terms="2/10 Net 30")
-make_invoice("Meridian Consulting Group", 15000, "PO-2025-308", 12, 96, payment_terms="2/10 Net 30")
-make_invoice("Meridian Consulting Group", 22500, "PO-2025-315", 8, 95, payment_terms="2/10 Net 30")
-make_invoice("Meridian Consulting Group", 22500, "PO-2025-315", 4, 97, payment_terms="2/10 Net 30")
+# ── Kuehne+Nagel: Stale invoicer ──
+make_invoice("Kuehne+Nagel International", 1590, "SH-2026-0110", 55, 95,  # 55 days old!
+    line_items=[
+        {"description": "LCL Freight LKCMB-NLRTM (15 CBM)", "unitPrice": 58, "quantity": 15, "total": 870, "chargeCode": "OFR"},
+        {"description": "CFS Charges", "unitPrice": 40, "quantity": 15, "total": 600, "chargeCode": "CFS"},
+        {"description": "Documentation", "unitPrice": 120, "quantity": 1, "total": 120, "chargeCode": "DOC"},
+    ])
+make_invoice("Kuehne+Nagel International", 1850, "SH-2026-0110", 45, 90)  # Over accrual + stale
 
-# ── Atlas: Price escalation pattern ──
-make_invoice("Atlas Raw Materials Co", 63750, "PO-2025-309", 28, 93)  # Matches PO
-make_invoice("Atlas Raw Materials Co", 67000, "PO-2025-309", 22, 91)  # 5% over PO price
-make_invoice("Atlas Raw Materials Co", 71000, "PO-2025-309", 16, 89)  # 11% over
-make_invoice("Atlas Raw Materials Co", 48500, "PO-2025-314", 10, 90)  # Over PO line
-make_invoice("Atlas Raw Materials Co", 50000, "PO-2025-314", 5, 88,
-             line_items=[{"description": "Steel grade B (per ton)", "unitPrice": 1000, "quantity": 50, "total": 50000}])  # Price escalation
+# ── Swift Haulage: Weekend invoicer ──
+make_invoice("Swift Haulage Ltd", 1090, "SH-2026-0106", 8, 92,
+    issue_day=datetime(2026, 3, 7),  # Saturday
+    line_items=[
+        {"description": "Container Haulage 2x40HC Felixstowe-London", "unitPrice": 500, "quantity": 2, "total": 1000, "chargeCode": "HAU"},
+        {"description": "Waiting Time", "unitPrice": 45, "quantity": 2, "total": 90, "chargeCode": "HAU"},
+    ])
+make_invoice("Swift Haulage Ltd", 1350, "SH-2026-0106", 5, 88,  # Over accrual ($1,090)
+    issue_day=datetime(2026, 3, 8),  # Sunday
+    line_items=[
+        {"description": "Container Haulage 2x40HC Felixstowe-London", "unitPrice": 550, "quantity": 2, "total": 1100, "chargeCode": "HAU"},  # Rate inflated
+        {"description": "Waiting Time", "unitPrice": 45, "quantity": 2, "total": 90, "chargeCode": "HAU"},
+        {"description": "Congestion Surcharge", "unitPrice": 80, "quantity": 2, "total": 160, "chargeCode": "HAU"},  # Not accrued
+    ])
 
-# ── Horizon: Stale invoicer ──
-make_invoice("Horizon Digital Services", 8000, "PO-2025-310", 60, 96)  # 60 days old
-make_invoice("Horizon Digital Services", 8200, "PO-2025-310", 45, 94)  # Slight overcharge
-make_invoice("Horizon Digital Services", 8000, "PO-2025-310", 30, 97)
-make_invoice("Horizon Digital Services", 10000, None, 120, 85)  # No PO, very stale
+# ── ClearPort: Clean customs broker ──
+make_invoice("ClearPort Customs Brokers", 370, "SH-2026-0107", 12, 99,
+    line_items=[
+        {"description": "Import Customs Clearance", "unitPrice": 120, "quantity": 1, "total": 120, "chargeCode": "CUS"},
+        {"description": "Customs Examination Fee", "unitPrice": 250, "quantity": 1, "total": 250, "chargeCode": "CUS"},
+    ])
 
-# ── Round-number suspicious invoices ──
-make_invoice("GoldPak Industries Ltd.", 50000, "PO-2025-304", 3, 91)  # Suspiciously round
-make_invoice("NovaTech Solutions Inc", 10000, None, 5, 88)  # Round, no PO
+# ── Round-number suspicious ──
+make_invoice("MSC Mediterranean Shipping", 10000, None, 3, 87)  # Round, no PO
+make_invoice("Maersk Line A/S", 5000, None, 4, 85)  # Round, no PO
 
-# ── Additional volume ──
-for i in range(12):
+# ── Additional volume for realistic dashboard ──
+for i in range(20):
     v = random.choice(VENDORS)
-    amt = round(random.uniform(2000, 25000), 2)
-    po_ref = random.choice([None, None, f"PO-2025-{random.randint(301, 315)}"])
-    make_invoice(v["name"], amt, po_ref, random.randint(2, 30), random.randint(80, 98))
+    lane = random.choice(TRADE_LANES)
+    ofr = random.randint(1800, 5000)
+    charges = random.randint(800, 2500)
+    total = ofr + charges
+    po_ref = random.choice([None, f"SH-2026-{random.randint(101, 115):04d}"])
+    items = [
+        {"description": f"Ocean/LCL Freight {lane['pol'][:lane['pol'].index('(')].strip()}-{lane['pod'][:lane['pod'].index('(')].strip()}", "unitPrice": ofr, "quantity": 1, "total": ofr, "chargeCode": "OFR"},
+        {"description": "Local Charges", "unitPrice": charges, "quantity": 1, "total": charges, "chargeCode": "THO"},
+    ]
+    make_invoice(v["name"], total, po_ref, random.randint(2, 35), random.randint(80, 98), line_items=items)
 
-# ── Mark some clean invoices as paid (lifecycle demo) ──
-paid_candidates = [inv for inv in invoices if inv["vendor"] in ("QuickServ Facilities", "Meridian Consulting Group") and inv.get("poReference")]
-for inv in paid_candidates[:5]:
+# Mark some as paid/approved for lifecycle demo
+paid = [inv for inv in invoices if inv["vendor"] in ("Hapag-Lloyd AG", "ClearPort Customs Brokers", "DB Schenker Logistics") and inv.get("poReference")]
+for inv in paid[:4]:
     inv["status"] = "paid"
     inv["paidAt"] = ts(now - timedelta(days=random.randint(1, 10)))
     inv["paidAmount"] = inv["amount"]
 
-# ── Mark some as approved ──
-approved_candidates = [inv for inv in invoices if inv["status"] != "paid" and inv.get("poReference") and inv.get("extractionConfidence", 0) >= 95]
-for inv in approved_candidates[:4]:
+approved = [inv for inv in invoices if inv["status"] != "paid" and inv.get("poReference") and inv.get("extractionConfidence", 0) >= 96]
+for inv in approved[:3]:
     inv["status"] = "approved"
     inv["approvedAt"] = ts(now - timedelta(days=random.randint(1, 5)))
-    inv["approvedBy"] = "Mike Manager"
+    inv["approvedBy"] = "Mike AP Manager"
 
 print(f"Generated {len(invoices)} invoices")
 
 # ═══════════════════════════════════════
-# RUN MATCHING
+# RUN MATCHING & ANOMALY DETECTION
 # ═══════════════════════════════════════
+# Add project root to path for imports
+_root = str(Path(__file__).resolve().parent.parent.parent)
+if _root not in sys.path:
+    sys.path.insert(0, _root)
+
 from backend.matching import match_invoice_to_po, get_grn_for_po
+from backend.anomalies import detect_anomalies_rule_based, detect_grn_anomalies
+
 matches = []
+anomalies = []
+existing = []
+
 for inv in invoices:
-    existing = matches[:]
     result = match_invoice_to_po(inv, purchase_orders, existing, invoices)
     if result:
-        grn_info = get_grn_for_po(result["poId"], goods_receipts, purchase_orders)
-        result.update(grn_info)
-        m = {"id": uid(), "invoiceId": inv["id"], "invoiceNumber": inv.get("invoiceNumber", ""),
-             "invoiceAmount": inv["amount"], "invoiceSubtotal": inv.get("subtotal", inv["amount"]),
-             "vendor": inv["vendor"], "matchedAt": ts(now - timedelta(hours=random.randint(1, 100))),
-             **result}
-        matches.append(m)
-print(f"Generated {len(matches)} matches")
+        result["invoiceId"] = inv["id"]
+        result["invoiceNumber"] = inv.get("invoiceNumber", "")
+        result["vendor"] = inv.get("vendor", "")
+        matches.append(result)
+        existing.append(result)
 
-# ═══════════════════════════════════════
-# RUN ANOMALY DETECTION
-# ═══════════════════════════════════════
-from backend.anomalies import detect_anomalies_rule_based
-anomalies = []
-for inv in invoices:
-    po = None
-    match = next((m for m in matches if m["invoiceId"] == inv["id"]), None)
-    if match:
-        po = next((p for p in purchase_orders if p["id"] == match.get("poId")), None)
-    contract = next((c for c in contracts if c["vendor"] == inv["vendor"]), None)
-    detected = detect_anomalies_rule_based(inv, po, contract, invoices)
-    for a in detected:
-        a["id"] = uid()
-        a["status"] = "open"
-        a["detectedAt"] = ts(now - timedelta(hours=random.randint(1, 72)))
-    anomalies.extend(detected)
-print(f"Generated {len(anomalies)} anomalies")
+        # GRN matching for 3-way
+        grn_result = get_grn_for_po(result.get("poNumber", result.get("poId", "")), grns, purchase_orders)
+        if grn_result and grn_result.get("matchType") == "three_way":
+            result["grnNumbers"] = grn_result.get("grnNumbers", [])
+            result["grnAmount"] = grn_result.get("totalReceived", 0)
+            result["matchType"] = "three_way"
 
-# ═══════════════════════════════════════
-# RUN TRIAGE
-# ═══════════════════════════════════════
-from backend.triage import triage_invoice
-triage_decisions = []
-for inv in invoices:
-    inv_anoms = [a for a in anomalies if a.get("invoiceId") == inv["id"] or a.get("invoiceNumber") == inv.get("invoiceNumber")]
-    match = next((m for m in matches if m["invoiceId"] == inv["id"]), None)
-    decision = triage_invoice(inv, inv_anoms, {"invoices": invoices, "purchase_orders": purchase_orders,
-                                                       "contracts": contracts, "matches": matches,
-                                                       "goods_receipts": goods_receipts, "anomalies": anomalies})
-    inv["triageLane"] = decision.get("lane", "REVIEW")
-    inv["triageDecision"] = decision.get("decision", "review")
-    inv["triageConfidence"] = decision.get("confidence", 50)
-    inv["triageReasons"] = decision.get("reasons", [])
-    inv["triageAt"] = ts(now - timedelta(hours=random.randint(0, 48)))
-    triage_decisions.append(decision)
-print(f"Generated {len(triage_decisions)} triage decisions")
+    # Find matched PO and contract for this invoice
+    matched_po = None
+    matched_contract = None
+    if inv.get("poReference"):
+        matched_po = next((po for po in purchase_orders if po.get("poNumber") == inv["poReference"]), None)
+    if inv.get("vendor"):
+        matched_contract = next((c for c in contracts if c.get("vendor") == inv["vendor"]), None)
 
-# ═══════════════════════════════════════
-# CASES — some pre-created for demo
-# ═══════════════════════════════════════
-cases = []
-blocked = [inv for inv in invoices if inv.get("triageLane") == "BLOCK"]
-for i, inv in enumerate(blocked[:8]):
-    case = {
-        "id": uid(), "title": f"Review: {inv['invoiceNumber']} from {inv['vendor']}",
-        "description": f"Invoice {inv['invoiceNumber']} ({inv['vendor']}) for ${inv['amount']:,.2f} was blocked during triage. Reasons: {'; '.join(inv.get('triageReasons', [])[:2])}",
-        "type": random.choice(["triage_escalation", "duplicate_investigation", "vendor_query", "grn_request"]),
-        "priority": random.choice(["high", "critical"]) if i < 3 else random.choice(["medium", "high"]),
-        "status": random.choice(["open", "in_progress", "open"]),
-        "invoiceId": inv["id"], "vendor": inv["vendor"],
-        "amountAtRisk": inv["amount"], "currency": "USD",
-        "createdAt": ts(now - timedelta(hours=random.randint(2, 96))),
-        "updatedAt": ts(now - timedelta(hours=random.randint(0, 24))),
-        "assignedTo": random.choice(["Priya Analyst", "James Analyst", None]),
-        "notes": [{"id": uid(), "text": "Investigating — checking vendor records.",
-                   "author": "Priya Analyst", "createdAt": ts(now - timedelta(hours=random.randint(1, 48)))}] if i < 5 else [],
-    }
-    cases.append(case)
+    anoms = detect_anomalies_rule_based(inv, matched_po, matched_contract, invoices)
+    anomalies.extend(anoms)
 
-# Add some resolved cases for history
-for i in range(5):
-    inv = random.choice(invoices)
-    cases.append({
-        "id": uid(), "title": f"Resolved: {inv['invoiceNumber']}",
-        "description": f"Historical investigation for {inv['invoiceNumber']}.",
-        "type": "triage_escalation", "priority": "medium",
-        "status": "resolved", "resolution": random.choice(["Approved after vendor confirmation", "Duplicate voided", "PO matched after correction", "Vendor credit received"]),
-        "invoiceId": inv["id"], "vendor": inv["vendor"],
-        "amountAtRisk": inv["amount"], "currency": "USD",
-        "createdAt": ts(now - timedelta(days=random.randint(10, 30))),
-        "updatedAt": ts(now - timedelta(days=random.randint(1, 9))),
-        "resolvedAt": ts(now - timedelta(days=random.randint(1, 9))),
-        "assignedTo": random.choice(["Priya Analyst", "James Analyst"]),
-        "notes": [
-            {"id": uid(), "text": "Initial review complete.", "author": "Priya Analyst", "createdAt": ts(now - timedelta(days=20))},
-            {"id": uid(), "text": "Vendor confirmed pricing. Approved.", "author": "Mike Manager", "createdAt": ts(now - timedelta(days=15))},
-        ],
-    })
-print(f"Generated {len(cases)} cases")
-
-# ═══════════════════════════════════════
-# CORRECTION PATTERNS (for learning loop)
-# ═══════════════════════════════════════
-correction_patterns = []
-correction_vendors = ["GoldPak Industries Ltd.", "Legacy Systems Corp", "Atlas Raw Materials Co",
-                       "NovaTech Solutions Inc", "Pacific Rim Logistics"]
-field_corrections = {
-    "vendor_name": [("Gold Pak Industries", "GoldPak Industries Ltd."), ("GoldPak Ind.", "GoldPak Industries Ltd."),
-                     ("Legacy Sys Corp", "Legacy Systems Corp"), ("Nova Tech Sol", "NovaTech Solutions Inc")],
-    "invoice_number": [("INV-4001", "INV-GP-4001"), ("4002", "INV-GP-4002"), ("LS-001", "INV-LS-1001")],
-    "subtotal": [("9200.00", "9212.00"), ("14500", "14800"), ("34998.00", "35000.00")],
-    "tax": [("0", "736.96"), ("", "1184.00"), ("2799.84", "2800.00")],
-    "total_amount": [("9200", "9948.96"), ("14500", "15984.00"), ("35000", "37800.00")],
-    "payment_terms": [("Net 30", "2/10 Net 30"), ("", "Net 45"), ("N30", "Net 30")],
-    "po_reference": [("", "PO-2025-301"), ("2025-302", "PO-2025-302"), ("", "PO-2025-307")],
-}
-for vendor in correction_vendors:
-    for _ in range(random.randint(8, 18)):
-        field = random.choice(list(field_corrections.keys()))
-        original, corrected = random.choice(field_corrections[field])
-        correction_patterns.append({
-            "id": uid(), "vendor": vendor, "field": field,
-            "original": original,
-            "corrected": corrected,
-            "documentId": random.choice(invoices)["id"],
-            "documentType": "invoice",
-            "correctedAt": ts(now - timedelta(days=random.randint(1, 60))),
-            "correctedBy": random.choice(["Priya Analyst", "James Analyst"]),
-        })
-print(f"Generated {len(correction_patterns)} correction patterns")
+print(f"Generated {len(matches)} matches, {len(anomalies)} anomalies")
 
 # ═══════════════════════════════════════
 # VENDOR PROFILES
 # ═══════════════════════════════════════
 vendor_profiles = []
 for v in VENDORS:
-    v_invs = [i for i in invoices if i["vendor"] == v["name"]]
-    v_anoms = [a for a in anomalies if a.get("vendor") == v["name"]]
-    v_corrections = [c for c in correction_patterns if c["vendor"] == v["name"]]
+    v_invoices = [inv for inv in invoices if inv["vendor"] == v["name"]]
+    total_spend = sum(inv["amount"] for inv in v_invoices)
+    avg_conf = sum(inv.get("extractionConfidence", 90) for inv in v_invoices) / max(len(v_invoices), 1)
+    v_anomalies = [a for a in anomalies if a.get("vendor") == v["name"] or any(inv["vendor"] == v["name"] and inv["id"] == a.get("invoiceId") for inv in invoices)]
+
     vendor_profiles.append({
-        "id": uid(), "vendor": v["name"], "normalizedName": v["name"].lower(),
-        "invoiceCount": len(v_invs), "totalSpend": round(sum(i["amount"] for i in v_invs), 2),
-        "anomalyCount": len(v_anoms), "correctionCount": len(v_corrections),
-        "riskLevel": v["risk"], "currency": v["currency"],
-        "avgConfidence": round(sum(i.get("extractionConfidence", 90) for i in v_invs) / max(len(v_invs), 1), 1),
-        "lastInvoiceDate": ts(now - timedelta(days=2)),
-        "updatedAt": ts(now),
+        "id": uid(), "vendor": v["name"], "vendorNormalized": v["name"].upper().replace(" ", "_"),
+        "category": v.get("category", "Carrier"), "cw1Code": v.get("cw1_code", ""),
+        "totalInvoices": len(v_invoices), "totalSpend": round(total_spend, 2),
+        "avgConfidence": round(avg_conf, 1),
+        "riskLevel": v["risk"], "riskScore": {"high": 78, "medium": 52, "low": 22}[v["risk"]],
+        "anomalyCount": len(v_anomalies),
+        "profile": v["profile"],
+        "firstSeen": ts(now - timedelta(days=random.randint(180, 365))),
+        "lastInvoice": ts(now - timedelta(days=random.randint(1, 15))),
+        "paymentTerms": "Net 30",
+        "currency": v["currency"],
     })
 
-# ═══════════════════════════════════════
-# ACTIVITY LOG
-# ═══════════════════════════════════════
-activity_log = []
-for inv in invoices[:20]:
-    activity_log.append({
-        "id": uid(), "action": "document_uploaded", "documentId": inv["id"],
-        "invoiceNumber": inv.get("invoiceNumber", ""), "vendor": inv["vendor"],
-        "timestamp": inv.get("extractedAt", ts(now)), "performedBy": "system",
-    })
-for a in anomalies[:15]:
-    activity_log.append({
-        "id": uid(), "action": "anomaly_detected", "anomalyId": a["id"],
-        "invoiceNumber": a.get("invoiceNumber", ""), "vendor": a.get("vendor", ""),
-        "type": a.get("type", ""), "severity": a.get("severity", ""),
-        "timestamp": a.get("detectedAt", ts(now)), "performedBy": "system",
-    })
-# Add some resolved anomaly actions
-resolved_sample = random.sample(anomalies[:len(anomalies)//2], min(25, len(anomalies)//2))
-for a in resolved_sample:
-    a["status"] = "resolved"
-    a["resolvedAt"] = ts(now - timedelta(days=random.randint(1, 10)))
-    a["resolvedBy"] = random.choice(["Priya Analyst", "James Analyst", "Mike Manager"])
-    a["resolution"] = random.choice(["Confirmed with vendor — invoice correct", "False positive — approved exception",
-                                      "Credit memo received from vendor", "PO amended to match invoice",
-                                      "Vendor agreed to credit next invoice", "Duplicate voided — payment blocked",
-                                      "Contract rate updated by procurement"])
-    activity_log.append({
-        "id": uid(), "action": "anomaly_resolved", "anomalyId": a["id"],
-        "invoiceNumber": a.get("invoiceNumber", ""), "vendor": a.get("vendor", ""),
-        "resolution": a["resolution"],
-        "timestamp": a["resolvedAt"], "performedBy": a["resolvedBy"],
-    })
-# Add some dismissed anomalies
-dismissed_sample = random.sample([a for a in anomalies if a["status"] == "open"][:20], min(8, 20))
-for a in dismissed_sample:
-    a["status"] = "dismissed"
-    a["dismissedAt"] = ts(now - timedelta(days=random.randint(1, 8)))
-    a["dismissedBy"] = random.choice(["Priya Analyst", "James Analyst"])
-    a["dismissReason"] = random.choice(["Approved exception — within policy", "False positive — seasonal pricing",
-                                         "Duplicate detection — already addressed", "Within acceptable tolerance"])
+print(f"Generated {len(vendor_profiles)} vendor profiles")
 
 # ═══════════════════════════════════════
-# ASSEMBLE AND SAVE
+# ASSEMBLE & SAVE
 # ═══════════════════════════════════════
 db = {
     "invoices": invoices,
     "purchase_orders": purchase_orders,
-    "contracts": contracts,
-    "goods_receipts": goods_receipts,
     "matches": matches,
     "anomalies": anomalies,
-    "triage_decisions": triage_decisions,
-    "cases": cases,
-    "users": users,
-    "correction_patterns": correction_patterns,
+    "corrections": [],
+    "contracts": contracts,
+    "goods_receipts": grns,
     "vendor_profiles": vendor_profiles,
-    "activity_log": sorted(activity_log, key=lambda x: x.get("timestamp", ""), reverse=True),
-    "policy_history": [],
-    "custom_model_config": {
-        "enabled": False,
-        "corrections_count": len(correction_patterns),
-        "last_export": ts(now - timedelta(days=5)),
-        "readiness": "ready" if len(correction_patterns) >= 50 else "accumulating",
-        "accuracy_before": 86.2,
-        "accuracy_after": 94.5,
-        "vendors_covered": list(set(c["vendor"] for c in correction_patterns)),
-    },
-    "_policy_state": {},
-    "finetune_history": [
-        {"id": uid(), "status": "completed", "model": "Qwen2.5-7B-Instruct-LoRA",
-         "corrections_used": min(47, len(correction_patterns)), "started_at": ts(now - timedelta(days=15)),
-         "completed_at": ts(now - timedelta(days=14)), "accuracy_improvement": 8.3,
-         "base_accuracy": 86.2, "tuned_accuracy": 94.5},
-        {"id": uid(), "status": "completed", "model": "Qwen2.5-7B-Instruct-LoRA",
-         "corrections_used": 23, "started_at": ts(now - timedelta(days=45)),
-         "completed_at": ts(now - timedelta(days=44)), "accuracy_improvement": 4.7,
-         "base_accuracy": 81.5, "tuned_accuracy": 86.2},
-    ],
-    "active_finetune_job": None,
-    "together_files": [],
-    "api_keys": [],
-    "webhooks": [],
-    "lifecycle_alerts": [],
-    "_lifecycle_meta": {},
     "vendor_master": [],
+    "audit_log": [],
+    "triage_decisions": [],
+    "cases": [],
+    "users": users,
 }
 
-# Count stats
-auto = sum(1 for i in invoices if i.get("triageDecision") == "auto_approve")
-review = sum(1 for i in invoices if i.get("triageLane") in ("REVIEW", "MANAGER_REVIEW", "VP_REVIEW", "CFO_REVIEW"))
-blocked_count = sum(1 for i in invoices if i.get("triageLane") == "BLOCK")
-paid_count = sum(1 for i in invoices if i.get("status") == "paid")
-anom_open = sum(1 for a in anomalies if a["status"] == "open")
-anom_resolved = sum(1 for a in anomalies if a["status"] == "resolved")
-anom_dismissed = sum(1 for a in anomalies if a.get("status") == "dismissed")
-print(f"\n{'='*50}")
-print(f"Demo Data Summary:")
-print(f"  Invoices:    {len(invoices)} ({paid_count} paid)")
-print(f"  POs:         {len(purchase_orders)}")
-print(f"  Contracts:   {len(contracts)}")
-print(f"  GRNs:        {len(goods_receipts)}")
-print(f"  Matches:     {len(matches)}")
-print(f"  Anomalies:   {len(anomalies)} ({anom_open} open, {anom_resolved} resolved, {anom_dismissed} dismissed)")
-print(f"  Cases:       {len(cases)}")
-print(f"  Users:       {len(users)}")
-print(f"  Corrections: {len(correction_patterns)}")
-print(f"  Triage: Auto={auto} Review={review} Blocked={blocked_count}")
-print(f"{'='*50}")
-
-# Write to file
 out_dir = os.environ.get("DB_OUTPUT_DIR", str(Path(__file__).parent))
 out_path = Path(out_dir) / "db.json"
 with open(out_path, "w") as f:
-    json.dump(db, f, indent=2)
-print(f"Written to {out_path} ({os.path.getsize(out_path) / 1024:.0f} KB)")
+    json.dump(db, f, indent=2, default=str)
+
+total = sum(len(v) for v in db.values() if isinstance(v, list))
+print(f"\n{'='*50}")
+print(f"Freight AP Intelligence Demo Data")
+print(f"{'='*50}")
+print(f"Vendors:          {len(VENDORS)} (carriers, NVOCCs, hauliers, brokers)")
+print(f"Contracts:        {len(contracts)} (carrier rate agreements)")
+print(f"POs (CW1 Accruals): {len(purchase_orders)}")
+print(f"GRNs:             {len(grns)}")
+print(f"Invoices:         {len(invoices)}")
+print(f"Matches:          {len(matches)}")
+print(f"Anomalies:        {len(anomalies)}")
+print(f"Vendor Profiles:  {len(vendor_profiles)}")
+print(f"Total Records:    {total}")
+print(f"Output:           {out_path}")
+print(f"{'='*50}")
+print(f"\nAnomaly patterns included:")
+print(f"  - Maersk: THC/BLF rate escalation + unapproved surcharges")
+print(f"  - MSC: Ocean freight over-invoicing + fabricated charges + duplicates")
+print(f"  - CMA CGM: Duplicate + near-duplicate invoices")
+print(f"  - Swift Haulage: Weekend invoicing + rate inflation + unapproved charges")
+print(f"  - Kuehne+Nagel: Stale invoices (55+ days)")
+print(f"  - Maersk/MSC: Suspicious round-number invoices without PO reference")
+print(f"  - Hapag-Lloyd/ClearPort/DB Schenker: Clean vendors for contrast")
